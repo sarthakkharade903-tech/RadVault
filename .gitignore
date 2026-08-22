@@ -28,11 +28,17 @@ wheels/
 
 # Node / JS
 node_modules/
+dist/
+dist-ssr/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .next/
 out/
+*.local
+.env
+.env.*
+!.env.example
 
 # IDE & Editors
 .vscode/
