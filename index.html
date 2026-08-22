@@ -5,49 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>RadVault — Radiology & Medical Data Vault</title>
   <link rel="stylesheet" href="styles.css">
+  <title>RadVault</title>
 </head>
 <body>
-  <header>
-    <div class="logo">
-      <span class="icon">🏥</span>
-      <h1>RadVault</h1>
-    </div>
-    <nav>
-      <span class="badge">Hackathon Project</span>
-    </nav>
-  </header>
-
-  <main>
-    <section class="hero">
-      <h2>Secure Radiology & Medical Imaging Vault</h2>
-      <p>Store, query, and analyze DICOM imaging data with ease.</p>
-    </section>
-
-    <section class="grid">
-      <div class="card">
-        <h3>📂 Upload Scans</h3>
-        <p>Drag and drop medical images (DICOM / PNG / JPEG) for processing.</p>
-        <button onclick="handleUpload()">Upload Files</button>
-      </div>
-
-      <div class="card">
-        <h3>🔍 Patient Records</h3>
-        <p>Quick lookup for patient IDs, radiology reports, and metadata.</p>
-        <button onclick="handleSearch()">Search Records</button>
-      </div>
-
-      <div class="card">
-        <h3>🤖 AI Diagnostics</h3>
-        <p>Run automated preliminary analysis on uploaded scans.</p>
-        <button onclick="handleAI()">Run AI Model</button>
-      </div>
-    </section>
-  </main>
-
-  <footer>
-    <p>&copy; 2026 RadVault Hackathon Team. All rights reserved.</p>
-  </footer>
-
-  <script src="app.js"></script>
+  <div id="root"></div>
+  <script type="module" src="/src/main.jsx"></script>
 </body>
 </html>
