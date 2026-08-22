@@ -1,8 +1,9 @@
 {
-  "name": "frontend",
+  "name": "radvault",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
+  "description": "Hackathon Project — Secure, Fast & Intelligent Rural Healthcare Platform.",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
