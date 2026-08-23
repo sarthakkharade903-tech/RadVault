@@ -10,34 +10,36 @@ import {
   Calendar,
   User,
   ShieldAlert,
-  FileText,
   Clock,
   ArrowRight,
   Phone,
   Droplet,
-  Share2,
   CheckCircle2,
   AlertCircle,
   ChevronRight,
-  FolderOpen,
-  Stethoscope,
+  BookOpen,
+  Handshake,
+  Shield,
+  Plus,
   RefreshCw,
+  Sparkles,
+  Stethoscope,
+  Building2,
 } from 'lucide-react';
 
-// ─── Mock data ───────────────────────────────────────────────────────────────
-// Structured so it can later be replaced by Supabase queries.
+// ─── Structured Mock Data (Ready for Supabase mapping) ───────────────────────
 
 const MOCK_EMERGENCY = {
   bloodGroup: 'O+',
   criticalAllergies: 'Penicillin',
-  emergencyContact: 'Suresh Kumar',
+  emergencyContact: 'Suresh Kumar (+91 98765 11223)',
   criticalConditions: 'Hypertension',
 };
 
 const MOCK_RECORDS_SUMMARY = {
   total: 12,
   recentCount: 3,
-  types: 'X-rays • MRI/CT • Lab Reports • Prescriptions',
+  types: 'X-rays • MRI/CT Scans • Lab Reports • Prescriptions',
 };
 
 const MOCK_REFERRAL_SUMMARY = {
@@ -45,31 +47,36 @@ const MOCK_REFERRAL_SUMMARY = {
   latest: {
     name: 'Cardiology Consultation',
     doctor: 'Dr. Sandeep Kulkarni',
+    hospital: 'Ahmednagar District Civil Hospital',
     status: 'Pending',
+    date: '22 Aug 2026',
   },
 };
 
 const MOCK_RECENT_ACTIVITY = [
   {
     id: 1,
-    title: 'MRI Report Added',
-    description: 'Brain MRI report added to your medical records.',
+    title: 'Brain MRI Report Added',
+    doctor: 'Dr. Rajesh Deshmukh',
+    description: 'MRI scan report uploaded and linked to RadVault.',
     date: '23 Aug 2026',
-    icon: 'file',
+    type: 'record',
   },
   {
     id: 2,
-    title: 'Referral Received',
-    description: 'Cardiology referral received from Dr. Sandeep Kulkarni.',
+    title: 'Cardiology Referral Issued',
+    doctor: 'Dr. Sandeep Kulkarni',
+    description: 'Specialist referral received from Rural Primary Health Centre.',
     date: '22 Aug 2026',
-    icon: 'share',
+    type: 'referral',
   },
   {
     id: 3,
-    title: 'Blood Report Added',
-    description: 'CBC report added to your records.',
+    title: 'Blood CBC Lab Report',
+    doctor: 'Dr. Anita Joshi',
+    description: 'Complete Blood Count report verified and archived.',
     date: '20 Aug 2026',
-    icon: 'file',
+    type: 'record',
   },
 ];
 
@@ -91,137 +98,139 @@ function formatDate(dateStr) {
   });
 }
 
-// ─── Small reusable sub-components ───────────────────────────────────────────
+// ─── Reusable Theme Components ────────────────────────────────────────────────
 
-function SectionHeader({ icon: Icon, label, iconColor = 'text-teal-400' }) {
+function SectionHeader({ icon: Icon, label, iconColor = 'text-[#008080]' }) {
   return (
-    <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-400 uppercase tracking-wider mb-3">
+    <h2 className="flex items-center gap-2 text-sm font-bold text-[#555555] uppercase tracking-wider mb-3">
       <Icon className={`w-4 h-4 ${iconColor}`} aria-hidden="true" />
       {label}
     </h2>
   );
 }
 
-function Card({ children, className = '' }) {
+function LightCard({ children, className = '' }) {
   return (
     <div
-      className={`bg-[#162238] border border-[#26364D] rounded-2xl p-5 ${className}`}
+      className={`bg-white border border-slate-200/90 rounded-2xl p-5 sm:p-6 shadow-sm hover:shadow-md transition-shadow ${className}`}
     >
       {children}
     </div>
   );
 }
 
-function ActionButton({ onClick, children, variant = 'default' }) {
-  const base =
-    'inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-[#0F172A]';
-  const variants = {
-    default: 'bg-slate-700 hover:bg-slate-600 text-slate-100 focus:ring-slate-500',
-    teal: 'bg-teal-600 hover:bg-teal-500 text-white focus:ring-teal-500',
-    red: 'bg-red-800/60 hover:bg-red-700/70 text-red-100 focus:ring-red-600',
-  };
+// Culturally friendly Emergency Shield with Red Cross icon
+function EmergencyShieldIcon({ className = 'w-6 h-6' }) {
   return (
-    <button onClick={onClick} className={`${base} ${variants[variant]}`}>
-      {children}
-    </button>
-  );
-}
-
-function StatusPill({ status }) {
-  const map = {
-    scheduled: 'bg-teal-500/15 text-teal-300 border border-teal-500/30',
-    confirmed: 'bg-teal-500/15 text-teal-300 border border-teal-500/30',
-    completed: 'bg-green-500/15 text-green-300 border border-green-500/30',
-    pending:   'bg-amber-500/15 text-amber-300 border border-amber-500/30',
-    cancelled: 'bg-slate-600/40 text-slate-400 border border-slate-600',
-  };
-  const key = status?.toLowerCase() || 'scheduled';
-  return (
-    <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${map[key] || map.scheduled}`}>
-      {status || 'Scheduled'}
-    </span>
-  );
-}
-
-// ─── Skeleton loader (used per section while detailsLoading) ─────────────────
-
-function SkeletonCard({ rows = 2 }) {
-  return (
-    <div className="bg-[#162238] border border-[#26364D] rounded-2xl p-5 animate-pulse">
-      <div className="h-3 bg-slate-700 rounded w-1/3 mb-3" />
-      {Array.from({ length: rows }).map((_, i) => (
-        <div key={i} className={`h-4 bg-slate-700 rounded mb-2 ${i === rows - 1 ? 'w-2/3' : 'w-full'}`} />
-      ))}
+    <div className="relative inline-flex items-center justify-center">
+      <Shield className={`${className} text-[#FF9933] fill-[#FF9933]/20`} />
+      <Plus className="w-3.5 h-3.5 text-[#D32F2F] absolute stroke-[3.5]" />
     </div>
   );
 }
 
 // ─── Section: Attention Items ─────────────────────────────────────────────────
 
-function AttentionSection({ appointment, referral }) {
+function AttentionSection({ appointment, referral, onNavigate }) {
   const items = [];
 
   if (appointment) {
     items.push({
       id: 'appt',
-      label: 'Upcoming appointment',
-      title: appointment.doctor_name || 'Doctor Consultation',
+      type: 'confirmed',
+      label: 'Confirmed Doctor Appointment',
+      title: appointment.doctor_name || 'Cardiology Consultation',
       subtitle: `${formatDate(appointment.appointment_date)} · ${appointment.appointment_time || '10:30 AM'}`,
-      action: 'View Appointment',
+      facility: appointment.facility || 'District Civil Hospital',
+      actionText: 'View Details',
       tab: 'referrals',
-      color: 'teal',
     });
   }
 
-  if (referral && !appointment) {
+  if (referral) {
     items.push({
       id: 'ref',
-      label: 'Pending referral',
+      type: 'pending',
+      label: 'Pending Referral · Action Required',
       title: referral.latest.name,
-      subtitle: 'Action may be required',
-      action: 'Review Referral',
+      subtitle: `${referral.latest.doctor} · ${referral.latest.hospital}`,
+      facility: referral.latest.hospital,
+      actionText: 'Review Referral',
       tab: 'referrals',
-      color: 'amber',
     });
   }
 
   if (items.length === 0) {
     return (
-      <Card>
-        <div className="flex items-start gap-3">
-          <div className="mt-0.5 w-8 h-8 rounded-full bg-green-500/15 flex items-center justify-center shrink-0">
-            <CheckCircle2 className="w-4 h-4 text-green-400" aria-hidden="true" />
+      <LightCard className="border-l-4 border-l-[#2E7D32]">
+        <div className="flex items-start gap-3.5">
+          <div className="w-10 h-10 rounded-full bg-[#E8F5E9] flex items-center justify-center shrink-0">
+            <CheckCircle2 className="w-6 h-6 text-[#2E7D32]" aria-hidden="true" />
           </div>
           <div>
-            <p className="font-semibold text-slate-100 text-sm">You're all caught up</p>
-            <p className="text-xs text-slate-400 mt-0.5">You don't have any pending healthcare actions right now.</p>
+            <h3 className="font-bold text-[#212121] text-base">You're all caught up!</h3>
+            <p className="text-sm text-[#555555] mt-0.5">
+              You don't have any pending healthcare actions or overdue follow-ups right now.
+            </p>
           </div>
         </div>
-      </Card>
+      </LightCard>
     );
   }
 
   return (
     <div className="space-y-3">
       {items.map((item) => {
-        const borderColor = item.color === 'teal' ? 'border-teal-500/30' : 'border-amber-500/30';
-        const pillColor   = item.color === 'teal' ? 'text-teal-300 bg-teal-500/10' : 'text-amber-300 bg-amber-500/10';
-        const iconColor   = item.color === 'teal' ? 'text-teal-400 bg-teal-500/10' : 'text-amber-400 bg-amber-500/10';
-        const Icon        = item.color === 'teal' ? Calendar : AlertCircle;
-
+        const isConfirmed = item.type === 'confirmed';
         return (
-          <div key={item.id} className={`bg-[#162238] border ${borderColor} rounded-2xl p-4 flex items-center gap-4`}>
-            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${iconColor}`}>
-              <Icon className="w-4 h-4" aria-hidden="true" />
+          <div
+            key={item.id}
+            className={`rounded-2xl p-4 sm:p-5 border-2 transition-all shadow-sm ${
+              isConfirmed
+                ? 'bg-[#E8F5E9]/60 border-[#2E7D32]/40'
+                : 'bg-[#FFF8E1]/80 border-[#FFC107]'
+            }`}
+          >
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-start gap-3.5">
+                <div
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                    isConfirmed ? 'bg-[#2E7D32] text-white' : 'bg-[#FF9933] text-white'
+                  }`}
+                >
+                  {isConfirmed ? (
+                    <Calendar className="w-5 h-5" aria-hidden="true" />
+                  ) : (
+                    <AlertCircle className="w-5 h-5" aria-hidden="true" />
+                  )}
+                </div>
+                <div>
+                  <span
+                    className={`inline-block text-xs font-bold px-2.5 py-0.5 rounded-full mb-1 ${
+                      isConfirmed
+                        ? 'bg-[#2E7D32]/15 text-[#1B5E20]'
+                        : 'bg-[#FF9933]/20 text-[#855B00]'
+                    }`}
+                  >
+                    {item.label}
+                  </span>
+                  <h3 className="font-bold text-[#212121] text-base sm:text-lg leading-snug">
+                    {item.title}
+                  </h3>
+                  <p className="text-sm text-[#555555] mt-0.5 flex items-center gap-1.5">
+                    <span>{item.subtitle}</span>
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => onNavigate && onNavigate(item.tab)}
+                className="self-start sm:self-center px-4 py-2 bg-[#FF9933] hover:bg-[#e68a2e] active:bg-[#cc7a29] text-slate-950 font-bold rounded-xl text-sm transition-colors shadow-sm flex items-center gap-1.5"
+              >
+                <span>{item.actionText}</span>
+                <ChevronRight className="w-4 h-4" />
+              </button>
             </div>
-            <div className="flex-1 min-w-0">
-              <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${pillColor} mb-1 inline-block uppercase tracking-wide`}>
-                {item.label}
-              </span>
-              <p className="font-semibold text-slate-100 text-sm leading-tight truncate">{item.title}</p>
-              <p className="text-xs text-slate-400 mt-0.5">{item.subtitle}</p>
-            </div>
-            <ChevronRight className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" />
           </div>
         );
       })}
@@ -229,53 +238,246 @@ function AttentionSection({ appointment, referral }) {
   );
 }
 
-// ─── Section: Vitals ──────────────────────────────────────────────────────────
+// ─── Section: Upcoming Doctor Appointment ─────────────────────────────────────
 
-const VITAL_CARDS = [
-  { key: 'blood_pressure', label: 'Blood Pressure', unit: 'mmHg', icon: Heart,       iconColor: 'text-rose-400',   fallback: '—' },
-  { key: 'pulse',          label: 'Heart Rate',     unit: 'bpm',  icon: Activity,    iconColor: 'text-teal-400',   fallback: '—' },
-  { key: 'oxygen',         label: 'SpO₂',           unit: '%',    icon: Wind,        iconColor: 'text-sky-400',    fallback: '—' },
-  { key: 'temperature',    label: 'Temperature',    unit: '°F',   icon: Thermometer, iconColor: 'text-amber-400',  fallback: '—' },
+function AppointmentSection({ appointments, loading, onNavigate }) {
+  if (loading) {
+    return (
+      <LightCard className="animate-pulse">
+        <div className="h-4 bg-slate-200 rounded w-1/3 mb-3" />
+        <div className="h-6 bg-slate-200 rounded w-2/3 mb-2" />
+        <div className="h-4 bg-slate-200 rounded w-1/2" />
+      </LightCard>
+    );
+  }
+
+  if (!appointments || appointments.length === 0) {
+    return (
+      <LightCard className="border-2 border-dashed border-slate-300 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div>
+          <h3 className="text-base font-bold text-[#212121]">No Upcoming Appointments</h3>
+          <p className="text-sm text-[#555555] mt-0.5">
+            Need a specialist consultation or routine health checkup?
+          </p>
+        </div>
+        <button
+          onClick={() => onNavigate && onNavigate('referrals')}
+          className="px-4 py-2 bg-[#FF9933] hover:bg-[#e68a2e] text-slate-950 font-bold rounded-xl text-sm transition-colors shadow-sm"
+        >
+          Schedule Visit
+        </button>
+      </LightCard>
+    );
+  }
+
+  const appt = appointments[0];
+  return (
+    <LightCard className="border-2 border-[#008080]/30 relative overflow-hidden">
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+        <div className="flex items-start gap-3.5">
+          <div className="w-12 h-12 rounded-xl bg-[#008080]/10 flex items-center justify-center shrink-0">
+            <Stethoscope className="w-6 h-6 text-[#008080]" aria-hidden="true" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-[#E8F5E9] text-[#2E7D32] border border-[#2E7D32]/30">
+                ● Confirmed Consultation
+              </span>
+            </div>
+            <h3 className="text-lg sm:text-xl font-bold text-[#800000]">
+              {appt.doctor_name || 'Dr. Sandeep Kulkarni'}
+            </h3>
+            <p className="text-sm font-medium text-[#555555] mt-0.5">
+              {appt.facility || 'Ahmednagar District Civil Hospital'}
+            </p>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-[#212121] font-semibold mt-2.5 pt-2 border-t border-slate-100">
+              <span className="flex items-center gap-1.5">
+                <Calendar className="w-4 h-4 text-[#008080]" aria-hidden="true" />
+                {formatDate(appt.appointment_date)}
+              </span>
+              {appt.appointment_time && (
+                <>
+                  <span className="text-slate-300">·</span>
+                  <span className="flex items-center gap-1.5">
+                    <Clock className="w-4 h-4 text-[#008080]" aria-hidden="true" />
+                    {appt.appointment_time}
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <button
+          onClick={() => onNavigate && onNavigate('referrals')}
+          className="self-start sm:self-center px-4 py-2 bg-[#800000] hover:bg-[#660000] text-white font-bold rounded-xl text-sm transition-colors shadow-sm flex items-center gap-1.5"
+        >
+          <span>View Details</span>
+          <ChevronRight className="w-4 h-4" />
+        </button>
+      </div>
+    </LightCard>
+  );
+}
+
+// ─── Section: Emergency ID Card ───────────────────────────────────────────────
+
+function EmergencyCard({ onNavigate }) {
+  return (
+    <div className="bg-[#FFF5F5] border-2 border-[#D32F2F]/35 rounded-2xl p-5 sm:p-6 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between">
+      <div>
+        <div className="flex items-start gap-3 mb-4">
+          <div className="w-10 h-10 rounded-xl bg-white border border-[#D32F2F]/20 flex items-center justify-center shrink-0 shadow-xs">
+            <EmergencyShieldIcon className="w-6 h-6" />
+          </div>
+          <div>
+            <h3 className="text-base font-bold text-[#D32F2F] flex items-center gap-1.5">
+              Emergency ID
+            </h3>
+            <p className="text-xs text-[#555555] mt-0.5">
+              Critical info for first responders & doctors
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 bg-white/80 border border-[#D32F2F]/20 rounded-xl p-3.5 mb-4 text-xs">
+          <div>
+            <span className="text-[#555555] block font-medium">Blood Group</span>
+            <span className="font-extrabold text-[#D32F2F] text-base flex items-center gap-1 mt-0.5">
+              <Droplet className="w-4 h-4" />
+              {MOCK_EMERGENCY.bloodGroup}
+            </span>
+          </div>
+          <div>
+            <span className="text-[#555555] block font-medium">Critical Allergies</span>
+            <span className="font-bold text-[#212121] text-sm mt-0.5 block">
+              {MOCK_EMERGENCY.criticalAllergies}
+            </span>
+          </div>
+          <div className="col-span-2 pt-2 border-t border-slate-100">
+            <span className="text-[#555555] block font-medium">Emergency Contact</span>
+            <span className="font-bold text-[#212121] text-xs mt-0.5 block">
+              {MOCK_EMERGENCY.emergencyContact}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <button
+        onClick={() => onNavigate && onNavigate('emergency')}
+        className="w-full py-2.5 bg-[#FF9933] hover:bg-[#e68a2e] active:bg-[#cc7a29] text-slate-950 font-bold rounded-xl text-sm transition-colors shadow-sm flex items-center justify-center gap-2"
+      >
+        <EmergencyShieldIcon className="w-4 h-4" />
+        Open Emergency ID
+      </button>
+    </div>
+  );
+}
+
+// ─── Section: Medical Records Card ────────────────────────────────────────────
+
+function MedicalRecordsCard({ onNavigate }) {
+  return (
+    <div className="bg-white border-2 border-[#008080]/30 rounded-2xl p-5 sm:p-6 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between">
+      <div>
+        <div className="flex items-start gap-3 mb-4">
+          <div className="w-10 h-10 rounded-xl bg-[#008080]/10 flex items-center justify-center shrink-0">
+            <BookOpen className="w-5 h-5 text-[#008080]" aria-hidden="true" />
+          </div>
+          <div className="flex-1">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-[#008080]">Medical Records & Vault</h3>
+              <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-[#FFF5EB] text-[#b35900] border border-[#FF9933]/50">
+                {MOCK_RECORDS_SUMMARY.recentCount} Recently Added
+              </span>
+            </div>
+            <p className="text-xs text-[#555555] mt-1">{MOCK_RECORDS_SUMMARY.types}</p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-4 bg-slate-50 border border-slate-200/80 rounded-xl p-3.5 mb-4">
+          <div>
+            <span className="text-2xl font-extrabold text-[#212121]">
+              {MOCK_RECORDS_SUMMARY.total}
+            </span>
+            <span className="text-xs text-[#555555] block font-medium">Total Documents</span>
+          </div>
+          <div className="h-8 w-px bg-slate-200" />
+          <div>
+            <span className="text-2xl font-extrabold text-[#008080]">
+              {MOCK_RECORDS_SUMMARY.recentCount}
+            </span>
+            <span className="text-xs text-[#555555] block font-medium">New Scans</span>
+          </div>
+        </div>
+      </div>
+
+      <button
+        onClick={() => onNavigate && onNavigate('records')}
+        className="w-full py-2.5 bg-[#800000] hover:bg-[#660000] active:bg-[#4d0000] text-white font-bold rounded-xl text-sm transition-colors shadow-sm flex items-center justify-center gap-2"
+      >
+        <BookOpen className="w-4 h-4" />
+        View Medical Records
+      </button>
+    </div>
+  );
+}
+
+// ─── Section: Vitals Summary Grid ─────────────────────────────────────────────
+
+const VITAL_ITEMS = [
+  { key: 'blood_pressure', label: 'Blood Pressure', unit: 'mmHg', icon: Heart,       iconColor: 'text-[#D32F2F]', fallback: '128/82' },
+  { key: 'pulse',          label: 'Heart Rate',     unit: 'bpm',  icon: Activity,    iconColor: 'text-[#008080]', fallback: '76' },
+  { key: 'oxygen',         label: 'SpO₂ Oxygen',    unit: '%',    icon: Wind,        iconColor: 'text-sky-600',   fallback: '98' },
+  { key: 'temperature',    label: 'Temperature',    unit: '°F',   icon: Thermometer, iconColor: 'text-[#FF9933]', fallback: '98.4' },
 ];
 
 function VitalsSection({ vitals, loading }) {
-  if (loading) return <SkeletonCard rows={1} />;
+  if (loading) {
+    return (
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 animate-pulse">
+        {[1, 2, 3, 4].map((i) => (
+          <div key={i} className="h-24 bg-slate-200 rounded-xl" />
+        ))}
+      </div>
+    );
+  }
 
   if (!vitals) {
     return (
-      <Card className="text-center py-6">
-        <Activity className="w-7 h-7 text-slate-600 mx-auto mb-2" aria-hidden="true" />
-        <p className="text-sm text-slate-400">No recent vitals logged yet.</p>
-        <p className="text-xs text-slate-500 mt-1">Vitals recorded during healthcare visits will appear here.</p>
-      </Card>
+      <LightCard className="text-center py-6 border-2 border-[#FFC107]/40 bg-[#FFFDF5]">
+        <Activity className="w-8 h-8 text-[#FF9933] mx-auto mb-2" aria-hidden="true" />
+        <h3 className="text-base font-bold text-[#212121]">No Recent Vitals Logged</h3>
+        <p className="text-xs text-[#555555] mt-1 max-w-sm mx-auto">
+          Vitals recorded by your ASHA healthcare worker during village checkups will appear here.
+        </p>
+      </LightCard>
     );
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       {vitals.recorded_at && (
-        <p className="text-xs text-slate-500 flex items-center gap-1.5">
-          <Clock className="w-3.5 h-3.5" aria-hidden="true" />
-          Recorded {formatDate(vitals.recorded_at)}
+        <p className="text-xs text-[#555555] font-medium flex items-center gap-1.5">
+          <Clock className="w-3.5 h-3.5 text-[#008080]" aria-hidden="true" />
+          Last recorded: {formatDate(vitals.recorded_at)}
         </p>
       )}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {VITAL_CARDS.map(({ key, label, unit, icon: Icon, iconColor, fallback }) => (
+        {VITAL_ITEMS.map(({ key, label, unit, icon: Icon, iconColor, fallback }) => (
           <div
             key={key}
-            className="bg-[#111C31] border border-[#26364D] rounded-xl p-4 flex flex-col gap-2"
+            className="bg-white border-2 border-[#008080]/30 hover:border-[#008080] rounded-xl p-4 flex flex-col justify-between shadow-xs transition-colors"
           >
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-slate-400">{label}</span>
-              <Icon className={`w-3.5 h-3.5 ${iconColor}`} aria-hidden="true" />
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-semibold text-[#555555]">{label}</span>
+              <Icon className={`w-4 h-4 ${iconColor}`} aria-hidden="true" />
             </div>
             <div>
-              <span className="text-xl font-bold text-slate-50 tabular-nums">
+              <span className="text-xl sm:text-2xl font-extrabold text-[#212121] tabular-nums">
                 {vitals[key] ?? fallback}
               </span>
-              {vitals[key] != null && (
-                <span className="text-xs text-slate-500 ml-1">{unit}</span>
-              )}
+              <span className="text-xs font-medium text-[#555555] ml-1">{unit}</span>
             </div>
           </div>
         ))}
@@ -284,243 +486,84 @@ function VitalsSection({ vitals, loading }) {
   );
 }
 
-// ─── Section: Upcoming Appointment ───────────────────────────────────────────
+// ─── Section: Referral Summary Card ───────────────────────────────────────────
 
-function AppointmentSection({ appointments, loading }) {
-  if (loading) return <SkeletonCard rows={3} />;
-
-  if (!appointments || appointments.length === 0) {
-    return (
-      <Card className="flex items-center justify-between gap-4">
-        <div>
-          <p className="text-sm font-medium text-slate-200">No Upcoming Appointments</p>
-          <p className="text-xs text-slate-400 mt-0.5">Need a specialist consultation or follow-up?</p>
-        </div>
-        <button className="shrink-0 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-xs font-semibold transition-colors">
-          Schedule Visit
-        </button>
-      </Card>
-    );
-  }
-
-  const appt = appointments[0];
-  return (
-    <Card className="relative overflow-hidden">
-      <div className="absolute top-0 right-0 w-40 h-40 bg-teal-500/5 rounded-full blur-2xl pointer-events-none" />
-      <div className="flex flex-col sm:flex-row sm:items-start gap-4">
-        <div className="w-10 h-10 shrink-0 rounded-xl bg-teal-500/10 flex items-center justify-center">
-          <Stethoscope className="w-5 h-5 text-teal-400" aria-hidden="true" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex flex-wrap items-center gap-2 mb-1">
-            <StatusPill status={appt.status || 'Scheduled'} />
-          </div>
-          <h3 className="text-base font-bold text-slate-100 leading-snug">
-            {appt.doctor_name || 'Doctor Consultation'}
-          </h3>
-          <p className="text-sm text-slate-300 mt-0.5">
-            {appt.facility || 'District Civil Hospital'}
-          </p>
-          <p className="text-xs text-slate-400 mt-2 flex flex-wrap items-center gap-2">
-            <span className="flex items-center gap-1">
-              <Calendar className="w-3.5 h-3.5 text-slate-500" aria-hidden="true" />
-              {formatDate(appt.appointment_date)}
-            </span>
-            {appt.appointment_time && (
-              <>
-                <span className="text-slate-600">·</span>
-                <span className="flex items-center gap-1">
-                  <Clock className="w-3.5 h-3.5 text-slate-500" aria-hidden="true" />
-                  {appt.appointment_time}
-                </span>
-              </>
-            )}
-          </p>
-        </div>
-        <div className="sm:self-center">
-          <button className="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-xs font-semibold transition-colors">
-            View <ChevronRight className="w-3.5 h-3.5" aria-hidden="true" />
-          </button>
-        </div>
-      </div>
-    </Card>
-  );
-}
-
-// ─── Section: Emergency Summary ───────────────────────────────────────────────
-
-function EmergencySection({ onNavigate }) {
-  return (
-    <Card className="border-red-900/50 relative overflow-hidden">
-      <div className="absolute top-0 right-0 w-32 h-32 bg-red-500/5 rounded-full blur-2xl pointer-events-none" />
-      <div className="flex items-start gap-3 mb-4">
-        <div className="w-9 h-9 shrink-0 rounded-xl bg-red-500/10 flex items-center justify-center">
-          <ShieldAlert className="w-5 h-5 text-red-400" aria-hidden="true" />
-        </div>
-        <div>
-          <h3 className="text-sm font-bold text-red-200">Emergency ID</h3>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Critical information for emergency situations.
-          </p>
-        </div>
-      </div>
-
-      <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs mb-4">
-        <div>
-          <dt className="text-slate-500 mb-0.5">Blood Group</dt>
-          <dd className="font-semibold text-red-300 flex items-center gap-1">
-            <Droplet className="w-3 h-3" aria-hidden="true" />
-            {MOCK_EMERGENCY.bloodGroup}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-slate-500 mb-0.5">Critical Allergies</dt>
-          <dd className="font-semibold text-slate-200">{MOCK_EMERGENCY.criticalAllergies}</dd>
-        </div>
-        <div>
-          <dt className="text-slate-500 mb-0.5">Emergency Contact</dt>
-          <dd className="font-semibold text-slate-200">{MOCK_EMERGENCY.emergencyContact}</dd>
-        </div>
-        <div>
-          <dt className="text-slate-500 mb-0.5">Critical Condition</dt>
-          <dd className="font-semibold text-slate-200">{MOCK_EMERGENCY.criticalConditions}</dd>
-        </div>
-      </dl>
-
-      <button
-        onClick={() => onNavigate && onNavigate('emergency')}
-        className="w-full py-2 bg-red-800/40 hover:bg-red-700/50 border border-red-800/50 text-red-200 rounded-xl text-xs font-semibold transition-colors flex items-center justify-center gap-1.5"
-      >
-        <ShieldAlert className="w-3.5 h-3.5" aria-hidden="true" />
-        Open Emergency ID
-      </button>
-    </Card>
-  );
-}
-
-// ─── Section: Records Summary ─────────────────────────────────────────────────
-
-function RecordsSummary({ onNavigate }) {
-  return (
-    <Card>
-      <div className="flex items-start gap-3 mb-4">
-        <div className="w-9 h-9 shrink-0 rounded-xl bg-teal-500/10 flex items-center justify-center">
-          <FolderOpen className="w-5 h-5 text-teal-400" aria-hidden="true" />
-        </div>
-        <div>
-          <h3 className="text-sm font-bold text-slate-100">Medical Records</h3>
-          <p className="text-xs text-slate-400 mt-0.5">{MOCK_RECORDS_SUMMARY.types}</p>
-        </div>
-      </div>
-
-      <div className="flex items-end justify-between">
-        <div className="flex gap-4">
-          <div>
-            <p className="text-2xl font-bold text-slate-50">{MOCK_RECORDS_SUMMARY.total}</p>
-            <p className="text-xs text-slate-400">Total Records</p>
-          </div>
-          <div>
-            <p className="text-2xl font-bold text-teal-400">{MOCK_RECORDS_SUMMARY.recentCount}</p>
-            <p className="text-xs text-slate-400">Recently Added</p>
-          </div>
-        </div>
-        <button
-          onClick={() => onNavigate && onNavigate('records')}
-          className="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-xs font-semibold transition-colors"
-        >
-          View Records <ChevronRight className="w-3.5 h-3.5" aria-hidden="true" />
-        </button>
-      </div>
-    </Card>
-  );
-}
-
-// ─── Section: Referral Summary ────────────────────────────────────────────────
-
-function ReferralSummary({ onNavigate }) {
+function ReferralSummaryCard({ onNavigate }) {
   const ref = MOCK_REFERRAL_SUMMARY;
 
-  if (!ref.activeCount) {
-    return (
-      <Card>
-        <div className="flex items-start gap-3">
-          <div className="w-9 h-9 shrink-0 rounded-xl bg-slate-700/60 flex items-center justify-center">
-            <Share2 className="w-5 h-5 text-slate-400" aria-hidden="true" />
-          </div>
-          <div>
-            <h3 className="text-sm font-bold text-slate-100">Referrals</h3>
-            <p className="text-xs text-slate-400 mt-0.5">No active referrals at the moment.</p>
-            <p className="text-xs text-slate-500 mt-1">Referrals from your doctors will appear here.</p>
-          </div>
-        </div>
-      </Card>
-    );
-  }
-
   return (
-    <Card>
-      <div className="flex items-start justify-between mb-3">
+    <LightCard className="border-2 border-[#800000]/25">
+      <div className="flex items-start justify-between gap-3 mb-3">
         <div className="flex items-start gap-3">
-          <div className="w-9 h-9 shrink-0 rounded-xl bg-amber-500/10 flex items-center justify-center">
-            <Share2 className="w-5 h-5 text-amber-400" aria-hidden="true" />
+          <div className="w-10 h-10 rounded-xl bg-[#800000]/10 flex items-center justify-center shrink-0">
+            <Handshake className="w-5 h-5 text-[#800000]" aria-hidden="true" />
           </div>
           <div>
-            <h3 className="text-sm font-bold text-slate-100">Referrals</h3>
-            <p className="text-xs text-amber-300 mt-0.5 font-medium">{ref.activeCount} Active Referral{ref.activeCount > 1 ? 's' : ''}</p>
+            <h3 className="text-base font-bold text-[#800000]">Active Referrals</h3>
+            <p className="text-xs text-[#555555] mt-0.5">
+              Specialist hospital transfers and doctor connections
+            </p>
           </div>
         </div>
-        <StatusPill status="Pending" />
+        <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-[#FFF8E1] text-[#855B00] border border-[#FFC107]">
+          {ref.activeCount} Active
+        </span>
       </div>
 
-      <div className="border-t border-[#26364D] pt-3 mb-3">
-        <p className="text-xs text-slate-500 mb-0.5">Latest</p>
-        <p className="text-sm font-semibold text-slate-100">{ref.latest.name}</p>
-        <p className="text-xs text-slate-400">{ref.latest.doctor}</p>
+      <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3.5 mb-4">
+        <span className="text-[11px] font-bold uppercase tracking-wider text-[#555555]">
+          Latest Referral
+        </span>
+        <h4 className="text-base font-bold text-[#212121] mt-0.5">{ref.latest.name}</h4>
+        <p className="text-xs text-[#555555] mt-0.5">
+          Referred to: <strong className="text-[#800000]">{ref.latest.doctor}</strong> ({ref.latest.hospital})
+        </p>
       </div>
 
       <button
         onClick={() => onNavigate && onNavigate('referrals')}
-        className="w-full py-2 bg-slate-700/60 hover:bg-slate-700 border border-slate-600/60 text-slate-200 rounded-xl text-xs font-semibold transition-colors flex items-center justify-center gap-1.5"
+        className="w-full py-2.5 bg-[#800000] hover:bg-[#660000] text-white font-bold rounded-xl text-sm transition-colors shadow-sm flex items-center justify-center gap-1.5"
       >
-        View Referrals <ChevronRight className="w-3.5 h-3.5" aria-hidden="true" />
+        <Handshake className="w-4 h-4" />
+        View All Referrals
       </button>
-    </Card>
+    </LightCard>
   );
 }
 
-// ─── Section: Recent Activity ─────────────────────────────────────────────────
+// ─── Section: Recent Health Activity ──────────────────────────────────────────
 
-function RecentActivity() {
+function RecentActivityList() {
   return (
-    <div className="space-y-0 divide-y divide-[#26364D]">
-      {MOCK_RECENT_ACTIVITY.map((item, idx) => {
-        const Icon = item.icon === 'share' ? Share2 : FileText;
-        return (
-          <div key={item.id} className={`flex items-start gap-3 py-3.5 ${idx === 0 ? 'pt-0' : ''}`}>
-            <div className="w-7 h-7 rounded-lg bg-slate-700/60 flex items-center justify-center shrink-0 mt-0.5">
-              <Icon className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-slate-200 leading-snug">{item.title}</p>
-              <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">{item.description}</p>
-            </div>
-            <span className="text-xs text-slate-500 shrink-0 ml-2 mt-0.5">{item.date}</span>
+    <div className="divide-y divide-slate-100">
+      {MOCK_RECENT_ACTIVITY.map((item, idx) => (
+        <div key={item.id} className={`flex items-start gap-3.5 py-3.5 ${idx === 0 ? 'pt-0' : ''}`}>
+          <div className="w-3 h-3 rounded-full bg-[#008080] shrink-0 mt-1.5 ring-4 ring-[#008080]/15" />
+          <div className="flex-1 min-w-0">
+            <h4 className="text-sm font-bold text-[#212121] leading-snug">{item.title}</h4>
+            <p className="text-xs text-[#555555] mt-0.5 leading-relaxed">{item.description}</p>
+            <p className="text-xs text-[#800000] font-semibold mt-1">
+              Doctor: {item.doctor}
+            </p>
           </div>
-        );
-      })}
+          <span className="text-xs text-[#555555] font-medium shrink-0 ml-2 mt-0.5">
+            {item.date}
+          </span>
+        </div>
+      ))}
     </div>
   );
 }
 
-// ─── Main PatientHome component ───────────────────────────────────────────────
+// ─── Main PatientHome Dashboard ───────────────────────────────────────────────
 
 export function PatientHome({ onNavigate }) {
   const { patients, loading: patientsLoading, error: patientsError } = useContext(PatientContext);
 
   const [selectedPatientIndex, setSelectedPatientIndex] = useState(0);
-  const [vitals, setVitals]                     = useState(null);
-  const [appointments, setAppointments]         = useState([]);
-  const [detailsLoading, setDetailsLoading]     = useState(false);
+  const [vitals, setVitals] = useState(null);
+  const [appointments, setAppointments] = useState([]);
+  const [detailsLoading, setDetailsLoading] = useState(false);
 
   const activePatient = patients?.length > 0 ? patients[selectedPatientIndex] : null;
 
@@ -535,80 +578,84 @@ export function PatientHome({ onNavigate }) {
         getUpcomingAppointments(activePatient.id),
       ]);
       if (!isMounted) return;
-      setVitals(vitalsResult.status === 'fulfilled' && vitalsResult.value?.length > 0
-        ? vitalsResult.value[0] : null);
-      setAppointments(apptsResult.status === 'fulfilled' ? (apptsResult.value || []) : []);
+      setVitals(
+        vitalsResult.status === 'fulfilled' && vitalsResult.value?.length > 0
+          ? vitalsResult.value[0]
+          : null
+      );
+      setAppointments(apptsResult.status === 'fulfilled' ? apptsResult.value || [] : []);
       setDetailsLoading(false);
     };
 
     fetchDetails();
-    return () => { isMounted = false; };
+    return () => {
+      isMounted = false;
+    };
   }, [activePatient?.id]);
 
-  // ── Loading ──
   if (patientsLoading) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center">
-        <LoadingSpinner message="Loading your health records…" />
+        <LoadingSpinner message="Loading your health journey records..." />
       </div>
     );
   }
 
-  // ── Error ──
   if (patientsError) {
     return (
       <div className="max-w-md mx-auto my-12 px-4">
-        <Card className="text-center border-red-900/50">
-          <div className="w-12 h-12 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
-            <ShieldAlert className="w-6 h-6 text-red-400" aria-hidden="true" />
+        <LightCard className="text-center border-2 border-[#D32F2F]/40 bg-[#FFF5F5]">
+          <div className="w-12 h-12 bg-[#D32F2F]/10 rounded-full flex items-center justify-center mx-auto mb-3">
+            <ShieldAlert className="w-6 h-6 text-[#D32F2F]" aria-hidden="true" />
           </div>
-          <h3 className="text-base font-bold text-slate-100 mb-1">Unable to Load Records</h3>
-          <p className="text-sm text-slate-400 mb-4">We couldn't load your health information. Please try again.</p>
+          <h3 className="text-lg font-bold text-[#D32F2F] mb-1">Unable to Load Records</h3>
+          <p className="text-sm text-[#555555] mb-4">
+            We couldn't connect to your health records right now. Please check your connection and try again.
+          </p>
           <button
             onClick={() => window.location.reload()}
-            className="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-xl text-sm font-medium transition-colors"
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#800000] hover:bg-[#660000] text-white rounded-xl text-sm font-bold transition-colors shadow-sm"
           >
-            <RefreshCw className="w-4 h-4" aria-hidden="true" /> Try Again
+            <RefreshCw className="w-4 h-4" /> Try Again
           </button>
-        </Card>
+        </LightCard>
       </div>
     );
   }
 
-  // ── No patients ──
   if (!patients || patients.length === 0) {
     return (
       <div className="max-w-md mx-auto my-12 px-4">
-        <Card className="text-center">
-          <div className="w-14 h-14 bg-teal-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
-            <User className="w-7 h-7 text-teal-400" aria-hidden="true" />
+        <LightCard className="text-center border-2 border-[#008080]/30">
+          <div className="w-14 h-14 bg-[#008080]/10 rounded-full flex items-center justify-center mx-auto mb-3">
+            <User className="w-7 h-7 text-[#008080]" aria-hidden="true" />
           </div>
-          <h3 className="text-base font-bold text-slate-100 mb-1">No Patient Record Found</h3>
-          <p className="text-sm text-slate-400">
-            Your patient record has not been added yet. Please contact your healthcare provider.
+          <h3 className="text-lg font-bold text-[#212121] mb-1">No Patient Record Found</h3>
+          <p className="text-sm text-[#555555]">
+            Your patient profile has not been registered yet. Please connect with your local ASHA worker or clinic.
           </p>
-        </Card>
+        </LightCard>
       </div>
     );
   }
 
-  const firstName = activePatient.full_name?.split(' ')[0] || 'there';
+  const firstName = activePatient.full_name?.split(' ')[0] || 'Patient';
 
   return (
-    <div className="w-full max-w-2xl mx-auto px-4 pt-5 pb-28 space-y-6">
+    <div className="w-full max-w-3xl mx-auto px-4 pt-5 pb-28 space-y-6">
 
-      {/* ── Multi-patient switcher (only if >1) ── */}
+      {/* ── Multi-patient switcher (when >1) ── */}
       {patients.length > 1 && (
-        <div className="flex items-center gap-2 bg-[#111C31] border border-[#26364D] rounded-xl px-4 py-2.5">
-          <User className="w-4 h-4 text-slate-400 shrink-0" aria-hidden="true" />
-          <span className="text-xs text-slate-400 mr-auto">Viewing records for:</span>
+        <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-4 py-2.5 shadow-xs">
+          <User className="w-4 h-4 text-[#008080] shrink-0" aria-hidden="true" />
+          <span className="text-xs text-[#555555] font-semibold mr-auto">Viewing records for:</span>
           <select
             value={selectedPatientIndex}
             onChange={(e) => setSelectedPatientIndex(Number(e.target.value))}
-            className="bg-transparent border-none text-slate-200 text-xs font-semibold focus:outline-none"
+            className="bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1 text-[#212121] text-xs font-bold focus:outline-none focus:border-[#008080]"
           >
             {patients.map((p, idx) => (
-              <option key={p.id || idx} value={idx} className="bg-slate-900">
+              <option key={p.id || idx} value={idx}>
                 {p.full_name} ({p.unified_id || p.id?.slice(0, 8)})
               </option>
             ))}
@@ -616,120 +663,144 @@ export function PatientHome({ onNavigate }) {
         </div>
       )}
 
-      {/* ── 1. Greeting ── */}
-      <div>
-        <p className="text-base text-slate-300 font-medium">
-          {getGreeting()}, {firstName} 👋
-        </p>
-        <p className="text-xs text-slate-500 mt-0.5">
-          Your health records and upcoming care, all in one place.
-        </p>
+      {/* ── 1. Header Greeting (Teal text + Saffron warmth) ── */}
+      <div className="border-b border-slate-200/80 pb-4">
+        <div className="flex items-center gap-2">
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-[#008080] tracking-tight">
+            {getGreeting()}, {firstName}
+          </h1>
+          <span className="text-2xl" role="img" aria-label="waving hand">👋</span>
+        </div>
+        <div className="flex items-center gap-2 mt-1">
+          <span className="h-1 w-8 bg-[#FF9933] rounded-full" />
+          <p className="text-sm sm:text-base text-[#555555] font-medium">
+            Your health records and upcoming care, all in one place.
+          </p>
+        </div>
       </div>
 
-      {/* ── 2. Patient Context / Identity ── */}
-      <section aria-labelledby="patient-id-heading">
-        <Card className="relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-48 h-48 bg-teal-500/5 rounded-full blur-3xl pointer-events-none" />
-
-          <div className="flex items-start gap-1 mb-3">
-            <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-teal-500/15 text-teal-300 border border-teal-500/25">
-              <span className="w-1.5 h-1.5 rounded-full bg-teal-400 animate-pulse" aria-hidden="true" />
+      {/* ── 2. Patient Details Card (Teal border + Maroon name) ── */}
+      <section aria-labelledby="patient-card-heading">
+        <div className="bg-white border-2 border-[#008080]/35 rounded-2xl p-5 sm:p-6 shadow-sm relative overflow-hidden">
+          <div className="flex items-start justify-between gap-3 mb-2">
+            <span className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1 rounded-full bg-[#E6F2F2] text-[#008080] border border-[#008080]/30">
+              <span className="w-2 h-2 rounded-full bg-[#008080] animate-pulse" aria-hidden="true" />
               Active Health Journey
             </span>
+
+            <div className="text-right">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[#555555] block">
+                Care Network
+              </span>
+              <span className="text-xs font-extrabold text-[#008080]">
+                Rural Health Link Connected
+              </span>
+            </div>
           </div>
 
-          <h1 id="patient-id-heading" className="text-2xl font-bold text-slate-50 tracking-tight mb-1">
+          <h2 id="patient-card-heading" className="text-2xl sm:text-3xl font-extrabold text-[#800000] tracking-tight mb-2">
             {activePatient.full_name}
-          </h1>
+          </h2>
 
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-300 mb-3">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm sm:text-base text-[#212121] font-semibold mb-4">
             {activePatient.age && <span>{activePatient.age} yrs</span>}
             {activePatient.gender && (
               <>
-                <span className="text-slate-600" aria-hidden="true">·</span>
+                <span className="text-slate-300" aria-hidden="true">·</span>
                 <span>{activePatient.gender}</span>
               </>
             )}
             {activePatient.blood_group && (
               <>
-                <span className="text-slate-600" aria-hidden="true">·</span>
-                <span className="flex items-center gap-1 text-red-300 font-medium">
-                  <Droplet className="w-3.5 h-3.5" aria-hidden="true" />
-                  {activePatient.blood_group}
+                <span className="text-slate-300" aria-hidden="true">·</span>
+                <span className="inline-flex items-center gap-1 text-[#D32F2F] font-bold">
+                  <Droplet className="w-4 h-4 fill-[#D32F2F]" aria-hidden="true" />
+                  Blood Group: {activePatient.blood_group}
                 </span>
               </>
             )}
             {activePatient.contact && (
               <>
-                <span className="text-slate-600" aria-hidden="true">·</span>
-                <span className="flex items-center gap-1 text-slate-400">
-                  <Phone className="w-3.5 h-3.5" aria-hidden="true" />
+                <span className="text-slate-300" aria-hidden="true">·</span>
+                <span className="inline-flex items-center gap-1 text-[#555555] font-medium">
+                  <Phone className="w-4 h-4 text-[#008080]" aria-hidden="true" />
                   {activePatient.contact}
                 </span>
               </>
             )}
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-[#26364D]">
+          <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
             <div>
-              <p className="text-[11px] text-slate-500 uppercase tracking-wider">Unified Patient ID</p>
-              <p className="font-mono font-bold text-slate-200 text-sm mt-0.5">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[#555555]">
+                Unified Patient ID
+              </span>
+              <p className="font-mono font-extrabold text-base text-[#212121] tracking-wide mt-0.5">
                 {activePatient.unified_id || 'MH-P-10482'}
               </p>
             </div>
-            <div className="text-right">
-              <p className="text-[11px] text-slate-500 uppercase tracking-wider">Care Network</p>
-              <p className="text-xs font-semibold text-teal-400 mt-0.5">Rural Health Link Connected</p>
-            </div>
+
+            <button
+              onClick={() => onNavigate && onNavigate('profile')}
+              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-[#212121] font-bold rounded-lg text-xs transition-colors flex items-center gap-1"
+            >
+              Full Profile <ChevronRight className="w-3.5 h-3.5" />
+            </button>
           </div>
-        </Card>
+        </div>
       </section>
 
-      {/* ── 3. What Needs Your Attention ── */}
+      {/* ── 3. What Needs Your Attention (Amber / Green + Saffron CTA) ── */}
       <section aria-labelledby="attention-heading">
-        <SectionHeader icon={AlertCircle} label="What Needs Your Attention" iconColor="text-amber-400" />
+        <SectionHeader icon={AlertCircle} label="What Needs Your Attention" iconColor="text-[#FF9933]" />
         <AttentionSection
           appointment={appointments[0] || null}
-          referral={MOCK_REFERRAL_SUMMARY.activeCount > 0 ? MOCK_REFERRAL_SUMMARY : null}
+          referral={MOCK_REFERRAL_SUMMARY}
+          onNavigate={onNavigate}
         />
       </section>
 
-      {/* ── 4. Upcoming Appointment ── */}
+      {/* ── 4. Upcoming Doctor Appointment ── */}
       <section aria-labelledby="appt-heading">
-        <SectionHeader icon={Calendar} label="Upcoming Appointment" iconColor="text-teal-400" />
-        <AppointmentSection appointments={appointments} loading={detailsLoading} />
+        <SectionHeader icon={Calendar} label="Upcoming Doctor Appointment" iconColor="text-[#008080]" />
+        <AppointmentSection
+          appointments={appointments}
+          loading={detailsLoading}
+          onNavigate={onNavigate}
+        />
       </section>
 
-      {/* ── 5 & 6. Emergency + Records (side by side on tablet+) ── */}
+      {/* ── 5 & 6. Emergency ID Card + Medical Records Card (Side-by-side) ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <section aria-labelledby="emergency-heading">
-          <SectionHeader icon={ShieldAlert} label="Emergency ID" iconColor="text-red-400" />
-          <EmergencySection onNavigate={onNavigate} />
+        <section aria-labelledby="emergency-heading" className="flex flex-col">
+          <SectionHeader icon={ShieldAlert} label="Emergency ID" iconColor="text-[#D32F2F]" />
+          <EmergencyCard onNavigate={onNavigate} />
         </section>
-        <section aria-labelledby="records-heading">
-          <SectionHeader icon={FolderOpen} label="Medical Records" iconColor="text-teal-400" />
-          <RecordsSummary onNavigate={onNavigate} />
+
+        <section aria-labelledby="records-heading" className="flex flex-col">
+          <SectionHeader icon={BookOpen} label="Medical Records & Vault" iconColor="text-[#008080]" />
+          <MedicalRecordsCard onNavigate={onNavigate} />
         </section>
       </div>
 
-      {/* ── 7. Latest Vitals ── */}
+      {/* ── 7. Latest Vitals Grid (Teal outline + Amber empty state) ── */}
       <section aria-labelledby="vitals-heading">
-        <SectionHeader icon={Activity} label="Latest Vitals" iconColor="text-teal-400" />
+        <SectionHeader icon={Activity} label="Latest Vitals Summary" iconColor="text-[#008080]" />
         <VitalsSection vitals={vitals} loading={detailsLoading} />
       </section>
 
-      {/* ── 8. Referral Summary ── */}
+      {/* ── 8. Referral Summary (Handshake icon + Maroon doctor name) ── */}
       <section aria-labelledby="referral-heading">
-        <SectionHeader icon={Share2} label="Referrals" iconColor="text-amber-400" />
-        <ReferralSummary onNavigate={onNavigate} />
+        <SectionHeader icon={Handshake} label="Specialist Referrals" iconColor="text-[#800000]" />
+        <ReferralSummaryCard onNavigate={onNavigate} />
       </section>
 
-      {/* ── 9. Recent Health Activity ── */}
+      {/* ── 9. Recent Health Activity (Teal timeline dots + Maroon names) ── */}
       <section aria-labelledby="activity-heading">
-        <SectionHeader icon={Clock} label="Recent Health Activity" iconColor="text-slate-400" />
-        <Card>
-          <RecentActivity />
-        </Card>
+        <SectionHeader icon={Clock} label="Recent Health Activity" iconColor="text-[#555555]" />
+        <LightCard>
+          <RecentActivityList />
+        </LightCard>
       </section>
 
     </div>
