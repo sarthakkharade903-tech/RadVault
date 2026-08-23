@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 
 export default function RecordViewerModal({ record, onClose }) {
   const [isInverted, setIsInverted] = useState(false);
@@ -49,12 +49,12 @@ export default function RecordViewerModal({ record, onClose }) {
         <div className="rv-modal-content-grid">
           {/* Left: Interactive Scan Viewer */}
           <div className="rv-viewer-pane">
-            <div className="rv-viewer-image-wrap">
+            <div className="rv-viewer-image-wrap" style={{ overflow: 'auto', cursor: zoomLevel > 1 ? 'grab' : 'default' }}>
               <img
                 src={record.previewUrl}
                 alt={record.title}
                 className={`rv-viewer-img ${isInverted ? "inverted" : ""}`}
-                style={{ transform: `scale(${zoomLevel})` }}
+                style={{ transform: `scale(${zoomLevel})`, transformOrigin: 'top left', display: 'block' }}
               />
             </div>
 

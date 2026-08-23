@@ -322,7 +322,12 @@ function AppointmentSection({ appointments, loading, onNavigate }) {
 
 // ─── Section: Emergency ID Card ───────────────────────────────────────────────
 
-function EmergencyCard({ onNavigate }) {
+function EmergencyCard({ onNavigate, patient }) {
+  // Use real Supabase patient data; fall back to mock only if field is missing
+  const bloodGroup = patient?.blood_group || MOCK_EMERGENCY.bloodGroup;
+  const allergies = patient?.critical_allergies || MOCK_EMERGENCY.criticalAllergies;
+  const emergencyContact = patient?.emergency_contact || MOCK_EMERGENCY.emergencyContact;
+
   return (
     <div className="bg-[#FFF5F5] border-2 border-[#D32F2F]/35 rounded-2xl p-5 sm:p-6 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between">
       <div>
@@ -345,19 +350,19 @@ function EmergencyCard({ onNavigate }) {
             <span className="text-[#555555] block font-medium">Blood Group</span>
             <span className="font-extrabold text-[#D32F2F] text-base flex items-center gap-1 mt-0.5">
               <Droplet className="w-4 h-4" />
-              {MOCK_EMERGENCY.bloodGroup}
+              {bloodGroup}
             </span>
           </div>
           <div>
             <span className="text-[#555555] block font-medium">Critical Allergies</span>
             <span className="font-bold text-[#212121] text-sm mt-0.5 block">
-              {MOCK_EMERGENCY.criticalAllergies}
+              {allergies}
             </span>
           </div>
           <div className="col-span-2 pt-2 border-t border-slate-100">
             <span className="text-[#555555] block font-medium">Emergency Contact</span>
             <span className="font-bold text-[#212121] text-xs mt-0.5 block">
-              {MOCK_EMERGENCY.emergencyContact}
+              {emergencyContact}
             </span>
           </div>
         </div>
@@ -571,6 +576,10 @@ export function PatientHome({ onNavigate }) {
     if (!activePatient?.id) return;
     let isMounted = true;
 
+    // Immediately clear stale data so old patient info doesn't flash
+    setVitals(null);
+    setAppointments([]);
+
     const fetchDetails = async () => {
       setDetailsLoading(true);
       const [vitalsResult, apptsResult] = await Promise.allSettled([
@@ -774,7 +783,7 @@ export function PatientHome({ onNavigate }) {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <section aria-labelledby="emergency-heading" className="flex flex-col">
           <SectionHeader icon={ShieldAlert} label="Emergency ID" iconColor="text-[#D32F2F]" />
-          <EmergencyCard onNavigate={onNavigate} />
+          <EmergencyCard onNavigate={onNavigate} patient={activePatient} />
         </section>
 
         <section aria-labelledby="records-heading" className="flex flex-col">
