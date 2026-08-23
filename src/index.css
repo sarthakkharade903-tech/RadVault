@@ -2,24 +2,27 @@
 @import "./styles/patientModules.css";
 
 @theme {
-  --color-brand-bg: #F9F9F9;
-  --color-brand-card: #FFFFFF;
-  --color-brand-text: #212121;
-  --color-brand-text-secondary: #555555;
-  --color-brand-teal: #008080;
-  --color-brand-teal-light: #E6F2F2;
-  --color-brand-maroon: #800000;
-  --color-brand-maroon-light: #F7E6E6;
-  --color-brand-saffron: #FF9933;
-  --color-brand-saffron-light: #FFF5EB;
-  --color-brand-success: #2E7D32;
-  --color-brand-warning: #FFC107;
-  --color-brand-error: #D32F2F;
+  --color-teal: #008080;
+  --color-teal-light: #E6F2F2;
+  --color-maroon: #800000;
+  --color-maroon-light: #F7E6E6;
+  --color-saffron: #FF9933;
+  --color-saffron-light: #FFF5EB;
+  --color-green: #2E7D32;
+  --color-amber: #FFC107;
+  --color-red: #D32F2F;
 }
 
 :root {
+  --color-teal: #008080;
+  --color-maroon: #800000;
+  --color-saffron: #FF9933;
+  --color-green: #2E7D32;
+  --color-amber: #FFC107;
+  --color-red: #D32F2F;
   --bg-main: #F9F9F9;
   --text-main: #212121;
+  --text-secondary: #555555;
   --teal-primary: #008080;
   --maroon-secondary: #800000;
   --saffron-accent: #FF9933;

@@ -29,6 +29,7 @@ import {
   Calendar,
   Sparkles,
   Clock,
+  ShieldAlert,
 } from 'lucide-react';
 
 // ─── Indian-Friendly Cultural Emergency Shield Icon ─────────────────────────
@@ -44,7 +45,17 @@ function NavEmergencyIcon({ active = false }) {
 
 // ─── Placeholder screen for Member 3 Referrals & Emergency ───────────────────
 
-function PlaceholderScreen({ icon: Icon, title, member, description, color = 'text-[#008080]', onBack }) {
+function PlaceholderScreen({
+  icon: Icon,
+  title,
+  member,
+  description,
+  color = 'text-[#008080]',
+  btnColor = 'bg-[#008080] hover:bg-[#006666] text-white',
+  ctaText,
+  onCta,
+  onBack,
+}) {
   return (
     <div className="max-w-xl mx-auto px-4 py-12 text-center">
       <div className="bg-white border-2 border-slate-200 rounded-3xl p-8 shadow-sm">
@@ -58,13 +69,23 @@ function PlaceholderScreen({ icon: Icon, title, member, description, color = 'te
         <p className="text-sm sm:text-base text-[#555555] mb-6 leading-relaxed">
           {description}
         </p>
-        <button
-          onClick={onBack}
-          className="inline-flex items-center gap-1.5 px-5 py-2.5 bg-[#008080] hover:bg-[#006666] text-white font-bold rounded-xl text-sm transition-colors shadow-sm"
-        >
-          <ChevronLeft className="w-4 h-4" />
-          Back to Home
-        </button>
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+          {ctaText && onCta && (
+            <button
+              onClick={onCta}
+              className={`w-full sm:w-auto px-5 py-2.5 font-bold rounded-xl text-sm transition-colors shadow-sm ${btnColor}`}
+            >
+              {ctaText}
+            </button>
+          )}
+          <button
+            onClick={onBack}
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-[#212121] font-bold rounded-xl text-sm transition-colors"
+          >
+            <ChevronLeft className="w-4 h-4" />
+            Back to Home
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -124,7 +145,7 @@ function App() {
   return (
     <div className="min-h-screen bg-[#F9F9F9] text-[#212121] flex flex-col font-sans selection:bg-[#FF9933]/30 selection:text-[#800000]">
 
-      {/* ── Top Header ── */}
+      {/* ── Top Header (Light Theme with Teal & Saffron Accents) ── */}
       <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200/90 px-4 py-3 shadow-xs">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
 
@@ -279,6 +300,9 @@ function App() {
             member="Team A Member 3 · Module"
             description="Manage hospital referrals from your village health center to district specialist doctors with appointment tracking."
             color="text-[#800000]"
+            btnColor="bg-[#800000] hover:bg-[#660000] text-white"
+            ctaText="Schedule New Consultation"
+            onCta={() => alert('Referral & Appointment scheduling is being finalized by Member 3.')}
             onBack={() => setActiveTab('home')}
           />
         )}
@@ -287,10 +311,13 @@ function App() {
         {activeTab === 'emergency' && (
           <PlaceholderScreen
             icon={NavEmergencyIcon}
-            title="Emergency Break-Glass QR"
+            title="Emergency Break-Glass ID"
             member="Team A Member 3 · Module"
             description="Generate emergency QR codes exposing only critical triage info (Blood group, allergies, emergency contacts) with audit logging."
             color="text-[#D32F2F]"
+            btnColor="bg-[#FF9933] hover:bg-[#E68A2E] text-slate-950"
+            ctaText="Generate One-Time Emergency QR"
+            onCta={() => alert('🚨 Emergency QR Generated: Scan to view minimum critical blood group & allergy triage data.')}
             onBack={() => setActiveTab('home')}
           />
         )}
@@ -328,7 +355,7 @@ function App() {
         )}
       </main>
 
-      {/* ── Bottom Navigation Bar ── */}
+      {/* ── Bottom Navigation Bar (Indian Palette: Teal, Maroon, Saffron) ── */}
       <nav
         className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200/90 px-2 py-2 shadow-lg"
         aria-label="Patient portal navigation"
