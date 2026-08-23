@@ -1,8 +1,9 @@
 {
-  "name": "frontend",
+  "name": "radvault",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
+  "description": "RadVault — Consent-Driven Universal Medical Imaging & Emergency Health Record Exchange",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -24,6 +25,6 @@
     "oxlint": "^1.75.0",
     "postcss": "^8.5.26",
     "tailwindcss": "^4.3.3",
-    "vite": "^8.2.0"
+    "vite": "^8.2.2"
   }
 }

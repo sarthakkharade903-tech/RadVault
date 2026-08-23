@@ -1,0 +1,1002 @@
+﻿/* RadVault Frontend Modules - Patient Profile, Health Timeline & Medical Records */
+
+:root {
+  --rv-bg-main: #0f172a;
+  --rv-bg-surface: #1e293b;
+  --rv-bg-surface-hover: #273549;
+  --rv-bg-card: #182234;
+  --rv-border: #334155;
+  --rv-border-light: #475569;
+  --rv-primary: #38bdf8;
+  --rv-primary-dark: #0284c7;
+  --rv-primary-glow: rgba(56, 189, 248, 0.15);
+  --rv-emerald: #10b981;
+  --rv-emerald-bg: rgba(16, 185, 129, 0.12);
+  --rv-blue: #3b82f6;
+  --rv-blue-bg: rgba(59, 130, 246, 0.12);
+  --rv-amber: #f59e0b;
+  --rv-amber-bg: rgba(245, 158, 11, 0.12);
+  --rv-rose: #ef4444;
+  --rv-rose-bg: rgba(239, 68, 68, 0.12);
+  --rv-purple: #a855f7;
+  --rv-purple-bg: rgba(168, 85, 247, 0.12);
+  --rv-text-main: #f8fafc;
+  --rv-text-muted: #94a3b8;
+  --rv-text-dim: #64748b;
+  --rv-radius-sm: 6px;
+  --rv-radius-md: 10px;
+  --rv-radius-lg: 16px;
+  --rv-radius-full: 9999px;
+  --rv-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --rv-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --rv-shadow-lg: 0 12px 30px rgba(0, 0, 0, 0.5);
+}
+
+/* Base Wrapper */
+.rv-portal-container {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem 4rem;
+  color: var(--rv-text-main);
+  font-family: inherit;
+}
+
+/* Patient Quick Header Bar */
+.rv-quick-header {
+  background: linear-gradient(135deg, #1e293b 0%, #172554 100%);
+  border: 1px solid var(--rv-border);
+  border-radius: var(--rv-radius-lg);
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1.25rem;
+  box-shadow: var(--rv-shadow-md);
+}
+
+.rv-quick-user {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.rv-avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--rv-radius-full);
+  background: linear-gradient(135deg, #0284c7, #38bdf8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: #fff;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  flex-shrink: 0;
+}
+
+.rv-user-meta h2 {
+  font-size: 1.35rem;
+  font-weight: 700;
+  margin: 0 0 0.25rem;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.rv-meta-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--rv-text-muted);
+}
+
+.rv-chip {
+  background: rgba(255, 255, 255, 0.08);
+  padding: 0.15rem 0.6rem;
+  border-radius: var(--rv-radius-sm);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.rv-chip-highlight {
+  background: rgba(56, 189, 248, 0.15);
+  color: var(--rv-primary);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  font-weight: 600;
+}
+
+.rv-quick-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.rv-emergency-btn {
+  background: linear-gradient(135deg, #dc2626, #b91c1c);
+  color: #fff;
+  border: 1px solid #ef4444;
+  padding: 0.55rem 1rem;
+  border-radius: var(--rv-radius-md);
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(220, 38, 38, 0.3);
+}
+
+.rv-emergency-btn:hover {
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  transform: translateY(-1px);
+}
+
+/* Tabs Navigation */
+.rv-tabs-nav {
+  display: flex;
+  gap: 0.5rem;
+  background: var(--rv-bg-surface);
+  border: 1px solid var(--rv-border);
+  padding: 0.4rem;
+  border-radius: var(--rv-radius-lg);
+  margin-bottom: 1.75rem;
+  overflow-x: auto;
+}
+
+.rv-tab-btn {
+  flex: 1;
+  min-width: 140px;
+  background: transparent;
+  color: var(--rv-text-muted);
+  border: none;
+  padding: 0.75rem 1rem;
+  border-radius: var(--rv-radius-md);
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.rv-tab-btn:hover {
+  color: var(--rv-text-main);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.rv-tab-btn.active {
+  background: var(--rv-primary-dark);
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(2, 132, 199, 0.35);
+}
+
+.rv-tab-count {
+  background: rgba(0, 0, 0, 0.25);
+  font-size: 0.75rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: var(--rv-radius-full);
+}
+
+/* ==========================================================================
+   MODULE 1: PATIENT PROFILE STYLES
+   ========================================================================== */
+.rv-profile-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.rv-profile-top-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 1.5rem;
+}
+
+@media (max-width: 900px) {
+  .rv-profile-top-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.rv-card {
+  background: var(--rv-bg-surface);
+  border: 1px solid var(--rv-border);
+  border-radius: var(--rv-radius-lg);
+  padding: 1.5rem;
+  box-shadow: var(--rv-shadow-sm);
+  transition: border-color 0.2s;
+}
+
+.rv-card:hover {
+  border-color: var(--rv-border-light);
+}
+
+.rv-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.25rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--rv-border);
+}
+
+.rv-card-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--rv-text-main);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+}
+
+.rv-info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.rv-info-item {
+  background: rgba(15, 23, 42, 0.5);
+  padding: 0.75rem 1rem;
+  border-radius: var(--rv-radius-md);
+  border: 1px solid rgba(51, 65, 85, 0.5);
+}
+
+.rv-info-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--rv-text-dim);
+  margin-bottom: 0.25rem;
+}
+
+.rv-info-value {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--rv-text-main);
+  word-break: break-word;
+}
+
+/* Vitals Grid */
+.rv-vitals-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 1rem;
+}
+
+.rv-vital-card {
+  background: var(--rv-bg-card);
+  border: 1px solid var(--rv-border);
+  border-radius: var(--rv-radius-md);
+  padding: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.2s, border-color 0.2s;
+}
+
+.rv-vital-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--rv-primary);
+}
+
+.rv-vital-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.rv-vital-name {
+  font-size: 0.825rem;
+  font-weight: 600;
+  color: var(--rv-text-muted);
+}
+
+.rv-vital-icon {
+  font-size: 1.1rem;
+  opacity: 0.8;
+}
+
+.rv-vital-reading {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  margin: 0.4rem 0;
+}
+
+.rv-vital-val {
+  font-size: 1.65rem;
+  font-weight: 800;
+  color: #fff;
+}
+
+.rv-vital-unit {
+  font-size: 0.8rem;
+  color: var(--rv-text-muted);
+  font-weight: 500;
+}
+
+.rv-vital-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 0.5rem;
+  font-size: 0.75rem;
+}
+
+.rv-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: var(--rv-radius-full);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.rv-status-normal {
+  background: var(--rv-emerald-bg);
+  color: var(--rv-emerald);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.rv-status-warning {
+  background: var(--rv-amber-bg);
+  color: var(--rv-amber);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.rv-status-critical {
+  background: var(--rv-rose-bg);
+  color: var(--rv-rose);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+/* Allergies & Conditions */
+.rv-allergies-list,
+.rv-conditions-list,
+.rv-meds-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.rv-allergy-row {
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid var(--rv-border);
+  border-left: 4px solid var(--rv-rose);
+  border-radius: var(--rv-radius-md);
+  padding: 0.85rem 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.rv-allergy-row.moderate {
+  border-left-color: var(--rv-amber);
+}
+
+.rv-allergy-row.mild {
+  border-left-color: var(--rv-blue);
+}
+
+.rv-condition-item {
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid var(--rv-border);
+  border-radius: var(--rv-radius-md);
+  padding: 1rem;
+}
+
+.rv-condition-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.35rem;
+}
+
+.rv-condition-name {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--rv-text-main);
+}
+
+.rv-med-card {
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid var(--rv-border);
+  border-radius: var(--rv-radius-md);
+  padding: 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.rv-med-name {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--rv-primary);
+  margin-bottom: 0.25rem;
+}
+
+.rv-med-dosage {
+  font-size: 0.85rem;
+  color: var(--rv-text-muted);
+}
+
+/* ==========================================================================
+   MODULE 2: HEALTH TIMELINE STYLES
+   ========================================================================== */
+.rv-timeline-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.rv-timeline-toolbar {
+  background: var(--rv-bg-surface);
+  border: 1px solid var(--rv-border);
+  border-radius: var(--rv-radius-lg);
+  padding: 1rem 1.25rem;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.rv-filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.rv-filter-btn {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--rv-text-muted);
+  border: 1px solid var(--rv-border);
+  padding: 0.45rem 0.85rem;
+  border-radius: var(--rv-radius-full);
+  font-size: 0.825rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  transition: all 0.15s ease;
+}
+
+.rv-filter-btn:hover {
+  color: var(--rv-text-main);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.rv-filter-btn.active {
+  background: var(--rv-primary-dark);
+  color: #fff;
+  border-color: var(--rv-primary);
+}
+
+.rv-search-box {
+  position: relative;
+  min-width: 240px;
+}
+
+.rv-input {
+  width: 100%;
+  background: #0f172a;
+  border: 1px solid var(--rv-border);
+  color: #fff;
+  padding: 0.5rem 0.85rem;
+  border-radius: var(--rv-radius-md);
+  font-size: 0.875rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.rv-input:focus {
+  border-color: var(--rv-primary);
+}
+
+/* Timeline Vertical Line & Items */
+.rv-timeline-track {
+  position: relative;
+  padding-left: 2.25rem;
+}
+
+.rv-timeline-track::before {
+  content: '';
+  position: absolute;
+  left: 14px;
+  top: 10px;
+  bottom: 10px;
+  width: 2px;
+  background: linear-gradient(180deg, var(--rv-primary) 0%, var(--rv-border) 100%);
+}
+
+.rv-timeline-item {
+  position: relative;
+  margin-bottom: 2rem;
+}
+
+.rv-timeline-node {
+  position: absolute;
+  left: -2.25rem;
+  top: 14px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--rv-bg-surface);
+  border: 2px solid var(--rv-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+  box-shadow: 0 0 10px var(--rv-primary-glow);
+  z-index: 2;
+}
+
+.rv-timeline-node.radiology {
+  border-color: #38bdf8;
+  color: #38bdf8;
+}
+
+.rv-timeline-node.labs {
+  border-color: #10b981;
+  color: #10b981;
+}
+
+.rv-timeline-node.consultation {
+  border-color: #a855f7;
+  color: #a855f7;
+}
+
+.rv-timeline-card {
+  background: var(--rv-bg-surface);
+  border: 1px solid var(--rv-border);
+  border-radius: var(--rv-radius-lg);
+  padding: 1.25rem 1.5rem;
+  box-shadow: var(--rv-shadow-sm);
+  transition: all 0.2s ease;
+}
+
+.rv-timeline-card:hover {
+  border-color: var(--rv-primary);
+  transform: translateX(3px);
+}
+
+.rv-timeline-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.rv-timeline-date {
+  font-size: 0.8rem;
+  color: var(--rv-text-muted);
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.rv-timeline-title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #fff;
+  margin: 0 0 0.35rem;
+}
+
+.rv-timeline-doctor {
+  font-size: 0.85rem;
+  color: var(--rv-primary);
+  margin-bottom: 0.65rem;
+}
+
+.rv-timeline-summary {
+  font-size: 0.925rem;
+  color: #cbd5e1;
+  line-height: 1.5;
+  margin-bottom: 0.75rem;
+}
+
+.rv-timeline-drawer {
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid var(--rv-border);
+  border-radius: var(--rv-radius-md);
+  padding: 1rem;
+  margin-top: 0.75rem;
+  font-size: 0.875rem;
+  color: var(--rv-text-muted);
+  line-height: 1.6;
+}
+
+.rv-btn-link {
+  background: none;
+  border: none;
+  color: var(--rv-primary);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.rv-btn-link:hover {
+  text-decoration: underline;
+}
+
+/* ==========================================================================
+   MODULE 3: MEDICAL RECORDS VAULT STYLES
+   ========================================================================== */
+.rv-records-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.rv-records-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 1.5rem;
+}
+
+.rv-record-card {
+  background: var(--rv-bg-surface);
+  border: 1px solid var(--rv-border);
+  border-radius: var(--rv-radius-lg);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--rv-shadow-sm);
+  transition: all 0.25s ease;
+}
+
+.rv-record-card:hover {
+  transform: translateY(-4px);
+  border-color: var(--rv-primary);
+  box-shadow: var(--rv-shadow-md);
+}
+
+.rv-record-thumb-container {
+  position: relative;
+  height: 150px;
+  background: #090d16;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-bottom: 1px solid var(--rv-border);
+}
+
+.rv-record-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.65;
+  transition: transform 0.3s, opacity 0.3s;
+}
+
+.rv-record-card:hover .rv-record-img {
+  transform: scale(1.05);
+  opacity: 0.85;
+}
+
+.rv-modality-badge {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(4px);
+  border: 1px solid var(--rv-border);
+  color: var(--rv-primary);
+  padding: 0.25rem 0.65rem;
+  border-radius: var(--rv-radius-sm);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.rv-risk-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(4px);
+  padding: 0.25rem 0.65rem;
+  border-radius: var(--rv-radius-sm);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.rv-record-body {
+  padding: 1.25rem;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.rv-record-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #fff;
+  margin: 0 0 0.5rem;
+  line-height: 1.35;
+}
+
+.rv-record-meta-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.825rem;
+  color: var(--rv-text-muted);
+  margin-bottom: 1.25rem;
+}
+
+.rv-record-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.rv-record-actions {
+  display: flex;
+  gap: 0.65rem;
+}
+
+.rv-btn {
+  flex: 1;
+  background: var(--rv-primary-dark);
+  color: #fff;
+  border: none;
+  padding: 0.6rem 0.9rem;
+  border-radius: var(--rv-radius-md);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  transition: all 0.2s ease;
+}
+
+.rv-btn:hover {
+  background: #0369a1;
+}
+
+.rv-btn-secondary {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--rv-text-main);
+  border: 1px solid var(--rv-border);
+}
+
+.rv-btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+/* ==========================================================================
+   RECORD VIEWER MODAL
+   ========================================================================== */
+.rv-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  z-index: 999;
+}
+
+.rv-modal-container {
+  background: #1e293b;
+  border: 1px solid var(--rv-border);
+  border-radius: var(--rv-radius-lg);
+  width: 100%;
+  max-width: 1000px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: var(--rv-shadow-lg);
+}
+
+.rv-modal-header {
+  padding: 1.25rem 1.5rem;
+  background: #182234;
+  border-bottom: 1px solid var(--rv-border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.rv-modal-header h3 {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.rv-modal-close-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: none;
+  color: #fff;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+}
+
+.rv-modal-close-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.rv-modal-content-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr;
+  flex: 1;
+  overflow-y: auto;
+}
+
+@media (max-width: 800px) {
+  .rv-modal-content-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.rv-viewer-pane {
+  background: #090d16;
+  border-right: 1px solid var(--rv-border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  position: relative;
+}
+
+.rv-viewer-image-wrap {
+  width: 100%;
+  max-height: 360px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--rv-radius-md);
+  overflow: hidden;
+  background: #000;
+  border: 1px solid #1e293b;
+}
+
+.rv-viewer-img {
+  width: 100%;
+  height: auto;
+  max-height: 360px;
+  object-fit: contain;
+  transition: filter 0.2s ease;
+}
+
+.rv-viewer-img.inverted {
+  filter: invert(1) contrast(1.2);
+}
+
+.rv-viewer-controls {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  width: 100%;
+  justify-content: center;
+}
+
+.rv-viewer-tool-btn {
+  background: #1e293b;
+  border: 1px solid var(--rv-border);
+  color: var(--rv-text-muted);
+  padding: 0.4rem 0.75rem;
+  border-radius: var(--rv-radius-sm);
+  font-size: 0.75rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.rv-viewer-tool-btn:hover {
+  color: #fff;
+  border-color: var(--rv-primary);
+}
+
+.rv-report-pane {
+  padding: 1.5rem;
+  background: #1e293b;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.rv-report-section h4 {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--rv-primary);
+  margin: 0 0 0.4rem;
+}
+
+.rv-report-section p {
+  font-size: 0.9rem;
+  color: #cbd5e1;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.rv-findings-list {
+  padding-left: 1.2rem;
+  margin: 0.4rem 0 0;
+  font-size: 0.875rem;
+  color: #cbd5e1;
+}
+
+.rv-findings-list li {
+  margin-bottom: 0.4rem;
+  line-height: 1.45;
+}
+
+.rv-impression-box {
+  background: rgba(56, 189, 248, 0.08);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  border-radius: var(--rv-radius-md);
+  padding: 1rem;
+}
+
+.rv-impression-box h4 {
+  color: var(--rv-primary);
+  margin: 0 0 0.35rem;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+}
+
+.rv-impression-box p {
+  color: #f8fafc;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.rv-signature-row {
+  margin-top: auto;
+  padding-top: 1rem;
+  border-top: 1px solid var(--rv-border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.8rem;
+  color: var(--rv-text-muted);
+}

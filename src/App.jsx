@@ -1,6 +1,22 @@
 import React, { useState } from 'react';
 import { PatientHome } from './components/dashboard/PatientHome';
 import {
+  mockPatient,
+  mockVitals,
+  mockAllergies,
+  mockConditions,
+  mockMedications,
+  mockTimelineEvents,
+  mockMedicalRecords,
+} from './data/mockPatientData';
+
+import PatientProfileCard from './components/PatientProfile/PatientProfileCard';
+import PatientVitals from './components/PatientProfile/PatientVitals';
+import PatientConditions from './components/PatientProfile/PatientConditions';
+import HealthTimeline from './components/HealthTimeline/HealthTimeline';
+import MedicalRecordsList from './components/MedicalRecords/MedicalRecordsList';
+
+import {
   HeartPulse,
   Home,
   UserCircle2,
@@ -12,6 +28,7 @@ import {
   ChevronLeft,
   Calendar,
   Sparkles,
+  Clock,
 } from 'lucide-react';
 
 // ─── Indian-Friendly Cultural Emergency Shield Icon ─────────────────────────
@@ -25,7 +42,7 @@ function NavEmergencyIcon({ active = false }) {
   );
 }
 
-// ─── Placeholder screen for teammate modules (Light Theme) ───────────────────
+// ─── Placeholder screen for Member 3 Referrals & Emergency ───────────────────
 
 function PlaceholderScreen({ icon: Icon, title, member, description, color = 'text-[#008080]', onBack }) {
   return (
@@ -53,53 +70,63 @@ function PlaceholderScreen({ icon: Icon, title, member, description, color = 'te
   );
 }
 
-// ─── Bottom Navigation Configuration with Culturally Familiar Icons ───────────
+// ─── Bottom Navigation Items ──────────────────────────────────────────────────
 
 const NAV_ITEMS = [
   {
     key: 'home',
     label: 'Home',
     Icon: Home, // Sloping-roof house
-    description: 'Home Dashboard',
   },
   {
     key: 'records',
     label: 'Records',
     Icon: BookOpen, // Medical Notebook / Folder
-    description: 'Medical Vault',
+  },
+  {
+    key: 'timeline',
+    label: 'Timeline',
+    Icon: Clock, // Health Timeline
   },
   {
     key: 'referrals',
     label: 'Referrals',
     Icon: Handshake, // Doctor–Patient Handshake
-    description: 'Hospital Care',
   },
   {
     key: 'emergency',
     label: 'Emergency',
     CustomIcon: NavEmergencyIcon, // Saffron Shield with Red Cross
-    description: 'Emergency ID',
   },
   {
     key: 'profile',
     label: 'Profile',
     Icon: UserCircle2, // Circular Avatar Silhouette
-    description: 'Patient Profile',
   },
 ];
 
-// ─── Main App Shell ───────────────────────────────────────────────────────────
+// ─── Main Application Shell ───────────────────────────────────────────────────
 
 function App() {
   const [activeTab, setActiveTab] = useState('home');
   const [showPortalPicker, setShowPortalPicker] = useState(false);
+  const [targetRecordId, setTargetRecordId] = useState(null);
+
+  const handleViewRecordFromTimeline = (recordId) => {
+    setTargetRecordId(recordId);
+    setActiveTab('records');
+  };
+
+  const handleTriggerEmergency = () => {
+    setActiveTab('emergency');
+  };
 
   return (
     <div className="min-h-screen bg-[#F9F9F9] text-[#212121] flex flex-col font-sans selection:bg-[#FF9933]/30 selection:text-[#800000]">
 
-      {/* ── Top Header (Light Theme with Teal & Saffron Accents) ── */}
+      {/* ── Top Header ── */}
       <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200/90 px-4 py-3 shadow-xs">
-        <div className="max-w-3xl mx-auto flex items-center justify-between">
+        <div className="max-w-4xl mx-auto flex items-center justify-between">
 
           {/* Branding */}
           <button
@@ -140,7 +167,7 @@ function App() {
 
         {/* Portal Switcher Dropdown */}
         {showPortalPicker && (
-          <div className="max-w-3xl mx-auto mt-3 p-4 bg-white border-2 border-slate-200 rounded-2xl shadow-xl">
+          <div className="max-w-4xl mx-auto mt-3 p-4 bg-white border-2 border-slate-200 rounded-2xl shadow-xl">
             <div className="flex items-center justify-between mb-3">
               <span className="text-xs font-bold text-[#555555] uppercase tracking-wider">
                 Select Portal View
@@ -195,21 +222,56 @@ function App() {
 
       {/* ── Main Content Area ── */}
       <main className="flex-1" id="main-content">
+        {/* Tab 1: Member 1 - Patient Home Dashboard */}
         {activeTab === 'home' && (
           <PatientHome onNavigate={setActiveTab} />
         )}
 
+        {/* Tab 2: Member 2 - Medical Records Vault (Sujay's Module) */}
         {activeTab === 'records' && (
-          <PlaceholderScreen
-            icon={BookOpen}
-            title="Medical Records & Vault"
-            member="Team A Member 2 · Module"
-            description="Your digitized X-rays, MRI/CT scans, doctor prescriptions, and laboratory reports in one secure vault."
-            color="text-[#008080]"
-            onBack={() => setActiveTab('home')}
-          />
+          <div className="max-w-4xl mx-auto px-4 py-6">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-extrabold text-[#008080]">Medical Records & Vault</h2>
+                <p className="text-sm text-[#555555]">Digitized radiological scans, lab reports, and doctor prescriptions.</p>
+              </div>
+              <button
+                onClick={() => setActiveTab('home')}
+                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-[#212121] font-bold rounded-lg text-xs transition-colors flex items-center gap-1"
+              >
+                <ChevronLeft className="w-4 h-4" /> Back to Home
+              </button>
+            </div>
+            <MedicalRecordsList
+              records={mockMedicalRecords}
+              initialSelectedRecordId={targetRecordId}
+            />
+          </div>
         )}
 
+        {/* Tab 3: Member 2 - Health Timeline (Sujay's Module) */}
+        {activeTab === 'timeline' && (
+          <div className="max-w-4xl mx-auto px-4 py-6">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-extrabold text-[#008080]">Health Timeline</h2>
+                <p className="text-sm text-[#555555]">Chronological timeline of consultations, scans, and triage events.</p>
+              </div>
+              <button
+                onClick={() => setActiveTab('home')}
+                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-[#212121] font-bold rounded-lg text-xs transition-colors flex items-center gap-1"
+              >
+                <ChevronLeft className="w-4 h-4" /> Back to Home
+              </button>
+            </div>
+            <HealthTimeline
+              events={mockTimelineEvents}
+              onViewRecord={handleViewRecordFromTimeline}
+            />
+          </div>
+        )}
+
+        {/* Tab 4: Member 3 - Specialist Referrals */}
         {activeTab === 'referrals' && (
           <PlaceholderScreen
             icon={Handshake}
@@ -221,10 +283,11 @@ function App() {
           />
         )}
 
+        {/* Tab 5: Member 3 - Emergency Break-Glass ID */}
         {activeTab === 'emergency' && (
           <PlaceholderScreen
             icon={NavEmergencyIcon}
-            title="Emergency Break-Glass ID"
+            title="Emergency Break-Glass QR"
             member="Team A Member 3 · Module"
             description="Generate emergency QR codes exposing only critical triage info (Blood group, allergies, emergency contacts) with audit logging."
             color="text-[#D32F2F]"
@@ -232,19 +295,40 @@ function App() {
           />
         )}
 
+        {/* Tab 6: Member 2 - Patient Profile & Conditions (Sujay's Module) */}
         {activeTab === 'profile' && (
-          <PlaceholderScreen
-            icon={UserCircle2}
-            title="Complete Patient Profile"
-            member="Team A Member 2 · Module"
-            description="Comprehensive demographic data, village/ASHA links, past chronic condition records, and family health history."
-            color="text-[#008080]"
-            onBack={() => setActiveTab('home')}
-          />
+          <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
+            <div className="mb-2 flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-extrabold text-[#008080]">Patient Profile & Health Details</h2>
+                <p className="text-sm text-[#555555]">Demographics, critical conditions, allergies, and vitals history.</p>
+              </div>
+              <button
+                onClick={() => setActiveTab('home')}
+                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-[#212121] font-bold rounded-lg text-xs transition-colors flex items-center gap-1"
+              >
+                <ChevronLeft className="w-4 h-4" /> Back to Home
+              </button>
+            </div>
+            <div className="rv-profile-layout">
+              <div className="rv-profile-top-grid">
+                <PatientProfileCard
+                  patient={mockPatient}
+                  onTriggerEmergencyQR={handleTriggerEmergency}
+                />
+                <PatientVitals vitals={mockVitals} />
+              </div>
+              <PatientConditions
+                allergies={mockAllergies}
+                conditions={mockConditions}
+                medications={mockMedications}
+              />
+            </div>
+          </div>
         )}
       </main>
 
-      {/* ── Bottom Navigation Bar (Indian Palette: Teal, Maroon, Saffron) ── */}
+      {/* ── Bottom Navigation Bar ── */}
       <nav
         className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200/90 px-2 py-2 shadow-lg"
         aria-label="Patient portal navigation"
@@ -255,8 +339,11 @@ function App() {
             return (
               <button
                 key={key}
-                onClick={() => setActiveTab(key)}
-                className={`flex flex-col items-center gap-1 px-3 py-1.5 rounded-xl transition-all min-w-[56px] relative group ${
+                onClick={() => {
+                  setActiveTab(key);
+                  setTargetRecordId(null);
+                }}
+                className={`flex flex-col items-center gap-1 px-2.5 py-1.5 rounded-xl transition-all min-w-[50px] relative group ${
                   isActive
                     ? 'text-[#800000] font-extrabold bg-[#800000]/8 scale-105'
                     : 'text-[#555555] hover:text-[#008080] hover:bg-[#008080]/5'
@@ -264,7 +351,6 @@ function App() {
                 aria-label={label}
                 aria-current={isActive ? 'page' : undefined}
               >
-                {/* Active indicator top bar */}
                 {isActive && (
                   <span className="absolute -top-2 left-1/2 -translate-x-1/2 w-6 h-1 bg-[#FF9933] rounded-full" />
                 )}
@@ -274,7 +360,7 @@ function App() {
                 ) : (
                   <Icon className={`w-5 h-5 ${isActive ? 'text-[#800000]' : 'text-[#008080]/80 group-hover:text-[#008080]'}`} aria-hidden="true" />
                 )}
-                <span className="text-[11px] font-bold leading-none tracking-tight">{label}</span>
+                <span className="text-[10px] font-bold leading-none tracking-tight">{label}</span>
               </button>
             );
           })}
