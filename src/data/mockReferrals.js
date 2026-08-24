@@ -1,0 +1,71 @@
+// ─── Mock Referrals Data (Ready for Supabase mapping) ────────────────────────
+
+export const HOSPITALS = [
+  'Ahmednagar District Civil Hospital',
+  'Pune Sassoon General Hospital',
+  'Nashik District Hospital',
+  'Aurangabad Government Medical College',
+  'Primary Health Centre — Shrirampur',
+];
+
+export const DEPARTMENTS = [
+  'Cardiology',
+  'Orthopedics',
+  'Neurology',
+  'Gynecology & Obstetrics',
+  'General Medicine',
+  'Pediatrics',
+  'Pulmonology',
+  'Emergency & Trauma',
+];
+
+export const MOCK_REFERRALS = [
+  {
+    id: 'REF-001',
+    patientName: 'Rajesh Kumar',
+    patientId: 'MH-P-10482',
+    createdBy: 'ASHA Worker: Sunita Jadhav',
+    department: 'Cardiology',
+    hospital: 'Ahmednagar District Civil Hospital',
+    doctor: 'Dr. Sandeep Kulkarni',
+    priority: 'ORANGE',
+    priorityLabel: 'Urgent',
+    status: 'Pending',
+    symptoms: 'Chest tightness, shortness of breath on exertion, mild dizziness since 3 days.',
+    vitals: { bp: '148/92', spo2: '96', temp: '99.1', pulse: '94' },
+    aiNote: 'Elevated BP and cardiac symptoms. Cardiology review recommended within 24 hours.',
+    createdAt: '22 Aug 2026',
+  },
+  {
+    id: 'REF-002',
+    patientName: 'Meera Devi',
+    patientId: 'MH-P-10489',
+    createdBy: 'ASHA Worker: Rekha Pawar',
+    department: 'Gynecology & Obstetrics',
+    hospital: 'Pune Sassoon General Hospital',
+    doctor: 'Dr. Anita Kulkarni',
+    priority: 'RED',
+    priorityLabel: 'Emergency',
+    status: 'Accepted',
+    symptoms: 'Heavy bleeding, severe abdominal cramping, 7 months pregnant.',
+    vitals: { bp: '90/60', spo2: '93', temp: '100.4', pulse: '112' },
+    aiNote: 'Critical: Low SpO₂ and hypotension in pregnant patient. Immediate emergency referral.',
+    createdAt: '23 Aug 2026',
+  },
+  {
+    id: 'REF-003',
+    patientName: 'Vijay Shinde',
+    patientId: 'MH-P-10495',
+    createdBy: 'ASHA Worker: Sunita Jadhav',
+    department: 'Orthopedics',
+    hospital: 'Primary Health Centre — Shrirampur',
+    doctor: 'Dr. Ramesh Patil',
+    priority: 'GREEN',
+    priorityLabel: 'Routine',
+    status: 'Completed',
+    symptoms: 'Knee pain for 2 weeks, difficulty climbing stairs, no fever or swelling.',
+    vitals: { bp: '122/78', spo2: '99', temp: '98.6', pulse: '72' },
+    aiNote: 'Stable vitals. Non-urgent orthopedic review for musculoskeletal complaint.',
+    createdAt: '20 Aug 2026',
+  },
+];

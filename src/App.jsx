@@ -15,6 +15,7 @@ import PatientVitals from './components/PatientProfile/PatientVitals';
 import PatientConditions from './components/PatientProfile/PatientConditions';
 import HealthTimeline from './components/HealthTimeline/HealthTimeline';
 import MedicalRecordsList from './components/MedicalRecords/MedicalRecordsList';
+import ReferralsDashboard from './components/Referrals/ReferralsDashboard';
 
 import {
   HeartPulse,
@@ -292,19 +293,9 @@ function App() {
           </div>
         )}
 
-        {/* Tab 4: Member 3 - Specialist Referrals */}
+        {/* Tab 4: Member 3 - Specialist Referrals (ASHA Triage Module) */}
         {activeTab === 'referrals' && (
-          <PlaceholderScreen
-            icon={Handshake}
-            title="Specialist Referrals & Appointments"
-            member="Team A Member 3 · Module"
-            description="Manage hospital referrals from your village health center to district specialist doctors with appointment tracking."
-            color="text-[#800000]"
-            btnColor="bg-[#800000] hover:bg-[#660000] text-white"
-            ctaText="Schedule New Consultation"
-            onCta={() => alert('Referral & Appointment scheduling is being finalized by Member 3.')}
-            onBack={() => setActiveTab('home')}
-          />
+          <ReferralsDashboard onBack={() => setActiveTab('home')} />
         )}
 
         {/* Tab 5: Member 3 - Emergency Break-Glass ID */}
