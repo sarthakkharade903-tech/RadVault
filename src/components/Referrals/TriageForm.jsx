@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Sparkles,
   Loader2,
@@ -12,63 +12,86 @@ import {
   Stethoscope,
   ClipboardList,
   CheckCircle2,
+  MapPin,
 } from 'lucide-react';
-import { HOSPITALS, DEPARTMENTS } from '../../data/mockReferrals';
+import { DEPARTMENTS } from '../../data/mockReferrals';
 
-// ─── AI Triage Engine (Rule-based simulation) ─────────────────────────────────
+// ─── Haversine Distance Formula ───────────────────────────────────────────────
+function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) {
+  const R = 6371; // Radius of the earth in km
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLon = (lon2 - lon1) * (Math.PI / 180);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c; // Distance in km
+}
 
-function runAITriage({ symptoms, bp, spo2, temp, pulse }) {
-  // Convert to numbers
-  const spo2Val = parseFloat(spo2);
-  const tempVal = parseFloat(temp);
-  const systolic = parseInt((bp || '').split('/')[0]);
-  const pulseVal = parseFloat(pulse);
-  const symsLower = (symptoms || '').toLowerCase();
-
-  // Emergency keywords
-  const emergencyKeywords = ['unconscious', 'bleeding', 'paralysis', 'stroke', 'heart attack', 'not breathing', 'seizure', 'pregnant bleeding'];
-  const urgentKeywords = ['chest pain', 'chest tightness', 'shortness of breath', 'dizziness', 'high fever', 'vomiting', 'severe pain'];
-
-  if (
-    (spo2Val && spo2Val < 94) ||
-    (systolic && systolic < 90) ||
-    (tempVal && tempVal > 103) ||
-    (pulseVal && pulseVal > 120) ||
-    emergencyKeywords.some((kw) => symsLower.includes(kw))
-  ) {
-    return {
-      priority: 'RED',
-      label: '🔴 RED — Immediate Emergency',
-      note: 'Critical vitals detected. Patient requires immediate emergency attention. Referral to nearest District Hospital is strongly recommended within 1 hour.',
-      recommendation: 'Emergency & Trauma / Nearest Referral Hospital',
-    };
+// ─── Groq AI Triage Engine ────────────────────────────────────────────────────
+async function runAITriageWithGroq({ symptoms, bp, spo2, temp, pulse }) {
+  const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
+  if (!GROQ_API_KEY) {
+    throw new Error("Missing VITE_GROQ_API_KEY in .env.local");
   }
 
-  if (
-    (spo2Val && spo2Val < 97) ||
-    (systolic && systolic > 140) ||
-    (tempVal && tempVal > 100.4) ||
-    (pulseVal && pulseVal > 100) ||
-    urgentKeywords.some((kw) => symsLower.includes(kw))
-  ) {
-    return {
-      priority: 'ORANGE',
-      label: '🟡 ORANGE — Urgent, Within 24 Hours',
-      note: 'Elevated readings suggest an urgent condition. Specialist consultation is recommended within 24 hours. Monitor the patient closely.',
-      recommendation: 'Specialist Consultation at District Hospital',
-    };
+  const prompt = `
+You are an expert AI Triage assistant for a rural healthcare system.
+Analyze the following patient data:
+Symptoms: ${symptoms}
+Blood Pressure: ${bp || 'Not recorded'}
+SpO2: ${spo2 || 'Not recorded'}%
+Temperature: ${temp || 'Not recorded'}°F
+Pulse: ${pulse || 'Not recorded'} bpm
+
+Output EXACTLY AND ONLY a valid JSON object with the following schema:
+{
+  "priority": "RED" | "ORANGE" | "GREEN",
+  "note": "A clear, 2-sentence medical summary explaining the priority and recommendation."
+}
+Criteria:
+RED: Emergency (heart attack, stroke, SpO2 < 94, severe bleeding, unconscious) -> Recommend Immediate ER
+ORANGE: Urgent (high fever, severe pain, BP > 140, SpO2 94-96) -> Recommend specialist within 24h
+GREEN: Routine (mild symptoms, stable vitals) -> Recommend routine OPD
+`;
+
+  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${GROQ_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'llama3-8b-8192',
+      messages: [{ role: 'system', content: prompt }],
+      temperature: 0.1,
+      response_format: { type: "json_object" }
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`Groq API error: ${response.statusText}`);
   }
+
+  const data = await response.json();
+  const parsed = JSON.parse(data.choices[0].message.content);
+  
+  const labels = {
+    RED: '🔴 RED — Immediate Emergency',
+    ORANGE: '🟡 ORANGE — Urgent, Within 24 Hours',
+    GREEN: '🟢 GREEN — Routine, Within 7 Days'
+  };
 
   return {
-    priority: 'GREEN',
-    label: '🟢 GREEN — Routine, Within 7 Days',
-    note: 'Stable vitals and non-critical symptoms. Patient can be scheduled for a routine outpatient consultation at the nearest PHC or district hospital.',
-    recommendation: 'Outpatient / Primary Health Centre',
+    priority: parsed.priority,
+    label: labels[parsed.priority] || labels.GREEN,
+    note: parsed.note,
+    recommendation: parsed.priority === 'RED' ? 'Emergency & Trauma' : 'Specialist Consultation',
   };
 }
 
 // ─── Input Field Helper ───────────────────────────────────────────────────────
-
 function InputField({ label, icon: Icon, iconColor, ...props }) {
   return (
     <div>
@@ -90,8 +113,6 @@ function InputField({ label, icon: Icon, iconColor, ...props }) {
   );
 }
 
-// ─── AI Result Badge ──────────────────────────────────────────────────────────
-
 const RESULT_STYLES = {
   RED: 'bg-[#FFF5F5] border-[#D32F2F]/50 text-[#D32F2F]',
   ORANGE: 'bg-[#FFFDF5] border-[#FF9933]/60 text-[#b35900]',
@@ -99,20 +120,78 @@ const RESULT_STYLES = {
 };
 
 // ─── TriageForm Main ──────────────────────────────────────────────────────────
-
 export default function TriageForm({ onSubmit, onCancel }) {
   const [symptoms, setSymptoms] = useState('');
   const [bp, setBp] = useState('');
   const [spo2, setSpo2] = useState('');
   const [temp, setTemp] = useState('');
   const [pulse, setPulse] = useState('');
+  
+  const [hospitals, setHospitals] = useState([]);
+  const [fetchingHospitals, setFetchingHospitals] = useState(false);
   const [hospital, setHospital] = useState('');
   const [department, setDepartment] = useState('');
+  
   const [aiResult, setAiResult] = useState(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState('');
 
-  const handleRunAI = () => {
+  // 1. Fetch Hospitals via Overpass API on Mount
+  useEffect(() => {
+    const fetchHospitals = async (lat, lon) => {
+      setFetchingHospitals(true);
+      try {
+        // Query OpenStreetMap for hospitals within 50,000 meters (50km)
+        const query = `
+          [out:json];
+          (
+            node["amenity"="hospital"](around:50000, ${lat}, ${lon});
+            way["amenity"="hospital"](around:50000, ${lat}, ${lon});
+            relation["amenity"="hospital"](around:50000, ${lat}, ${lon});
+          );
+          out center;
+        `;
+        const res = await fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`);
+        const data = await res.json();
+        
+        let found = data.elements
+          .map(el => {
+            const hLat = el.lat || el.center?.lat;
+            const hLon = el.lon || el.center?.lon;
+            const dist = getDistanceFromLatLonInKm(lat, lon, hLat, hLon);
+            return {
+              name: el.tags?.name || 'Unnamed Hospital',
+              distance: dist
+            };
+          })
+          .filter(h => h.name !== 'Unnamed Hospital') // Clean up unnamed data
+          .sort((a, b) => a.distance - b.distance)    // Sort closest first
+          .slice(0, 15); // Top 15 closest
+          
+        setHospitals(found);
+      } catch (err) {
+        console.error("Overpass API error:", err);
+        setError("Could not load nearby hospitals automatically.");
+      } finally {
+        setFetchingHospitals(false);
+      }
+    };
+
+    if ("geolocation" in navigator) {
+      setFetchingHospitals(true);
+      navigator.geolocation.getCurrentPosition(
+        (position) => fetchHospitals(position.coords.latitude, position.coords.longitude),
+        (err) => {
+          console.warn("Geolocation blocked, falling back to Pune coordinates.", err);
+          fetchHospitals(18.5204, 73.8567); // Fallback: Pune
+        }
+      );
+    } else {
+      fetchHospitals(18.5204, 73.8567);
+    }
+  }, []);
+
+  const handleRunAI = async () => {
     if (!symptoms.trim()) {
       setError('Please describe the patient symptoms before running AI triage.');
       return;
@@ -121,12 +200,15 @@ export default function TriageForm({ onSubmit, onCancel }) {
     setIsAnalyzing(true);
     setAiResult(null);
 
-    // Simulate a 1.8 second AI processing delay for demo effect
-    setTimeout(() => {
-      const result = runAITriage({ symptoms, bp, spo2, temp, pulse });
+    try {
+      const result = await runAITriageWithGroq({ symptoms, bp, spo2, temp, pulse });
       setAiResult(result);
+    } catch (err) {
+      console.error(err);
+      setError(`AI Triage Failed: ${err.message}`);
+    } finally {
       setIsAnalyzing(false);
-    }, 1800);
+    }
   };
 
   const handleSubmit = (e) => {
@@ -137,21 +219,19 @@ export default function TriageForm({ onSubmit, onCancel }) {
     if (!aiResult) { setError('Please run the AI triage analysis before submitting.'); return; }
     setError('');
 
+    // Format for Supabase `referrals` table
     const newReferral = {
-      id: `REF-${String(Math.floor(Math.random() * 900) + 100)}`,
-      patientName: 'Rajesh Kumar',
-      patientId: 'MH-P-10482',
-      createdBy: 'ASHA Worker: You',
-      department,
-      hospital,
-      doctor: 'To be assigned',
+      patient_id: 'MH-P-10482',
+      patient_name: 'Rajesh Kumar',
+      created_by: 'ASHA Worker: You',
+      destination_hospital: hospital,
+      destination_department: department,
       priority: aiResult.priority,
-      priorityLabel: aiResult.priority === 'RED' ? 'Emergency' : aiResult.priority === 'ORANGE' ? 'Urgent' : 'Routine',
+      priority_label: aiResult.priority === 'RED' ? 'Emergency' : aiResult.priority === 'ORANGE' ? 'Urgent' : 'Routine',
       status: 'Pending',
-      symptoms,
+      symptoms: symptoms,
       vitals: { bp, spo2, temp, pulse },
-      aiNote: aiResult.note,
-      createdAt: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
+      ai_note: aiResult.note,
     };
 
     onSubmit(newReferral);
@@ -171,12 +251,11 @@ export default function TriageForm({ onSubmit, onCancel }) {
         </button>
         <div>
           <h2 className="text-xl font-extrabold text-[#008080]">ASHA Triage & Referral</h2>
-          <p className="text-xs text-[#555555]">Record vitals, get AI priority, send to specialist</p>
+          <p className="text-xs text-[#555555]">Record vitals, get Groq AI priority, send to specialist</p>
         </div>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-5">
-
         {/* ── Section 1: Symptoms ────────────────────────────── */}
         <div className="bg-white border-2 border-slate-200 rounded-2xl p-5">
           <h3 className="text-sm font-extrabold text-[#212121] flex items-center gap-2 mb-4">
@@ -215,7 +294,7 @@ export default function TriageForm({ onSubmit, onCancel }) {
         <div className="bg-white border-2 border-slate-200 rounded-2xl p-5">
           <h3 className="text-sm font-extrabold text-[#212121] flex items-center gap-2 mb-4">
             <Sparkles className="w-4 h-4 text-[#FF9933]" />
-            Step 3: AI Triage Analysis
+            Step 3: Groq AI Triage Analysis
           </h3>
 
           <button
@@ -227,7 +306,7 @@ export default function TriageForm({ onSubmit, onCancel }) {
             {isAnalyzing ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                Analyzing symptoms & vitals…
+                Llama 3 is analyzing...
               </>
             ) : (
               <>
@@ -255,20 +334,28 @@ export default function TriageForm({ onSubmit, onCancel }) {
         <div className="bg-white border-2 border-slate-200 rounded-2xl p-5">
           <h3 className="text-sm font-extrabold text-[#212121] flex items-center gap-2 mb-4">
             <Building2 className="w-4 h-4 text-[#800000]" />
-            Step 4: Route to Specialist
+            Step 4: Route to Specialist (Real-Time GPS)
           </h3>
           <div className="space-y-3">
             <div>
-              <label className="text-xs font-bold text-[#555555] uppercase tracking-wide block mb-1.5">
-                Destination Hospital *
+              <label className="text-xs font-bold text-[#555555] uppercase tracking-wide flex items-center gap-1.5 mb-1.5">
+                Destination Hospital (Within 50km)
+                {fetchingHospitals && <Loader2 className="w-3 h-3 animate-spin text-[#008080]" />}
               </label>
               <select
                 value={hospital}
                 onChange={(e) => setHospital(e.target.value)}
-                className="w-full border-2 border-slate-200 focus:border-[#008080] outline-none rounded-xl px-3 py-2.5 text-sm text-[#212121] bg-white transition-colors"
+                disabled={fetchingHospitals}
+                className="w-full border-2 border-slate-200 focus:border-[#008080] outline-none rounded-xl px-3 py-2.5 text-sm text-[#212121] bg-white transition-colors disabled:opacity-60"
               >
-                <option value="">— Select Hospital —</option>
-                {HOSPITALS.map((h) => <option key={h} value={h}>{h}</option>)}
+                <option value="">
+                  {fetchingHospitals ? "Finding nearby hospitals..." : "— Select Closest Hospital —"}
+                </option>
+                {hospitals.map((h, i) => (
+                  <option key={i} value={h.name}>
+                    {h.name} ({h.distance.toFixed(1)} km away)
+                  </option>
+                ))}
               </select>
             </div>
             <div>
@@ -309,7 +396,7 @@ export default function TriageForm({ onSubmit, onCancel }) {
             className="flex-1 py-3 bg-[#800000] hover:bg-[#660000] text-white font-extrabold rounded-xl text-sm transition-colors shadow-sm flex items-center justify-center gap-2"
           >
             <CheckCircle2 className="w-4 h-4" />
-            Generate & Submit Referral
+            Save to Supabase & Submit
           </button>
         </div>
       </form>
