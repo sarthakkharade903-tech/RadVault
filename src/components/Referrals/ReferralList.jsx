@@ -101,6 +101,43 @@ function ReferralCard({ referral }) {
         </div>
       </div>
 
+      {/* Clinical Context & Vitals Tags */}
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        {referral.is_pregnant && (
+          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 bg-pink-100 text-pink-700 rounded-md">
+            Pregnant
+          </span>
+        )}
+        {referral.vitals?.activeBleeding && (
+          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 bg-red-100 text-red-700 rounded-md">
+            Active Bleeding
+          </span>
+        )}
+        {referral.vitals?.bp && (
+          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 bg-slate-100 text-slate-600 rounded-md border border-slate-200">
+            BP: {referral.vitals.bp}
+          </span>
+        )}
+        {referral.vitals?.dynamic?.map((v, i) => (
+          <span key={i} className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 bg-slate-100 text-slate-600 rounded-md border border-slate-200">
+            {v.name}: {v.value}
+          </span>
+        ))}
+      </div>
+
+      {/* Attachment Link */}
+      {referral.attached_file_url && (
+        <a 
+          href={referral.attached_file_url} 
+          target="_blank" 
+          rel="noopener noreferrer"
+          className="mt-3 flex items-center gap-2 p-2 bg-[#008080]/5 hover:bg-[#008080]/10 border border-[#008080]/20 rounded-lg text-xs font-bold text-[#008080] transition-colors"
+        >
+          <span className="w-6 h-6 bg-[#008080]/10 rounded flex items-center justify-center">📷</span>
+          View Attached Slip / Evidence
+        </a>
+      )}
+
       {/* AI Note */}
       {referral.aiNote && (
         <div className="mt-3 p-2.5 bg-white/80 border border-slate-200 rounded-xl">

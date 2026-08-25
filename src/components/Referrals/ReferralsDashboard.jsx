@@ -36,6 +36,8 @@ export default function ReferralsDashboard({ onBack }) {
           symptoms: d.symptoms,
           vitals: d.vitals,
           aiNote: d.ai_note,
+          is_pregnant: d.is_pregnant,
+          attached_file_url: d.attached_file_url,
           createdAt: new Date(d.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
         }));
         setReferrals(mapped);
@@ -75,6 +77,8 @@ export default function ReferralsDashboard({ onBack }) {
         symptoms: d.symptoms,
         vitals: d.vitals,
         aiNote: d.ai_note,
+        is_pregnant: d.is_pregnant,
+        attached_file_url: d.attached_file_url,
         createdAt: new Date(d.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
       };
       setReferrals((prev) => [mapped, ...prev]);
