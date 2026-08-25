@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "Hackathon Project — Secure, Fast & Intelligent Rural Healthcare Platform.",
+  "description": "RadVault — Consent-Driven Universal Medical Imaging & Emergency Health Record Exchange",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.3",
+    "jspdf": "^4.2.1",
     "lucide-react": "^1.33.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
@@ -25,6 +26,6 @@
     "oxlint": "^1.75.0",
     "postcss": "^8.5.26",
     "tailwindcss": "^4.3.3",
-    "vite": "^8.2.0"
+    "vite": "^8.2.2"
   }
 }

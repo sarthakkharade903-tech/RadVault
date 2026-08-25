@@ -1,8 +1,59 @@
 @import "tailwindcss";
+@import "./styles/patientModules.css";
 
-/* RadVault Base Styles */
+@theme {
+  --color-teal: #008080;
+  --color-teal-light: #E6F2F2;
+  --color-maroon: #800000;
+  --color-maroon-light: #F7E6E6;
+  --color-saffron: #FF9933;
+  --color-saffron-light: #FFF5EB;
+  --color-green: #2E7D32;
+  --color-amber: #FFC107;
+  --color-red: #D32F2F;
+}
+
+:root {
+  --color-teal: #008080;
+  --color-maroon: #800000;
+  --color-saffron: #FF9933;
+  --color-green: #2E7D32;
+  --color-amber: #FFC107;
+  --color-red: #D32F2F;
+  --bg-main: #F9F9F9;
+  --text-main: #212121;
+  --text-secondary: #555555;
+  --teal-primary: #008080;
+  --maroon-secondary: #800000;
+  --saffron-accent: #FF9933;
+  --success: #2E7D32;
+  --warning: #FFC107;
+  --error: #D32F2F;
+}
+
+/* RadVault Light Accessible Base */
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
 body {
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-  background-color: #0f172a;
-  color: #f8fafc;
+  margin: 0;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  background-color: #F9F9F9;
+  color: #212121;
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Smooth focus rings for accessibility */
+button:focus-visible, a:focus-visible, select:focus-visible {
+  outline: 2px solid #008080;
+  outline-offset: 2px;
 }
