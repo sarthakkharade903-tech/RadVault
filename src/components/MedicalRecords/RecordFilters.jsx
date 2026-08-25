@@ -1,12 +1,15 @@
-﻿import React from "react";
+import React from "react";
 
+// Task 4: Added "Cardiology" to match the echocardiogram record's modality.
+// Categories are kept user-friendly — no internal/technical terminology exposed.
 export const RECORD_MODALITIES = [
   { id: "all", label: "All Vault Records", icon: "📁" },
   { id: "MRI", label: "MRI Scans", icon: "🧠" },
   { id: "CT Scan", label: "CT Scans", icon: "🔄" },
   { id: "X-Ray", label: "X-Rays", icon: "🩻" },
   { id: "Ultrasound", label: "Ultrasound", icon: "🌊" },
-  { id: "Lab Report", label: "Lab Pathology", icon: "🧪" }
+  { id: "Lab Report", label: "Lab Reports", icon: "🧪" },
+  { id: "Cardiology", label: "Cardiology", icon: "❤️" }
 ];
 
 export default function RecordFilters({

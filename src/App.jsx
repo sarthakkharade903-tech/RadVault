@@ -267,6 +267,7 @@ function App() {
             <MedicalRecordsList
               records={mockMedicalRecords}
               initialSelectedRecordId={targetRecordId}
+              patient={mockPatient}
             />
           </div>
         )}
