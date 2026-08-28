@@ -7,4 +7,14 @@ export default defineConfig({
     react(),
     tailwindcss(),
   ],
+  server: {
+    proxy: {
+      '/api/kimi': {
+        target: 'https://sarthakkharadeagent2--ep-kimi-k3-server.us-west.modal.direct',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/kimi/, ''),
+        secure: true,
+      }
+    }
+  }
 })
