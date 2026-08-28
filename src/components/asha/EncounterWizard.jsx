@@ -375,10 +375,10 @@ export default function EncounterWizard({
       {/* ── Step Progress Indicator ── */}
       <div className="grid grid-cols-4 gap-2">
         {[
-          { num: 1, label: 'Complaints' },
-          { num: 2, label: 'Vitals & History' },
-          { num: 3, label: 'Danger Signs' },
-          { num: 4, label: 'Triage & Action' },
+          { num: 1, label: '1 Complaint' },
+          { num: 2, label: '2 Vitals' },
+          { num: 3, label: '3 Danger signs' },
+          { num: 4, label: '4 Result' },
         ].map(({ num, label }) => {
           const isActive = step === num;
           const isDone = step > num;

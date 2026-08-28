@@ -260,15 +260,15 @@ export default function AshaFollowUpsView({
                   onChange={(e) => setResolutionOutcome(e.target.value)}
                   className="w-full px-3.5 py-2.5 bg-slate-50 border-2 border-slate-200 focus:border-[#008080] rounded-xl text-xs font-bold outline-none"
                 >
-                  <option value="COMPLETED">Completed — Patient Stable / Condition Improving</option>
-                  <option value="PATIENT_WENT_FACILITY">Patient Visited Hospital / Attended Consultation</option>
-                  <option value="UNABLE_TO_CONTACT">Unable to Contact / Beneficiary Not at Home</option>
-                  <option value="CONDITION_DETERIORATED">Condition Deteriorated — Needs Urgent Escalation</option>
-                  <option value="RESCHEDULED">Rescheduled Follow-up</option>
+                  <option value="IMPROVING">Improving — Under recovery</option>
+                  <option value="RECOVERED">Recovered — Normal health</option>
+                  <option value="NOT_IMPROVING">Not improving — Persistent issues</option>
+                  <option value="MISSED">Missed — Did not attend hospital/visit</option>
+                  <option value="REFERRED_AGAIN">Referred again — Needs new hospital consult</option>
                 </select>
               </div>
 
-              {resolutionOutcome === 'RESCHEDULED' && (
+              {(resolutionOutcome === 'REFERRED_AGAIN' || resolutionOutcome === 'RESCHEDULED') && (
                 <div>
                   <label className="text-xs font-bold text-slate-700 uppercase tracking-wide block mb-1">
                     Reschedule Target Date

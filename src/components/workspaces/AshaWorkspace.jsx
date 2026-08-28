@@ -6,14 +6,11 @@ import {
   Users,
   Clock,
   Building2,
-  AlertTriangle,
   Settings,
   UserCheck,
   Menu,
   X,
-  LogOut,
-  MapPin,
-  Calendar
+  LogOut
 } from 'lucide-react';
 
 import AshaDashboard from '../asha/AshaDashboard';
@@ -204,21 +201,11 @@ export default function AshaWorkspace({ onNavigateToPatientView }) {
     setTimeout(() => setSuccessBanner(null), 3000);
   };
 
-  // Badges Calculation
-  const highPriorityAlertsCount = useMemo(() => {
-    return recentEncounters.filter(
-      (e) => e.priority === 'HIGH' || e.priority === 'RED' || (e.dangerSigns && e.dangerSigns.length > 0)
-    ).length;
-  }, [recentEncounters]);
-
   const navItems = [
     { key: 'home', label: 'Home', icon: Home, badge: null },
     { key: 'patients', label: 'Patients', icon: Users, badge: null },
-    { key: 'today', label: 'Today', icon: Calendar, badge: (followUpTasks.overdue.length + followUpTasks.dueToday.length) || null, badgeColor: 'bg-amber-100 text-amber-900' },
-    { key: 'consultations', label: 'Consultations', icon: Building2, badge: stats.pendingReferrals || null, badgeColor: 'bg-sky-100 text-sky-900' },
-    { key: 'followups', label: 'Follow-ups', icon: Clock, badge: stats.followupsDue || null, badgeColor: 'bg-amber-100 text-amber-900' },
-    { key: 'emergencies', label: 'Emergencies', icon: AlertTriangle, badge: highPriorityAlertsCount || null, badgeColor: 'bg-rose-100 text-rose-800' },
-    { key: 'community', label: 'My Area', icon: MapPin, badge: null }
+    { key: 'referrals', label: 'Referrals', icon: Building2, badge: stats.pendingReferrals || null, badgeColor: 'bg-sky-100 text-sky-900' },
+    { key: 'followups', label: 'Follow-ups', icon: Clock, badge: stats.followupsDue || null, badgeColor: 'bg-amber-100 text-amber-900' }
   ];
 
   const workerName = user?.email ? user.email.split('@')[0] : 'Sunita Deshmukh';
@@ -248,6 +235,8 @@ export default function AshaWorkspace({ onNavigateToPatientView }) {
           }}
           onStartEncounter={handleStartEncounter}
           onOpenPatientPortal={onNavigateToPatientView}
+          onCompleteFollowUp={handleCompleteFollowUpTask}
+          isDemoMode={isDemoMode}
         />
       );
     }
@@ -278,7 +267,7 @@ export default function AshaWorkspace({ onNavigateToPatientView }) {
           />
         );
 
-      case 'consultations':
+      case 'referrals':
         return (
           <AshaReferralsView
             referrals={trackedReferrals}
@@ -576,7 +565,7 @@ export default function AshaWorkspace({ onNavigateToPatientView }) {
         className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-2 py-1.5 flex items-center justify-around z-30 shadow-lg"
         aria-label="Mobile Bottom Navigation"
       >
-        {navItems.slice(0, 5).map((item) => {
+        {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = activeTab === item.key && activeSubView === null;
 
