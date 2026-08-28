@@ -4,11 +4,15 @@ import { supabase } from './supabase';
  * Fetch all patients from the 'patients' table.
  * @returns {Promise<Array>} List of patients
  */
-export async function getPatients() {
-  const { data, error } = await supabase
-    .from('patients')
-    .select('*')
-    .order('created_at', { ascending: false });
+export async function getPatients(assignedVillageIds = []) {
+  let query = supabase.from('patients').select('*');
+
+  if (assignedVillageIds && assignedVillageIds.length > 0) {
+    // Relational scoping: filter only patients in authorized villages
+    query = query.in('village_id', assignedVillageIds);
+  }
+
+  const { data, error } = await query.order('created_at', { ascending: false });
 
   if (error) {
     console.error('Error fetching patients from Supabase:', error.message);

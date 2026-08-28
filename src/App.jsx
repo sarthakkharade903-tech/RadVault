@@ -1,4 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useAuth } from './context/AuthContext';
+import { ROLES, ROLE_CONFIG } from './constants/roles';
+
+// Existing Patient Portal Components
 import { PatientHome } from './components/dashboard/PatientHome';
 import {
   mockPatient,
@@ -17,6 +21,14 @@ import HealthTimeline from './components/HealthTimeline/HealthTimeline';
 import MedicalRecordsList from './components/MedicalRecords/MedicalRecordsList';
 import ReferralsDashboard from './components/Referrals/ReferralsDashboard';
 
+// Role Workspace Placeholders & Guards
+import AshaWorkspace from './components/workspaces/AshaWorkspace';
+import HospitalStaffWorkspace from './components/workspaces/HospitalStaffWorkspace';
+import DoctorWorkspace from './components/workspaces/DoctorWorkspace';
+import RoleGuard from './components/common/RoleGuard';
+import NoRoleScreen from './components/common/NoRoleScreen';
+import LoadingSpinner from './components/common/LoadingSpinner';
+
 import {
   HeartPulse,
   Home,
@@ -25,12 +37,8 @@ import {
   Handshake,
   Shield,
   Plus,
-  ExternalLink,
   ChevronLeft,
-  Calendar,
-  Sparkles,
   Clock,
-  ShieldAlert,
 } from 'lucide-react';
 
 // ─── Indian-Friendly Cultural Emergency Shield Icon ─────────────────────────
@@ -92,299 +100,499 @@ function PlaceholderScreen({
   );
 }
 
-// ─── Bottom Navigation Items ──────────────────────────────────────────────────
+// ─── Patient Bottom Navigation Items ─────────────────────────────────────────
 
-const NAV_ITEMS = [
+const PATIENT_NAV_ITEMS = [
   {
     key: 'home',
     label: 'Home',
-    Icon: Home, // Sloping-roof house
+    Icon: Home,
   },
   {
     key: 'records',
     label: 'Records',
-    Icon: BookOpen, // Medical Notebook / Folder
+    Icon: BookOpen,
   },
   {
     key: 'timeline',
     label: 'Timeline',
-    Icon: Clock, // Health Timeline
+    Icon: Clock,
   },
   {
     key: 'referrals',
     label: 'Referrals',
-    Icon: Handshake, // Doctor–Patient Handshake
+    Icon: Handshake,
   },
   {
     key: 'emergency',
     label: 'Emergency',
-    CustomIcon: NavEmergencyIcon, // Saffron Shield with Red Cross
+    CustomIcon: NavEmergencyIcon,
   },
   {
     key: 'profile',
     label: 'Profile',
-    Icon: UserCircle2, // Circular Avatar Silhouette
+    Icon: UserCircle2,
   },
 ];
 
 // ─── Main Application Shell ───────────────────────────────────────────────────
 
 function App() {
-  const [activeTab, setActiveTab] = useState('home');
+  const {
+    role,
+    loading,
+    hasNoRole,
+    isDemoMode,
+    isAuthenticated,
+    switchDemoRole,
+    logout
+  } = useAuth();
+
+  const [activePatientTab, setActivePatientTab] = useState('home');
   const [showPortalPicker, setShowPortalPicker] = useState(false);
   const [targetRecordId, setTargetRecordId] = useState(null);
 
+  // Sync role with URL hash on mount & hashchange for native routing in demo mode
+  useEffect(() => {
+    if (!isDemoMode) return;
+
+    const handleHashChange = () => {
+      const hash = window.location.hash.replace('#', '').toLowerCase();
+      if (hash === 'asha' || hash === 'hospital' || hash === 'doctor' || hash === 'patient') {
+        const mappedRole = hash === 'hospital' ? ROLES.HOSPITAL_STAFF : hash;
+        if (Object.values(ROLES).includes(mappedRole) && mappedRole !== role) {
+          switchDemoRole(mappedRole);
+        }
+      }
+    };
+
+    handleHashChange();
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, [role, isDemoMode, switchDemoRole]);
+
+  // Update hash when demo role changes
+  const handleRoleSelect = (targetRole) => {
+    switchDemoRole(targetRole);
+    setShowPortalPicker(false);
+    const hashKey = targetRole === ROLES.HOSPITAL_STAFF ? 'hospital' : targetRole;
+    window.location.hash = hashKey;
+  };
+
   const handleViewRecordFromTimeline = (recordId) => {
     setTargetRecordId(recordId);
-    setActiveTab('records');
+    setActivePatientTab('records');
   };
 
   const handleTriggerEmergency = () => {
-    setActiveTab('emergency');
+    setActivePatientTab('emergency');
   };
+
+  // Loading state handler
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#F9F9F9] flex items-center justify-center">
+        <LoadingSpinner message="Determining RadVault care session..." />
+      </div>
+    );
+  }
+
+  // Authenticated user with missing or invalid role handler
+  if (hasNoRole) {
+    return (
+      <div className="min-h-screen bg-[#F9F9F9] flex flex-col font-sans">
+        <header className="bg-white border-b border-slate-200 px-4 py-3 shadow-xs">
+          <div className="max-w-4xl mx-auto flex items-center gap-3">
+            <HeartPulse className="w-6 h-6 text-[#008080]" />
+            <span className="font-black text-lg text-[#008080]">RadVault</span>
+          </div>
+        </header>
+        <main className="flex-1 flex items-center justify-center p-4">
+          <NoRoleScreen />
+        </main>
+      </div>
+    );
+  }
+
+  const currentRoleConfig = (role && ROLE_CONFIG[role]) || ROLE_CONFIG[ROLES.ASHA];
 
   return (
     <div className="min-h-screen bg-[#F9F9F9] text-[#212121] flex flex-col font-sans selection:bg-[#FF9933]/30 selection:text-[#800000]">
 
-      {/* ── Top Header (Light Theme with Teal & Saffron Accents) ── */}
+      {/* ── Demo / Prototype Notice Banner (Active during Demo Mode only) ── */}
+      {isDemoMode && (
+        <div className="bg-slate-900 text-slate-200 text-[11px] px-4 py-1.5 flex items-center justify-between border-b border-slate-800">
+          <div className="max-w-5xl mx-auto w-full flex items-center justify-between gap-2">
+            <span className="flex items-center gap-1.5 font-medium">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#FF9933] animate-pulse" />
+              <strong className="text-white uppercase tracking-wider font-extrabold text-[10px] bg-[#FF9933]/20 text-[#FF9933] px-1.5 py-0.2 rounded border border-[#FF9933]/40">
+                Prototype Demo Mode
+              </strong>
+              <span>Client-side role preview for testing. Real authorization is enforced via Supabase Auth + PostgreSQL RLS.</span>
+            </span>
+            <span className="text-[10px] text-slate-400 font-mono hidden md:inline">
+              Active: {currentRoleConfig.shortLabel}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* ── Top Header (Light Theme with Role Badge & Portal Switcher) ── */}
       <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200/90 px-4 py-3 shadow-xs">
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
+        <div className="max-w-5xl mx-auto flex items-center justify-between">
 
-          {/* Branding */}
-          <button
-            onClick={() => setShowPortalPicker(!showPortalPicker)}
-            className="flex items-center gap-3 group text-left"
-            title="Switch system portal"
-            aria-expanded={showPortalPicker}
-            aria-haspopup="true"
-          >
-            <div className="w-10 h-10 bg-[#008080]/10 border-2 border-[#008080]/30 rounded-xl flex items-center justify-center group-hover:scale-105 transition-transform">
-              <HeartPulse className="w-6 h-6 text-[#008080]" aria-hidden="true" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-black text-lg text-[#008080] tracking-tight">RadVault</span>
-                <span className="text-[11px] font-extrabold bg-[#FFF5EB] text-[#b35900] px-2 py-0.5 rounded-md border border-[#FF9933]/50">
-                  Patient Portal
-                </span>
+          {/* Branding & Active Workspace Identifier */}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowPortalPicker(!showPortalPicker)}
+              className="flex items-center gap-3 group text-left"
+              title="Switch role portal"
+              aria-expanded={showPortalPicker}
+              aria-haspopup="true"
+            >
+              <div className="w-10 h-10 bg-[#008080]/10 border-2 border-[#008080]/30 rounded-xl flex items-center justify-center group-hover:scale-105 transition-transform">
+                <HeartPulse className="w-6 h-6 text-[#008080]" aria-hidden="true" />
               </div>
-              <p className="text-[11px] text-[#555555] font-medium leading-none mt-0.5">
-                One Connected Health Journey
-              </p>
-            </div>
-          </button>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-black text-lg text-[#008080] tracking-tight">RadVault</span>
+                  <span className={`text-[11px] font-extrabold px-2 py-0.5 rounded-md border ${currentRoleConfig.badgeColor}`}>
+                    {currentRoleConfig.icon} {currentRoleConfig.shortLabel}
+                  </span>
+                </div>
+                <p className="text-[11px] text-[#555555] font-medium leading-none mt-0.5">
+                  ASHA-First Digital Care Coordination
+                </p>
+              </div>
+            </button>
+          </div>
 
-          {/* Right Side Controls */}
+          {/* Right Side Portal & Role Controls */}
           <div className="flex items-center gap-2">
+            {isAuthenticated && (
+              <button
+                onClick={logout}
+                className="px-2.5 py-1.5 text-xs font-bold text-slate-600 hover:text-slate-900 transition-colors"
+              >
+                Sign Out
+              </button>
+            )}
             <button
               onClick={() => setShowPortalPicker(!showPortalPicker)}
               className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-[#212121] rounded-xl text-xs font-bold border border-slate-300 transition-colors flex items-center gap-1.5"
-              aria-label="Switch system portal"
+              aria-label="Switch system portal view"
             >
               <span className="w-2 h-2 rounded-full bg-[#008080] animate-pulse" aria-hidden="true" />
-              Portals
+              {isDemoMode ? 'Demo Portals' : 'Workspaces'}
             </button>
           </div>
         </div>
 
-        {/* Portal Switcher Dropdown */}
+        {/* ── Multi-Role Portal Switcher Dropdown ── */}
         {showPortalPicker && (
-          <div className="max-w-4xl mx-auto mt-3 p-4 bg-white border-2 border-slate-200 rounded-2xl shadow-xl">
+          <div className="max-w-5xl mx-auto mt-3 p-4 bg-white border-2 border-slate-200 rounded-2xl shadow-xl animate-in fade-in slide-in-from-top-2 duration-150">
             <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-bold text-[#555555] uppercase tracking-wider">
-                Select Portal View
-              </span>
+              <div>
+                <span className="text-xs font-bold text-[#555555] uppercase tracking-wider">
+                  {isDemoMode ? 'Prototype Role Switcher (Demo Mode)' : 'Authorized Workspaces'}
+                </span>
+                <p className="text-[11px] text-slate-400">
+                  {isDemoMode
+                    ? 'Preview the 3 core healthcare personas (ASHA, Hospital Staff, Doctor) and the beneficiary view.'
+                    : 'Your workspace is assigned according to your verified clinical credentials.'}
+                </p>
+              </div>
               <button
                 onClick={() => setShowPortalPicker(false)}
-                className="text-xs text-[#555555] hover:text-[#212121] font-bold"
+                className="text-xs text-[#555555] hover:text-[#212121] font-bold px-2 py-1 rounded-lg hover:bg-slate-100"
               >
                 ✕ Close
               </button>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {/* 1. ASHA / Frontline Worker */}
               <div
-                onClick={() => setShowPortalPicker(false)}
+                onClick={() => handleRoleSelect(ROLES.ASHA)}
                 role="button"
                 tabIndex={0}
-                className="p-3.5 bg-[#E6F2F2] border-2 border-[#008080] rounded-xl cursor-pointer"
+                className={`p-3.5 rounded-xl cursor-pointer transition-all border-2 ${
+                  role === ROLES.ASHA
+                    ? 'bg-[#FFF5EB] border-[#FF9933] shadow-xs'
+                    : 'bg-white border-slate-200 hover:border-[#FF9933]/60 hover:bg-[#FFF5EB]/40'
+                }`}
               >
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="text-lg" aria-hidden="true">📱</span>
-                  <span className="font-extrabold text-sm text-[#008080]">Frontline Patient Portal</span>
-                  <span className="text-[10px] bg-[#008080] text-white font-bold px-1.5 py-0.5 rounded ml-auto">
-                    Active
-                  </span>
+                  <span className="text-lg" aria-hidden="true">👩‍⚕️</span>
+                  <span className="font-extrabold text-sm text-[#212121]">ASHA Worker</span>
+                  {role === ROLES.ASHA && (
+                    <span className="text-[10px] bg-[#FF9933] text-white font-bold px-1.5 py-0.2 rounded ml-auto">
+                      Active
+                    </span>
+                  )}
                 </div>
-                <p className="text-xs text-[#555555]">
-                  Patient identity, live vitals telemetry, referrals, and emergency QR.
+                <p className="text-[11px] text-[#555555] line-clamp-2">
+                  Primary user: Patient registration, vitals, AI triage & referrals.
                 </p>
               </div>
+
+              {/* 2. Hospital Staff / Operations */}
               <div
-                onClick={() => {
-                  alert('The Doctor / Clinical Portal is managed by Team B.');
-                  setShowPortalPicker(false);
-                }}
+                onClick={() => handleRoleSelect(ROLES.HOSPITAL_STAFF)}
                 role="button"
                 tabIndex={0}
-                className="p-3.5 bg-slate-50 border border-slate-200 hover:border-[#008080]/50 rounded-xl cursor-pointer group"
+                className={`p-3.5 rounded-xl cursor-pointer transition-all border-2 ${
+                  role === ROLES.HOSPITAL_STAFF
+                    ? 'bg-[#E6F2F2] border-[#008080] shadow-xs'
+                    : 'bg-white border-slate-200 hover:border-[#008080]/60 hover:bg-[#E6F2F2]/40'
+                }`}
               >
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="text-lg" aria-hidden="true">💻</span>
-                  <span className="font-bold text-sm text-[#212121] group-hover:text-[#008080]">
-                    Doctor / Clinical Portal
-                  </span>
-                  <ExternalLink className="w-3.5 h-3.5 text-[#555555] ml-auto" aria-hidden="true" />
+                  <span className="text-lg" aria-hidden="true">🏥</span>
+                  <span className="font-extrabold text-sm text-[#212121]">Hospital Staff</span>
+                  {role === ROLES.HOSPITAL_STAFF && (
+                    <span className="text-[10px] bg-[#008080] text-white font-bold px-1.5 py-0.2 rounded ml-auto">
+                      Active
+                    </span>
+                  )}
                 </div>
-                <p className="text-xs text-[#555555]">Team B's clinical diagnostic workspace.</p>
+                <p className="text-[11px] text-[#555555] line-clamp-2">
+                  Operational user: Referral intake queue, doctor routing & arrivals.
+                </p>
+              </div>
+
+              {/* 3. Doctor / Clinical Specialist */}
+              <div
+                onClick={() => handleRoleSelect(ROLES.DOCTOR)}
+                role="button"
+                tabIndex={0}
+                className={`p-3.5 rounded-xl cursor-pointer transition-all border-2 ${
+                  role === ROLES.DOCTOR
+                    ? 'bg-[#FDF2F2] border-[#800000] shadow-xs'
+                    : 'bg-white border-slate-200 hover:border-[#800000]/60 hover:bg-[#FDF2F2]/40'
+                }`}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-lg" aria-hidden="true">🩺</span>
+                  <span className="font-extrabold text-sm text-[#212121]">Doctor Specialist</span>
+                  {role === ROLES.DOCTOR && (
+                    <span className="text-[10px] bg-[#800000] text-white font-bold px-1.5 py-0.2 rounded ml-auto">
+                      Active
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-[#555555] line-clamp-2">
+                  Clinical user: Consultation, imaging review & treatment advice.
+                </p>
+              </div>
+
+              {/* 4. Patient (Beneficiary View) */}
+              <div
+                onClick={() => handleRoleSelect(ROLES.PATIENT)}
+                role="button"
+                tabIndex={0}
+                className={`p-3.5 rounded-xl cursor-pointer transition-all border-2 ${
+                  role === ROLES.PATIENT
+                    ? 'bg-slate-100 border-slate-400 shadow-xs'
+                    : 'bg-white border-slate-200 hover:border-slate-400 hover:bg-slate-50'
+                }`}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-lg" aria-hidden="true">👤</span>
+                  <span className="font-extrabold text-sm text-[#212121]">Patient Portal</span>
+                  {role === ROLES.PATIENT && (
+                    <span className="text-[10px] bg-slate-700 text-white font-bold px-1.5 py-0.2 rounded ml-auto">
+                      Active
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-[#555555] line-clamp-2">
+                  Beneficiary: Personal health record vault, emergency ID & timeline.
+                </p>
               </div>
             </div>
           </div>
         )}
       </header>
 
-      {/* ── Main Content Area ── */}
+      {/* ── Main Content Area (Role-Guarded Workspaces) ── */}
       <main className="flex-1" id="main-content">
-        {/* Tab 1: Member 1 - Patient Home Dashboard */}
-        {activeTab === 'home' && (
-          <PatientHome onNavigate={setActiveTab} />
-        )}
 
-        {/* Tab 2: Member 2 - Medical Records Vault (Sujay's Module) */}
-        {activeTab === 'records' && (
-          <div className="max-w-4xl mx-auto px-4 py-6">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h2 className="text-2xl font-extrabold text-[#008080]">Medical Records & Vault</h2>
-                <p className="text-sm text-[#555555]">Digitized radiological scans, lab reports, and doctor prescriptions.</p>
-              </div>
-              <button
-                onClick={() => setActiveTab('home')}
-                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-[#212121] font-bold rounded-lg text-xs transition-colors flex items-center gap-1"
-              >
-                <ChevronLeft className="w-4 h-4" /> Back to Home
-              </button>
-            </div>
-            <MedicalRecordsList
-              records={mockMedicalRecords}
-              initialSelectedRecordId={targetRecordId}
-              patient={mockPatient}
+        {/* ── WORKSPACE 1: ASHA / Frontline Health Worker (Primary) ── */}
+        {role === ROLES.ASHA && (
+          <RoleGuard allowedRoles={[ROLES.ASHA]}>
+            <AshaWorkspace
+              onNavigateToPatientView={() => handleRoleSelect(ROLES.PATIENT)}
             />
-          </div>
+          </RoleGuard>
         )}
 
-        {/* Tab 3: Member 2 - Health Timeline (Sujay's Module) */}
-        {activeTab === 'timeline' && (
-          <div className="max-w-4xl mx-auto px-4 py-6">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h2 className="text-2xl font-extrabold text-[#008080]">Health Timeline</h2>
-                <p className="text-sm text-[#555555]">Chronological timeline of consultations, scans, and triage events.</p>
-              </div>
-              <button
-                onClick={() => setActiveTab('home')}
-                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-[#212121] font-bold rounded-lg text-xs transition-colors flex items-center gap-1"
-              >
-                <ChevronLeft className="w-4 h-4" /> Back to Home
-              </button>
-            </div>
-            <HealthTimeline
-              events={mockTimelineEvents}
-              onViewRecord={handleViewRecordFromTimeline}
+        {/* ── WORKSPACE 2: Hospital Staff / Operations ── */}
+        {role === ROLES.HOSPITAL_STAFF && (
+          <RoleGuard allowedRoles={[ROLES.HOSPITAL_STAFF]}>
+            <HospitalStaffWorkspace
+              onNavigateToPatientView={() => handleRoleSelect(ROLES.PATIENT)}
             />
-          </div>
+          </RoleGuard>
         )}
 
-        {/* Tab 4: Member 3 - Specialist Referrals (ASHA Triage Module) */}
-        {activeTab === 'referrals' && (
-          <ReferralsDashboard onBack={() => setActiveTab('home')} />
+        {/* ── WORKSPACE 3: Doctor / Clinical Specialist ── */}
+        {role === ROLES.DOCTOR && (
+          <RoleGuard allowedRoles={[ROLES.DOCTOR]}>
+            <DoctorWorkspace
+              onNavigateToPatientView={() => handleRoleSelect(ROLES.PATIENT)}
+            />
+          </RoleGuard>
         )}
 
-        {/* Tab 5: Member 3 - Emergency Break-Glass ID */}
-        {activeTab === 'emergency' && (
-          <PlaceholderScreen
-            icon={NavEmergencyIcon}
-            title="Emergency Break-Glass ID"
-            member="Team A Member 3 · Module"
-            description="Generate emergency QR codes exposing only critical triage info (Blood group, allergies, emergency contacts) with audit logging."
-            color="text-[#D32F2F]"
-            btnColor="bg-[#FF9933] hover:bg-[#E68A2E] text-slate-950"
-            ctaText="Generate One-Time Emergency QR"
-            onCta={() => alert('🚨 Emergency QR Generated: Scan to view minimum critical blood group & allergy triage data.')}
-            onBack={() => setActiveTab('home')}
-          />
-        )}
+        {/* ── WORKSPACE 4: Patient Portal (Beneficiary View - Full Existing Tabs) ── */}
+        {role === ROLES.PATIENT && (
+          <RoleGuard allowedRoles={[ROLES.PATIENT]}>
+            <div className="pb-24">
+              {/* Tab 1: Member 1 - Patient Home Dashboard */}
+              {activePatientTab === 'home' && (
+                <PatientHome onNavigate={setActivePatientTab} />
+              )}
 
-        {/* Tab 6: Member 2 - Patient Profile & Conditions (Sujay's Module) */}
-        {activeTab === 'profile' && (
-          <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
-            <div className="mb-2 flex items-center justify-between">
-              <div>
-                <h2 className="text-2xl font-extrabold text-[#008080]">Patient Profile & Health Details</h2>
-                <p className="text-sm text-[#555555]">Demographics, critical conditions, allergies, and vitals history.</p>
-              </div>
-              <button
-                onClick={() => setActiveTab('home')}
-                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-[#212121] font-bold rounded-lg text-xs transition-colors flex items-center gap-1"
-              >
-                <ChevronLeft className="w-4 h-4" /> Back to Home
-              </button>
-            </div>
-            <div className="rv-profile-layout">
-              <div className="rv-profile-top-grid">
-                <PatientProfileCard
-                  patient={mockPatient}
-                  onTriggerEmergencyQR={handleTriggerEmergency}
+              {/* Tab 2: Member 2 - Medical Records Vault (Sujay's Module) */}
+              {activePatientTab === 'records' && (
+                <div className="max-w-4xl mx-auto px-4 py-6">
+                  <div className="mb-4 flex items-center justify-between">
+                    <div>
+                      <h2 className="text-2xl font-extrabold text-[#008080]">Medical Records & Vault</h2>
+                      <p className="text-sm text-[#555555]">Digitized radiological scans, lab reports, and doctor prescriptions.</p>
+                    </div>
+                    <button
+                      onClick={() => setActivePatientTab('home')}
+                      className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-[#212121] font-bold rounded-lg text-xs transition-colors flex items-center gap-1"
+                    >
+                      <ChevronLeft className="w-4 h-4" /> Back to Home
+                    </button>
+                  </div>
+                  <MedicalRecordsList
+                    records={mockMedicalRecords}
+                    initialSelectedRecordId={targetRecordId}
+                    patient={mockPatient}
+                  />
+                </div>
+              )}
+
+              {/* Tab 3: Member 2 - Health Timeline (Sujay's Module) */}
+              {activePatientTab === 'timeline' && (
+                <div className="max-w-4xl mx-auto px-4 py-6">
+                  <div className="mb-4 flex items-center justify-between">
+                    <div>
+                      <h2 className="text-2xl font-extrabold text-[#008080]">Health Timeline</h2>
+                      <p className="text-sm text-[#555555]">Chronological timeline of consultations, scans, and triage events.</p>
+                    </div>
+                    <button
+                      onClick={() => setActivePatientTab('home')}
+                      className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-[#212121] font-bold rounded-lg text-xs transition-colors flex items-center gap-1"
+                    >
+                      <ChevronLeft className="w-4 h-4" /> Back to Home
+                    </button>
+                  </div>
+                  <HealthTimeline
+                    events={mockTimelineEvents}
+                    onViewRecord={handleViewRecordFromTimeline}
+                  />
+                </div>
+              )}
+
+              {/* Tab 4: Member 3 - Specialist Referrals (ASHA Triage Module) */}
+              {activePatientTab === 'referrals' && (
+                <ReferralsDashboard onBack={() => setActivePatientTab('home')} />
+              )}
+
+              {/* Tab 5: Member 3 - Emergency Break-Glass ID */}
+              {activePatientTab === 'emergency' && (
+                <PlaceholderScreen
+                  icon={NavEmergencyIcon}
+                  title="Emergency Break-Glass ID"
+                  member="Team A Member 3 · Module"
+                  description="Generate emergency QR codes exposing only critical triage info (Blood group, allergies, emergency contacts) with audit logging."
+                  color="text-[#D32F2F]"
+                  btnColor="bg-[#FF9933] hover:bg-[#E68A2E] text-slate-950"
+                  ctaText="Generate One-Time Emergency QR"
+                  onCta={() => alert('🚨 Emergency QR Generated: Scan to view minimum critical blood group & allergy triage data.')}
+                  onBack={() => setActivePatientTab('home')}
                 />
-                <PatientVitals vitals={mockVitals} />
-              </div>
-              <PatientConditions
-                allergies={mockAllergies}
-                conditions={mockConditions}
-                medications={mockMedications}
-              />
+              )}
+
+              {/* Tab 6: Member 2 - Patient Profile & Conditions (Sujay's Module) */}
+              {activePatientTab === 'profile' && (
+                <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
+                  <div className="mb-2 flex items-center justify-between">
+                    <div>
+                      <h2 className="text-2xl font-extrabold text-[#008080]">Patient Profile & Health Details</h2>
+                      <p className="text-sm text-[#555555]">Demographics, critical conditions, allergies, and vitals history.</p>
+                    </div>
+                    <button
+                      onClick={() => setActivePatientTab('home')}
+                      className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-[#212121] font-bold rounded-lg text-xs transition-colors flex items-center gap-1"
+                    >
+                      <ChevronLeft className="w-4 h-4" /> Back to Home
+                    </button>
+                  </div>
+                  <div className="rv-profile-layout">
+                    <div className="rv-profile-top-grid">
+                      <PatientProfileCard
+                        patient={mockPatient}
+                        onTriggerEmergencyQR={handleTriggerEmergency}
+                      />
+                      <PatientVitals vitals={mockVitals} />
+                    </div>
+                    <PatientConditions
+                      allergies={mockAllergies}
+                      conditions={mockConditions}
+                      medications={mockMedications}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* ── Patient Bottom Navigation Bar ── */}
+              <nav
+                className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200/90 px-2 py-2 shadow-lg"
+                aria-label="Patient portal navigation"
+              >
+                <div className="max-w-md mx-auto flex items-center justify-around">
+                  {PATIENT_NAV_ITEMS.map(({ key, label, Icon, CustomIcon }) => {
+                    const isActive = activePatientTab === key;
+                    return (
+                      <button
+                        key={key}
+                        onClick={() => {
+                          setActivePatientTab(key);
+                          setTargetRecordId(null);
+                        }}
+                        className={`flex flex-col items-center gap-1 px-2.5 py-1.5 rounded-xl transition-all min-w-[50px] relative group ${
+                          isActive
+                            ? 'text-[#800000] font-extrabold bg-[#800000]/8 scale-105'
+                            : 'text-[#555555] hover:text-[#008080] hover:bg-[#008080]/5'
+                        }`}
+                        aria-label={label}
+                        aria-current={isActive ? 'page' : undefined}
+                      >
+                        {isActive && (
+                          <span className="absolute -top-2 left-1/2 -translate-x-1/2 w-6 h-1 bg-[#FF9933] rounded-full" />
+                        )}
+
+                        {CustomIcon ? (
+                          <CustomIcon active={isActive} />
+                        ) : (
+                          <Icon className={`w-5 h-5 ${isActive ? 'text-[#800000]' : 'text-[#008080]/80 group-hover:text-[#008080]'}`} aria-hidden="true" />
+                        )}
+                        <span className="text-[10px] font-bold leading-none tracking-tight">{label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </nav>
             </div>
-          </div>
+          </RoleGuard>
         )}
       </main>
-
-      {/* ── Bottom Navigation Bar (Indian Palette: Teal, Maroon, Saffron) ── */}
-      <nav
-        className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200/90 px-2 py-2 shadow-lg"
-        aria-label="Patient portal navigation"
-      >
-        <div className="max-w-md mx-auto flex items-center justify-around">
-          {NAV_ITEMS.map(({ key, label, Icon, CustomIcon }) => {
-            const isActive = activeTab === key;
-            return (
-              <button
-                key={key}
-                onClick={() => {
-                  setActiveTab(key);
-                  setTargetRecordId(null);
-                }}
-                className={`flex flex-col items-center gap-1 px-2.5 py-1.5 rounded-xl transition-all min-w-[50px] relative group ${
-                  isActive
-                    ? 'text-[#800000] font-extrabold bg-[#800000]/8 scale-105'
-                    : 'text-[#555555] hover:text-[#008080] hover:bg-[#008080]/5'
-                }`}
-                aria-label={label}
-                aria-current={isActive ? 'page' : undefined}
-              >
-                {isActive && (
-                  <span className="absolute -top-2 left-1/2 -translate-x-1/2 w-6 h-1 bg-[#FF9933] rounded-full" />
-                )}
-
-                {CustomIcon ? (
-                  <CustomIcon active={isActive} />
-                ) : (
-                  <Icon className={`w-5 h-5 ${isActive ? 'text-[#800000]' : 'text-[#008080]/80 group-hover:text-[#008080]'}`} aria-hidden="true" />
-                )}
-                <span className="text-[10px] font-bold leading-none tracking-tight">{label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </nav>
     </div>
   );
 }
