@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback } from "react";
+﻿import React, { useState, useEffect, useCallback } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { Heart, Droplet, Weight, Ruler, Thermometer, Wind, Activity, CheckCircle2, Clock, Phone, ChevronRight, ActivitySquare, Plus, ShieldAlert, Baby } from "lucide-react";
+import { Heart, Droplet, Weight, Ruler, Thermometer, Wind, Activity, CheckCircle2, Clock, Phone, ChevronRight, ActivitySquare, Plus, ShieldAlert, Baby, Lock } from "lucide-react";
 import { getLatestVitals } from "../../services/ashaService";
 import UpdateVitalsModal from "../Patient/UpdateVitalsModal";
 import VitalsHistory from "../Patient/VitalsHistory";
@@ -21,44 +21,54 @@ function fmtISO(iso) {
 
 function sourceBadge(source) {
   if (!source) return null;
-  const base = "text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wide";
-  if (source === "ASHA recorded") return <span className={`${base} bg-teal-50 text-teal-700`}>{source}</span>;
-  if (source === "Clinical")      return <span className={`${base} bg-indigo-50 text-indigo-700`}>{source}</span>;
-  return <span className={`${base} bg-amber-50 text-amber-700`}>{source}</span>;
+  const base = "text-[9px] font-black px-2 py-1 rounded-[6px] uppercase tracking-wider";
+  if (source === "ASHA recorded") return <span className={`${base} bg-emerald-50 text-emerald-700 border border-emerald-100/50`}>{source}</span>;
+  if (source === "Clinical")      return <span className={`${base} bg-indigo-50 text-indigo-700 border border-indigo-100/50`}>{source}</span>;
+  if (source === "SELF-REPORTED") return <span className={`${base} bg-amber-100 text-amber-700 border border-amber-200/50`}>{source}</span>;
+  return <span className={`${base} bg-amber-50 text-amber-700 border border-amber-100/50`}>{source}</span>;
 }
 
-function VitalCard({ icon: Icon, iconColor, label, value, unit, source, recordedAt, onUpdate }) {
+function VitalCard({ icon: Icon, iconColor, bgShapeColor, label, value, unit, source, recordedAt, onUpdate }) {
   const hasValue = value !== null && value !== undefined && value !== "";
   return (
-    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 flex flex-col gap-2">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1.5">
-          <Icon className={`w-3.5 h-3.5 ${iconColor}`} />
-          <span className="text-[10px] font-bold text-[#64748B] uppercase tracking-wider">{label}</span>
+    <div className="relative bg-white rounded-[24px] border border-slate-100 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.03)] hover:shadow-[0_8px_24px_-8px_rgba(251,191,36,0.15)] transition-all duration-300 p-5 flex flex-col gap-3 overflow-hidden group">
+      
+      {/* Subtle Geometric Background Watermark */}
+      <div className={`absolute -bottom-6 -right-6 w-28 h-28 rounded-tl-full opacity-40 transition-transform duration-500 group-hover:scale-110 pointer-events-none ${bgShapeColor}`} />
+      <div className="absolute top-0 right-0 w-16 h-16 bg-white/40 rounded-bl-[100px] backdrop-blur-3xl z-0" />
+
+      <div className="flex items-center justify-between relative z-10">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center border border-slate-100 group-hover:bg-white transition-colors">
+             <Icon className={`w-4 h-4 ${iconColor}`} />
+          </div>
+          <span className="text-[11px] font-black text-[#64748B] uppercase tracking-[0.1em]">{label}</span>
         </div>
       </div>
 
-      {hasValue ? (
-        <>
-          <div className="mt-1">
-            <p className="text-[22px] font-black text-[#16324F] leading-none">
-              {value}<span className="text-[12px] font-semibold text-[#94A3B8] ml-1">{unit}</span>
-            </p>
+      <div className="relative z-10">
+        {hasValue ? (
+          <>
+            <div className="mt-1">
+              <p className="text-[32px] font-black text-[#16324F] leading-none tracking-tight">
+                {value}<span className="text-[13px] font-bold text-[#94A3B8] ml-1.5">{unit}</span>
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 mt-3">
+              {sourceBadge(source)}
+              {recordedAt && <span className="text-[10px] text-[#94A3B8] font-bold tracking-wide">{formatDate(recordedAt)}</span>}
+            </div>
+          </>
+        ) : (
+          <div className="flex flex-col gap-2 mt-1">
+            <p className="text-[13px] font-bold text-[#CBD5E1] italic">Not recorded yet</p>
+            <button onClick={onUpdate}
+              className="w-fit flex items-center gap-1.5 text-[11px] font-black text-amber-600 bg-amber-50 px-3 py-1.5 rounded-lg hover:bg-amber-100 transition-colors uppercase tracking-wide">
+              <Plus className="w-3 h-3" /> Add reading
+            </button>
           </div>
-          <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
-            {sourceBadge(source)}
-            {recordedAt && <span className="text-[9px] text-[#94A3B8] font-medium">{formatDate(recordedAt)}</span>}
-          </div>
-        </>
-      ) : (
-        <>
-          <p className="text-xs font-semibold text-[#CBD5E1] italic mt-1">Not recorded yet</p>
-          <button onClick={onUpdate}
-            className="flex items-center gap-1 text-[10px] font-bold text-[#008F83] mt-0.5 hover:underline">
-            <Plus className="w-3 h-3" /> Add reading
-          </button>
-        </>
-      )}
+        )}
+      </div>
     </div>
   );
 }
@@ -66,7 +76,7 @@ function VitalCard({ icon: Icon, iconColor, label, value, unit, source, recorded
 export default function PatientHome({ member }) {
   const [latestVitals, setLatestVitals] = useState({});
   const [loadingVitals, setLoadingVitals] = useState(true);
-  const [updateMetric, setUpdateMetric] = useState(null); // null | "all" | "bp" | "sugar" | "weight" | "height"
+  const [updateMetric, setUpdateMetric] = useState(null);
   const [showHistory, setShowHistory] = useState(false);
 
   const fetchVitals = useCallback(async () => {
@@ -82,9 +92,7 @@ export default function PatientHome({ member }) {
   if (!member) return null;
 
   const abhaDisplay = member.abha_id || "PENDING";
-  const verifiedAt  = member.asha_verified_at ? fmtISO(member.asha_verified_at) : null;
-  const qrValue     = `ABHA:${member.abha_id || "pending"}|Name:${member.name}|DOB:${member.dob || ""}`;
-
+  
   // Pull vitals: prefer history table values, fall back to ASHA baseline on member row
   const bp = latestVitals.bp_systolic;
   const bpVal = bp ? `${bp.bp_systolic} / ${bp.bp_diastolic}` : (member.bp_systolic && member.bp_diastolic ? `${member.bp_systolic}/${member.bp_diastolic}` : null);
@@ -103,7 +111,7 @@ export default function PatientHome({ member }) {
 
   const heightRow = latestVitals.height_cm;
   const heightVal = heightRow ? heightRow.height_cm : (member.height_cm ?? null);
-  const heightSource = heightRow ? heightRow.source : (heightVal != null ? "ASHA recorded" : null);
+  const heightSource = heightRow ? heightRow.source : (heightVal != null ? "SELF-REPORTED" : null);
   const heightDate = heightRow ? heightRow.recorded_at : member.last_visit_date;
 
   const tempRow = latestVitals.temperature_c;
@@ -116,227 +124,189 @@ export default function PatientHome({ member }) {
   const spo2Source = spo2Row ? spo2Row.source : null;
   const spo2Date = spo2Row ? spo2Row.recorded_at : null;
 
-  const pulseRow = latestVitals.pulse_bpm;
-  const pulseVal = pulseRow ? pulseRow.pulse_bpm : null;
-  const pulseSource = pulseRow ? pulseRow.source : null;
-  const pulseDate = pulseRow ? pulseRow.recorded_at : null;
-
-  const hasAllergies = member.allergies && member.allergies.trim() !== "";
-  const hasChronics  = member.chronic_conditions && member.chronic_conditions.length > 0;
-  const hasEmergency = member.emergency_contact_name || member.emergency_contact_phone;
-  const ancDone = member.anc_visits_done || 0;
-  const ancTotal = 4;
-  const allVaccines = ["bcg","opv","dpt","hep_b","measles","mr"];
-  const givenVaccines = allVaccines.filter(v => member[`vaccine_${v}`]);
   const lastVisitDate = member.last_visit_date;
 
   return (
-    <div className="min-h-full pb-10 bg-[#FCFBF8]">
+    <div className="min-h-full pb-32 bg-[#FCFBF8] font-sans">
 
-      {/* ── ABHA Health Card ── */}
-      <div className="mx-4 mt-5">
-        <div className="relative rounded-3xl overflow-hidden shadow-[0_8px_30px_rgb(0,143,131,0.12)]">
-          <div className="absolute inset-0 bg-gradient-to-br from-[#008F83] to-[#005D55] z-0" />
-          <div className="absolute top-0 right-0 w-64 h-64 bg-white opacity-5 rounded-full -translate-y-20 translate-x-12 blur-2xl z-0" />
-          <div className="relative z-10">
-            <div className="px-5 py-3.5 flex items-center justify-between border-b border-white/10">
-              <div className="flex items-center gap-1.5">
-                <Heart className="w-4 h-4 text-amber-300 fill-amber-300" />
-                <span className="text-white text-xs font-black tracking-wide">RadVault</span>
+      {/* ── Patient Hero Card ── */}
+      <div className="max-w-6xl mx-auto px-4 mt-6">
+        <div className="relative rounded-[32px] overflow-hidden shadow-[0_8px_30px_-12px_rgba(251,191,36,0.3)] border border-amber-100 bg-gradient-to-r from-amber-50 via-[#FFF9ED] to-amber-100 p-6 sm:p-8">
+          
+          {/* Decorative Saffron Shapes */}
+          <div className="absolute top-0 right-0 w-96 h-96 bg-amber-400/10 rounded-full blur-3xl -translate-y-20 translate-x-32" />
+          <div className="absolute bottom-0 left-0 w-64 h-64 bg-orange-400/10 rounded-full blur-2xl translate-y-20 -translate-x-10" />
+          
+          {/* Organic arc */}
+          <svg className="absolute bottom-0 right-0 w-full h-full opacity-20 pointer-events-none" viewBox="0 0 800 400" preserveAspectRatio="none">
+            <path d="M400,400 C600,400 800,200 800,0 L800,400 Z" fill="url(#saffronGrad)" />
+            <defs>
+              <linearGradient id="saffronGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#FBBF24" />
+                <stop offset="100%" stopColor="#F59E0B" />
+              </linearGradient>
+            </defs>
+          </svg>
+          
+          <div className="relative z-10 flex flex-col md:flex-row gap-6 md:items-start justify-between">
+            
+            {/* Patient Info Left */}
+            <div className="flex items-start gap-5">
+              <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-gradient-to-br from-amber-300 to-amber-500 shadow-lg shadow-amber-200/50 flex flex-col items-center justify-center text-white relative">
+                 <span className="text-3xl font-black">{member.name.charAt(0).toUpperCase()}</span>
+                 <div className="absolute -top-1 -right-1 w-6 h-6 bg-white rounded-full flex items-center justify-center shadow-sm">
+                   <div className="w-4 h-4 bg-amber-400 rounded-full" />
+                 </div>
               </div>
-              <p className="text-[8px] text-teal-100 font-bold tracking-[0.2em] uppercase">Health ID</p>
-            </div>
-            <div className="px-5 py-5 flex items-start gap-4">
-              <div className="flex-1 min-w-0">
-                <h2 className="text-[22px] font-black text-white leading-tight truncate mb-1">{member.name}</h2>
-                <div className="flex items-center gap-2 text-xs font-medium text-teal-100 mb-3">
-                  <span>{member.age_years ? `${member.age_years} yrs` : "Unknown Age"}</span>
-                  <span className="w-1 h-1 rounded-full bg-teal-300/50" />
+
+              <div>
+                <span className="inline-block bg-amber-200 text-amber-900 text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-[0.2em] mb-2">
+                  Primary Member
+                </span>
+                <h1 className="text-[28px] sm:text-[34px] font-black text-[#16324F] leading-none mb-2 tracking-tight">
+                  {member.name}
+                </h1>
+                <div className="flex flex-wrap items-center gap-2 text-sm font-bold text-[#64748B]">
+                  <span>{member.age_years ? `${member.age_years} yrs` : "Unknown"}</span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-300" />
                   <span>{member.gender}</span>
                   {member.blood_group && (
                     <>
-                      <span className="w-1 h-1 rounded-full bg-teal-300/50" />
-                      <span className="text-amber-300 font-bold">{member.blood_group}</span>
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-300" />
+                      <span className="text-amber-600">{member.blood_group}</span>
                     </>
                   )}
                 </div>
-                <div className="mt-2">
-                  <p className="text-[9px] font-bold text-teal-200/80 uppercase tracking-widest mb-0.5">ABHA Number</p>
-                  <p className="text-[17px] font-black text-white tracking-[0.15em] font-mono">{abhaDisplay}</p>
+
+                <div className="mt-5 bg-white/60 backdrop-blur-sm rounded-2xl p-3 border border-amber-200/50 inline-block">
+                   <p className="text-[9px] font-black text-[#94A3B8] uppercase tracking-[0.15em] mb-1">ABHA Number</p>
+                   <div className="flex items-center gap-3">
+                     <p className="text-lg font-black text-[#16324F] tracking-[0.1em] font-mono leading-none">
+                       {abhaDisplay}
+                     </p>
+                     {!member.abha_id && (
+                       <span className="bg-amber-100 text-amber-800 text-[9px] font-black px-2 py-0.5 rounded uppercase tracking-wide">Not linked yet</span>
+                     )}
+                   </div>
                 </div>
               </div>
-              {member.abha_id ? (
-                <div className="flex-shrink-0 bg-white p-1.5 rounded-xl shadow-lg">
-                  <QRCodeSVG value={qrValue} size={64} level="M" fgColor="#005D55" />
-                </div>
-              ) : (
-                <div className="flex-shrink-0 w-16 h-16 rounded-xl bg-white/10 border border-white/20 flex items-center justify-center">
-                  <Clock className="w-5 h-5 text-white/50" />
-                </div>
-              )}
             </div>
-            <div className="px-5 py-3 bg-black/10 backdrop-blur-sm flex items-center gap-2">
-              {verifiedAt ? (
-                <>
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
-                  <p className="text-[10px] font-medium text-teal-50">
-                    <strong className="text-white">Verified by ASHA</strong> · {verifiedAt}
-                  </p>
-                </>
-              ) : (
-                <>
-                  <Clock className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
-                  <p className="text-[10px] font-medium text-teal-50">Pending ASHA verification</p>
-                </>
-              )}
+
+            {/* Health ID Box Right */}
+            <div className="bg-white/90 backdrop-blur-xl rounded-[24px] p-5 border border-white shadow-[0_8px_30px_-10px_rgba(0,0,0,0.08)] w-full md:w-72 shrink-0">
+               <div className="flex items-center gap-2 mb-4">
+                 <ShieldAlert className="w-4 h-4 text-amber-500" />
+                 <span className="text-[10px] font-black text-[#16324F] uppercase tracking-[0.2em]">Health ID</span>
+               </div>
+               
+               <div className="flex flex-col items-center text-center">
+                 <div className="w-16 h-16 bg-amber-50 rounded-2xl flex items-center justify-center mb-3">
+                   <Lock className="w-8 h-8 text-amber-400" />
+                 </div>
+                 <h3 className="text-sm font-black text-[#16324F] mb-1">Secure your health identity</h3>
+                 <p className="text-[11px] font-medium text-[#64748B] mb-4 leading-relaxed px-2">
+                   Link your ABHA number to access complete health records and benefits.
+                 </p>
+                 <button className="w-full bg-gradient-to-r from-amber-400 to-amber-500 text-white font-black text-[12px] py-3 rounded-xl shadow-lg shadow-amber-300/40 hover:shadow-xl transition-all uppercase tracking-wide">
+                   Link ABHA Number
+                 </button>
+               </div>
             </div>
+
           </div>
+          
+          {/* Bottom ASHA verification strip */}
+          <div className="relative z-10 mt-6 border-t border-amber-200/30 pt-4 flex items-center gap-3">
+             <div className="w-10 h-10 bg-white/60 rounded-xl flex items-center justify-center shrink-0 shadow-sm border border-amber-100">
+               <ShieldAlert className="w-5 h-5 text-amber-500" />
+             </div>
+             <div>
+               <p className="text-xs font-black text-[#16324F]">Pending ASHA verification</p>
+               <p className="text-[11px] font-medium text-[#64748B] mt-0.5">Your ASHA worker will verify and link your ABHA number.</p>
+             </div>
+          </div>
+
         </div>
       </div>
 
-      <div className="px-4 mt-6 flex flex-col gap-5">
-
-        {/* ── Emergency Strip ── */}
-        {(hasAllergies || hasEmergency) && (
-          <div className="bg-rose-50/60 rounded-2xl border border-rose-100 px-4 py-3 flex gap-3">
-            <ShieldAlert className="w-5 h-5 text-rose-500 flex-shrink-0 mt-0.5" />
-            <div className="flex-1">
-              <p className="text-[10px] font-black text-rose-800 uppercase tracking-wider mb-1.5">Emergency Profile</p>
-              {hasAllergies && <p className="text-[11px] text-rose-900 mb-1"><span className="font-bold opacity-60">Allergies: </span>{member.allergies}</p>}
-              {hasEmergency && (
-                <p className="text-[11px] text-rose-900">
-                  <span className="font-bold opacity-60">Contact: </span>
-                  {member.emergency_contact_name || "—"}
-                  {member.emergency_contact_phone && (
-                    <a href={`tel:${member.emergency_contact_phone}`} className="ml-2 font-bold text-rose-600">
-                      {member.emergency_contact_phone}
-                    </a>
-                  )}
-                </p>
-              )}
-            </div>
-          </div>
-        )}
+      <div className="max-w-6xl mx-auto px-4 mt-10">
 
         {/* ── Latest Health Readings ── */}
-        <div>
-          <div className="flex items-center justify-between mb-3 px-0.5">
-            <h3 className="text-[13px] font-black text-[#16324F]">Latest Health Readings</h3>
+        <div className="mb-10">
+          <div className="flex items-center justify-between mb-5 px-1">
+            <h3 className="text-[16px] font-black text-[#16324F] flex items-center gap-2">
+              <Activity className="w-5 h-5 text-amber-500" />
+              Latest Health Readings
+            </h3>
             <button onClick={() => setUpdateMetric("all")}
-              className="flex items-center gap-1.5 bg-[#008F83] text-white px-3 py-1.5 rounded-full text-[11px] font-bold shadow-sm hover:bg-[#007A70] transition-colors">
-              <Plus className="w-3 h-3" /> Update
+              className="flex items-center gap-1.5 bg-amber-100 text-amber-800 px-4 py-2 rounded-xl text-[11px] font-black hover:bg-amber-200 transition-colors uppercase tracking-wide">
+              <Plus className="w-3.5 h-3.5" /> Update Reading
             </button>
           </div>
 
           {loadingVitals ? (
-            <div className="grid grid-cols-2 gap-3">
-              {[1,2,3,4].map(i => <div key={i} className="bg-white rounded-2xl border border-slate-100 h-24 animate-pulse" />)}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {[1,2,3,4,5,6].map(i => <div key={i} className="bg-white rounded-[24px] border border-slate-100 h-36 animate-pulse" />)}
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-3">
-              <VitalCard icon={Heart} iconColor="text-rose-500" label="Blood Pressure" value={bpVal} unit="mmHg" source={bpSource} recordedAt={bpDate} onUpdate={() => setUpdateMetric("bp")} />
-              <VitalCard icon={Droplet} iconColor="text-amber-500" label="Blood Sugar" value={sugarVal} unit="mg/dL" source={sugarSource} recordedAt={sugarDate} onUpdate={() => setUpdateMetric("sugar")} />
-              <VitalCard icon={Weight} iconColor="text-[#008F83]" label="Weight" value={weightVal} unit="kg" source={weightSource} recordedAt={weightDate} onUpdate={() => setUpdateMetric("weight")} />
-              <VitalCard icon={Ruler} iconColor="text-indigo-500" label="Height" value={heightVal} unit="cm" source={heightSource} recordedAt={heightDate} onUpdate={() => setUpdateMetric("height")} />
-              {(tempVal || spo2Val || pulseVal) && (
-                <>
-                  {tempVal  && <VitalCard icon={Thermometer} iconColor="text-orange-500" label="Temperature" value={tempVal} unit="°C" source={tempSource} recordedAt={tempDate} onUpdate={() => setUpdateMetric("temp")} />}
-                  {spo2Val  && <VitalCard icon={Wind} iconColor="text-sky-500" label="SpO₂" value={spo2Val} unit="%" source={spo2Source} recordedAt={spo2Date} onUpdate={() => setUpdateMetric("spo2")} />}
-                  {pulseVal && <VitalCard icon={Activity} iconColor="text-purple-500" label="Pulse" value={pulseVal} unit="bpm" source={pulseSource} recordedAt={pulseDate} onUpdate={() => setUpdateMetric("pulse")} />}
-                </>
-              )}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              <VitalCard icon={Heart} iconColor="text-rose-500" bgShapeColor="bg-rose-50" label="Blood Pressure" value={bpVal} unit="mmHg" source={bpSource} recordedAt={bpDate} onUpdate={() => setUpdateMetric("bp")} />
+              <VitalCard icon={Droplet} iconColor="text-amber-500" bgShapeColor="bg-orange-50" label="Blood Sugar" value={sugarVal} unit="mg/dL" source={sugarSource} recordedAt={sugarDate} onUpdate={() => setUpdateMetric("sugar")} />
+              <VitalCard icon={Weight} iconColor="text-emerald-500" bgShapeColor="bg-emerald-50" label="Weight" value={weightVal} unit="kg" source={weightSource} recordedAt={weightDate} onUpdate={() => setUpdateMetric("weight")} />
+              <VitalCard icon={Ruler} iconColor="text-purple-500" bgShapeColor="bg-purple-50" label="Height" value={heightVal} unit="cm" source={heightSource} recordedAt={heightDate} onUpdate={() => setUpdateMetric("height")} />
+              
+              <VitalCard icon={Thermometer} iconColor="text-orange-500" bgShapeColor="bg-amber-50" label="Temperature" value={tempVal} unit="°C" source={tempSource} recordedAt={tempDate} onUpdate={() => setUpdateMetric("temp")} />
+              <VitalCard icon={Wind} iconColor="text-sky-500" bgShapeColor="bg-sky-50" label="SpO₂" value={spo2Val} unit="%" source={spo2Source} recordedAt={spo2Date} onUpdate={() => setUpdateMetric("spo2")} />
             </div>
           )}
 
           <button onClick={() => setShowHistory(true)}
-            className="flex items-center gap-1.5 mt-3 text-[11px] font-bold text-[#008F83] hover:underline px-0.5">
-            View history <ChevronRight className="w-3.5 h-3.5" />
+            className="flex items-center gap-1.5 mt-5 text-[12px] font-black text-amber-500 hover:text-amber-600 hover:underline px-1 uppercase tracking-wide">
+            View full history <ChevronRight className="w-3.5 h-3.5" />
           </button>
         </div>
 
-        {/* ── Maternal Care ── */}
-        {member.is_pregnant && (
-          <div className="bg-white rounded-2xl border border-rose-100 shadow-sm overflow-hidden">
-            <div className="px-4 py-3 flex items-center justify-between border-b border-slate-50">
-              <div className="flex items-center gap-2">
-                <Heart className="w-4 h-4 text-rose-500 fill-rose-100" />
-                <span className="text-[11px] font-black text-[#16324F] uppercase tracking-wider">Antenatal Care</span>
-              </div>
-              <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full">{ancDone}/{ancTotal} Visits</span>
-            </div>
-            <div className="p-4 space-y-3">
-              {member.edd && <div><p className="text-[10px] font-bold text-[#94A3B8] uppercase mb-0.5">Expected Delivery</p><p className="text-sm font-black text-[#16324F]">{fmtISO(member.edd)}</p></div>}
-              {(member.ifa_given || member.tt_dose1 || member.tt_dose2) && (
-                <div className="flex flex-wrap gap-1.5">
-                  {member.ifa_given && <span className="text-[10px] font-bold px-2.5 py-1 bg-slate-50 text-slate-700 rounded-lg border border-slate-200">IFA Tablets</span>}
-                  {member.tt_dose1  && <span className="text-[10px] font-bold px-2.5 py-1 bg-slate-50 text-slate-700 rounded-lg border border-slate-200">TT Dose 1</span>}
-                  {member.tt_dose2  && <span className="text-[10px] font-bold px-2.5 py-1 bg-slate-50 text-slate-700 rounded-lg border border-slate-200">TT Dose 2</span>}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ── Child Care ── */}
-        {member.is_child && (
-          <div className="bg-white rounded-2xl border border-amber-100 shadow-sm overflow-hidden">
-            <div className="px-4 py-3 border-b border-slate-50 flex items-center gap-2">
-              <Baby className="w-4 h-4 text-amber-500" />
-              <span className="text-[11px] font-black text-[#16324F] uppercase tracking-wider">Child Health</span>
-            </div>
-            <div className="p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold text-[#64748B]">MUAC Screening</span>
-                <span className={`text-[10px] font-black px-3 py-1 rounded-full border uppercase
-                  ${member.muac_zone === "red" ? "bg-red-50 text-red-700 border-red-200"
-                  : member.muac_zone === "yellow" ? "bg-amber-50 text-amber-700 border-amber-200"
-                  : member.muac_zone === "green"  ? "bg-green-50 text-green-700 border-green-200"
-                  : "bg-slate-50 text-slate-500 border-slate-200"}`}>
-                  {member.muac_zone || "Not recorded"}
-                </span>
-              </div>
-              {givenVaccines.length > 0 && (
-                <div>
-                  <p className="text-[10px] font-bold text-[#94A3B8] uppercase mb-1.5">Vaccines Received</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {givenVaccines.map(v => <span key={v} className="text-[10px] font-bold px-2 py-1 bg-amber-50 text-amber-800 rounded-lg border border-amber-100 uppercase">{v.replace("_"," ")}</span>)}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ── Chronic Conditions ── */}
-        {hasChronics && (
-          <div className="bg-white rounded-2xl border border-slate-100 px-4 py-4 shadow-sm">
-            <p className="text-[10px] font-bold text-[#94A3B8] uppercase tracking-wider mb-2.5">Chronic Conditions</p>
-            <div className="flex flex-wrap gap-2">
-              {member.chronic_conditions.map(c => <span key={c} className="text-xs font-bold px-3 py-1.5 bg-indigo-50 text-indigo-700 rounded-xl border border-indigo-100">{c}</span>)}
-            </div>
-          </div>
-        )}
-
         {/* ── Recent Activity ── */}
         <div>
-          <h3 className="text-[13px] font-black text-[#16324F] mb-3 px-0.5">Recent Activity</h3>
-          <div className="bg-white rounded-2xl border border-[#E2E8F0] px-4 py-4 shadow-sm relative">
-            <div className="absolute top-0 left-[27px] bottom-0 w-0.5 bg-slate-50" />
+          <h3 className="text-[16px] font-black text-[#16324F] flex items-center gap-2 mb-5 px-1">
+            <Clock className="w-5 h-5 text-amber-500" />
+            Recent Activity
+          </h3>
+          
+          <div className="bg-white rounded-[24px] border border-slate-200 px-6 py-6 shadow-sm relative overflow-hidden group hover:shadow-md transition-shadow cursor-pointer">
+            <div className="absolute top-0 bottom-0 left-[35px] w-0.5 bg-slate-100" />
+            
             {lastVisitDate ? (
-              <div className="relative flex items-start gap-3">
-                <div className="w-7 h-7 rounded-full bg-[#E8F7F3] border-2 border-white shadow-sm flex items-center justify-center flex-shrink-0 z-10">
-                  <ActivitySquare className="w-3.5 h-3.5 text-[#008F83]" />
+              <div className="relative flex items-center gap-5">
+                <div className="w-8 h-8 rounded-full bg-white border-[3px] border-amber-200 flex items-center justify-center flex-shrink-0 z-10">
+                  <div className="w-2.5 h-2.5 bg-amber-400 rounded-full" />
                 </div>
-                <div className="pt-1">
-                  <p className="text-[10px] font-bold text-[#94A3B8] uppercase tracking-wide mb-0.5">{fmtISO(lastVisitDate)}</p>
-                  <p className="text-xs font-black text-[#16324F]">ASHA Home Visit</p>
-                  <p className="text-[11px] font-medium text-[#64748B] mt-0.5">Vitals and health status recorded by ASHA worker.</p>
+                
+                <div className="w-12 h-12 bg-amber-50 rounded-2xl flex items-center justify-center shrink-0 text-amber-500 border border-amber-100/50">
+                   <ActivitySquare className="w-6 h-6" />
+                </div>
+
+                <div className="flex-1 min-w-0 py-1">
+                  <p className="text-[10px] font-black text-[#94A3B8] uppercase tracking-[0.2em] mb-1">{fmtISO(lastVisitDate)}</p>
+                  <p className="text-[15px] font-black text-[#16324F]">ASHA Home Visit</p>
+                  <p className="text-[12px] font-medium text-[#64748B] mt-0.5 truncate">Vitals and health status recorded by ASHA worker.</p>
+                </div>
+                
+                <div className="hidden sm:flex items-center gap-4 shrink-0">
+                  <span className="bg-emerald-50 text-emerald-600 border border-emerald-100 px-3 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-wide">
+                    Completed
+                  </span>
+                  <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-amber-500 transition-colors" />
                 </div>
               </div>
             ) : (
-              <p className="text-xs text-[#94A3B8] italic text-center py-2">No recent activity recorded.</p>
+              <p className="text-sm font-medium text-[#94A3B8] italic text-center py-4">No recent activity recorded.</p>
             )}
           </div>
+          
+          <button className="flex items-center gap-1.5 mt-5 text-[12px] font-black text-amber-500 hover:text-amber-600 hover:underline px-1 uppercase tracking-wide">
+            View full timeline <ChevronRight className="w-3.5 h-3.5" />
+          </button>
         </div>
 
       </div>
