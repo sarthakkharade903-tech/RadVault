@@ -176,7 +176,14 @@ export default function FollowUpTracker({ patients, onEditPatient, onLogVisit })
                         <>
                           <button
                             onClick={() => {
-                              if (onLogVisit && patient) onLogVisit(patient);
+                              const targetPatient = patient || {
+                                id: item.patientId,
+                                name: item.patientName,
+                                mobile: item.mobile,
+                                is_pregnant: item.is_pregnant,
+                                status: 'red'
+                              };
+                              if (onLogVisit) onLogVisit(targetPatient);
                               else if (onEditPatient && patient) onEditPatient(patient);
                               else handleMarkVisited(item.patientId);
                             }}

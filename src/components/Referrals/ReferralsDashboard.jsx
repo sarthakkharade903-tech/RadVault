@@ -4,14 +4,19 @@ import TriageForm from './TriageForm';
 import { supabase } from '../../services/supabase';
 import { Plus, ListFilter, Handshake, CheckCircle2, ArrowLeft } from 'lucide-react';
 
-export default function ReferralsDashboard({ onBack }) {
-  // Default to true so the referral form is OPEN IMMEDIATELY without extra clicks!
-  const [activeTab, setActiveTab] = useState('new'); // 'new' | 'list'
+export default function ReferralsDashboard({ onBack, initialTab = 'list' }) {
+  const [activeTab, setActiveTab] = useState(initialTab || 'list'); // 'new' | 'list'
   const [referrals, setReferrals] = useState([]);
   const [loading, setLoading] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
 
   const lang = localStorage.getItem("radvault_asha_lang") || "en";
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
 
   const fetchReferrals = async () => {
     try {

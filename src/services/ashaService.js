@@ -1,4 +1,4 @@
-﻿import { supabase } from './supabase';
+import { supabase } from './supabase';
 
 // â”€â”€ ABHA ID Generator â”€â”€
 // Generates a mock 14-digit ABHA number in the format XX-XXXX-XXXX-XXXX
@@ -105,22 +105,57 @@ export function computeStats(patients) {
 
 export function computeDueList(patients) {
   const items = [];
+  if (!patients || !Array.isArray(patients)) return items;
+
   patients.forEach(p => {
+    const mobile = p.mobile || '';
+    const village = p.families?.village || p.village || 'Shirwal';
+
     if (p.is_pregnant && p.lmp_date) {
       const weeks = Math.floor((new Date() - new Date(p.lmp_date)) / (7*24*60*60*1000));
       const expected = weeks >= 36 ? 4 : weeks >= 28 ? 3 : weeks >= 16 ? 2 : 1;
       if ((p.anc_visits_done || 0) < expected)
-        items.push({ type: 'anc', patientId: p.id, patientName: p.name, label: 'ANC-' + ((p.anc_visits_done||0)+1) + ' visit due', detail: weeks + ' weeks pregnant', urgent: weeks >= 28 });
+        items.push({
+          type: 'anc',
+          patientId: p.id,
+          patientName: p.name,
+          mobile,
+          village,
+          is_pregnant: true,
+          label: 'ANC-' + ((p.anc_visits_done||0)+1) + ' visit due',
+          detail: weeks + ' weeks pregnant • ' + village,
+          urgent: weeks >= 28
+        });
     }
     if (p.is_child) {
       const missing = ['bcg','opv','dpt','hep_b','measles','mr'].filter(v => !p['vaccine_' + v]);
       if (missing.length)
-        items.push({ type: 'vaccine', patientId: p.id, patientName: p.name, label: missing[0].toUpperCase() + ' vaccine due', detail: missing.length + ' vaccines pending', urgent: false });
+        items.push({
+          type: 'vaccine',
+          patientId: p.id,
+          patientName: p.name,
+          mobile,
+          village,
+          is_child: true,
+          label: missing[0].toUpperCase() + ' vaccine due',
+          detail: missing.length + ' vaccines pending • ' + village,
+          urgent: false
+        });
     }
-    if (p.status === 'red' && p.last_visit_date) {
-      const days = Math.floor((new Date() - new Date(p.last_visit_date)) / 86400000);
+    if (p.status === 'red') {
+      const days = p.last_visit_date ? Math.floor((new Date() - new Date(p.last_visit_date)) / 86400000) : 8;
       if (days >= 7)
-        items.push({ type: 'followup', patientId: p.id, patientName: p.name, label: 'No visit in ' + days + ' days', detail: 'Urgent - needs immediate follow-up', urgent: true });
+        items.push({
+          type: 'followup',
+          patientId: p.id,
+          patientName: p.name,
+          mobile,
+          village,
+          status: 'red',
+          label: p.last_visit_date ? ('No visit in ' + days + ' days') : 'High-risk follow-up needed',
+          detail: 'Urgent home vitals & checkup required • ' + village,
+          urgent: true
+        });
     }
   });
   return items;
@@ -237,4 +272,257 @@ export async function getLatestVitals(patientId) {
   });
 
   return { data: latest, error: null };
+}
+
+// ─── ASHA Medicine Kit & Drug Inventory ──────────────────────────────
+
+export const DEFAULT_ASHA_MEDICINES = [
+  {
+    id: 'd1',
+    name_en: 'Iron Folic Acid (IFA) Tablets',
+    name_mr: 'आयर्न फॉलिक ऍसिड गोळ्या',
+    name_hi: 'आयरन फोलिक एसिड गोलियां',
+    category: 'Maternal Health',
+    stock: 120,
+    unit: 'tabs',
+    threshold: 50,
+    batch_number: 'IFA-2026-B12',
+    expiry_date: '2027-12-31'
+  },
+  {
+    id: 'd2',
+    name_en: 'Paracetamol 500mg',
+    name_mr: 'पॅरासिटामॉल गोळ्या',
+    name_hi: 'पैरासिटामोल गोलियां',
+    category: 'Fever & Pain',
+    stock: 65,
+    unit: 'tabs',
+    threshold: 30,
+    batch_number: 'PCM-500-A9',
+    expiry_date: '2027-08-31'
+  },
+  {
+    id: 'd3',
+    name_en: 'ORS Packets (Oral Rehydration)',
+    name_mr: 'ओ.आर.एस. पाकिटे',
+    name_hi: 'ओआरएस पैकेट',
+    category: 'Child Care',
+    stock: 24,
+    unit: 'packets',
+    threshold: 15,
+    batch_number: 'ORS-WHO-88',
+    expiry_date: '2028-03-31'
+  },
+  {
+    id: 'd4',
+    name_en: 'Zinc Sulfate 20mg',
+    name_mr: 'झिंक गोळ्या',
+    name_hi: 'जिंक की गोलियां',
+    category: 'Child Care',
+    stock: 40,
+    unit: 'tabs',
+    threshold: 20,
+    batch_number: 'ZN-20-C4',
+    expiry_date: '2027-10-31'
+  },
+  {
+    id: 'd5',
+    name_en: 'Pregnancy Test Kits (Nischay)',
+    name_mr: 'गर्भधारणा तपासणी किट',
+    name_hi: 'गर्भावस्था जांच किट',
+    category: 'Maternal Health',
+    stock: 8,
+    unit: 'kits',
+    threshold: 5,
+    batch_number: 'NSH-KIT-01',
+    expiry_date: '2027-05-31'
+  },
+  {
+    id: 'd6',
+    name_en: 'Clean Delivery Kits (DDK)',
+    name_mr: 'स्वच्छ प्रसूती किट',
+    name_hi: 'प्रसव किट',
+    category: 'Maternal Health',
+    stock: 3,
+    unit: 'kits',
+    threshold: 2,
+    batch_number: 'DDK-STER-14',
+    expiry_date: '2028-01-31'
+  }
+];
+
+function getLocalMedicines() {
+  try {
+    const raw = localStorage.getItem("radvault_asha_drug_kit");
+    if (!raw) return DEFAULT_ASHA_MEDICINES;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : DEFAULT_ASHA_MEDICINES;
+  } catch {
+    return DEFAULT_ASHA_MEDICINES;
+  }
+}
+
+function setLocalMedicines(items) {
+  try {
+    localStorage.setItem("radvault_asha_drug_kit", JSON.stringify(items));
+  } catch (e) {
+    console.warn("Could not save to localStorage:", e);
+  }
+}
+
+export async function getMedicines() {
+  try {
+    const { data, error } = await supabase
+      .from('asha_medicines')
+      .select('*')
+      .order('name_en', { ascending: true });
+
+    if (!error && data && data.length > 0) {
+      setLocalMedicines(data);
+      return { data, error: null };
+    }
+  } catch (err) {
+    console.warn("Supabase asha_medicines fetch failed, using local cache:", err);
+  }
+
+  // Fallback to local cache
+  const local = getLocalMedicines();
+  return { data: local, error: null };
+}
+
+export async function addMedicine(payload) {
+  const newItem = {
+    id: payload.id || `med-${Date.now()}-${Math.floor(Math.random()*1000)}`,
+    name_en: payload.name_en || 'New Medicine',
+    name_mr: payload.name_mr || payload.name_en || '',
+    name_hi: payload.name_hi || payload.name_en || '',
+    category: payload.category || 'General',
+    stock: parseInt(payload.stock, 10) || 0,
+    unit: payload.unit || 'tabs',
+    threshold: parseInt(payload.threshold, 10) || 10,
+    batch_number: payload.batch_number || '',
+    expiry_date: payload.expiry_date || null,
+    created_at: new Date().toISOString()
+  };
+
+  // Update local cache immediately
+  const local = getLocalMedicines();
+  const updated = [newItem, ...local];
+  setLocalMedicines(updated);
+
+  try {
+    const { data, error } = await supabase
+      .from('asha_medicines')
+      .insert([newItem])
+      .select()
+      .single();
+    if (!error && data) return { data, error: null };
+  } catch (err) {
+    console.warn("Supabase asha_medicines insert failed:", err);
+  }
+
+  return { data: newItem, error: null };
+}
+
+export async function updateMedicine(id, updates) {
+  const local = getLocalMedicines();
+  let updatedItem = null;
+  const nextList = local.map(m => {
+    if (m.id === id) {
+      updatedItem = { ...m, ...updates, updated_at: new Date().toISOString() };
+      return updatedItem;
+    }
+    return m;
+  });
+  setLocalMedicines(nextList);
+
+  try {
+    const { data, error } = await supabase
+      .from('asha_medicines')
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single();
+    if (!error && data) return { data, error: null };
+  } catch (err) {
+    console.warn("Supabase asha_medicines update failed:", err);
+  }
+
+  return { data: updatedItem, error: null };
+}
+
+export async function deleteMedicine(id) {
+  const local = getLocalMedicines();
+  const nextList = local.filter(m => m.id !== id);
+  setLocalMedicines(nextList);
+
+  try {
+    const { error } = await supabase
+      .from('asha_medicines')
+      .delete()
+      .eq('id', id);
+    if (!error) return { error: null };
+  } catch (err) {
+    console.warn("Supabase asha_medicines delete failed:", err);
+  }
+
+  return { error: null };
+}
+
+export async function adjustMedicineStock(id, newStock) {
+  return updateMedicine(id, { stock: Math.max(0, parseInt(newStock, 10) || 0) });
+}
+
+export async function createMedicineIndent(payload) {
+  const indentRecord = {
+    id: payload.id || `indent-${Date.now()}`,
+    asha_name: payload.asha_name || 'Priya Deshmukh',
+    phc_name: payload.phc_name || 'PHC Shirwal',
+    items: payload.items || [],
+    status: 'SUBMITTED',
+    notes: payload.notes || '',
+    created_at: new Date().toISOString()
+  };
+
+  // Save to local cache
+  try {
+    const raw = localStorage.getItem("radvault_asha_medicine_indents");
+    const existing = raw ? JSON.parse(raw) : [];
+    localStorage.setItem("radvault_asha_medicine_indents", JSON.stringify([indentRecord, ...existing]));
+  } catch (e) {
+    console.warn("Could not save indent to localStorage:", e);
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('medicine_indents')
+      .insert([indentRecord])
+      .select()
+      .single();
+    if (!error && data) return { data, error: null };
+  } catch (err) {
+    console.warn("Supabase medicine_indents insert failed:", err);
+  }
+
+  return { data: indentRecord, error: null };
+}
+
+export async function getMedicineIndents() {
+  try {
+    const { data, error } = await supabase
+      .from('medicine_indents')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (!error && data) return { data, error: null };
+  } catch (err) {
+    console.warn("Supabase medicine_indents fetch failed:", err);
+  }
+
+  try {
+    const raw = localStorage.getItem("radvault_asha_medicine_indents");
+    const parsed = raw ? JSON.parse(raw) : [];
+    return { data: parsed, error: null };
+  } catch {
+    return { data: [], error: null };
+  }
 }

@@ -5,7 +5,8 @@ import {
   Package, QrCode, Search, X, Stethoscope, ChevronDown,
   Clock, MapPin, Droplet, Sparkles, Printer, UserPlus
 } from "lucide-react";
-import { computeStats, computeDueList } from "../../services/ashaService";
+import { computeStats, computeDueList, getMedicines } from "../../services/ashaService";
+import MedicineKitManager from "./MedicineKitManager";
 
 // ─── Multi-Language Dictionaries (Strict Separation - No Text Mixing) ─────────
 const TRANSLATIONS = {
@@ -131,6 +132,7 @@ const TRANSLATIONS = {
 export default function ASHAHome({
   patients = [],
   loading,
+  onRefresh,
   onNavigate,
   onOpenAddFamily,
   onOpenAddMember,
@@ -153,6 +155,17 @@ export default function ASHAHome({
   const [activeModal, setActiveModal] = useState(null); // 'census' | 'maternal' | 'child' | 'high_risk' | 'drug_kit'
   const [syncedToast, setSyncedToast] = useState(false);
   const [censusSearch, setCensusSearch] = useState("");
+  const [medicinesList, setMedicinesList] = useState([]);
+
+  useEffect(() => {
+    getMedicines().then(res => {
+      if (res.data) setMedicinesList(res.data);
+    });
+  }, []);
+
+  const lowStockMedicinesCount = useMemo(() => {
+    return medicinesList.filter(m => (m.stock || 0) <= (m.threshold || 10)).length;
+  }, [medicinesList]);
 
   // ── Persistent Completed / Visited Tasks State across entire session ──
   const [completedTaskIds, setCompletedTaskIds] = useState(() => {
@@ -174,17 +187,6 @@ export default function ASHAHome({
       return next;
     });
   };
-
-  // Interactive Drug Kit Stock
-  const [drugKit, setDrugKit] = useState([
-    { id: 'd1', nameEn: 'Iron Folic Acid (IFA) Tablets', nameMr: 'आयर्न फॉलिक ऍसिड गोळ्या', nameHi: 'आयरन फोलिक एसिड गोलियां', stock: 120, unit: 'tabs', threshold: 50 },
-    { id: 'd2', nameEn: 'Paracetamol 500mg', nameMr: 'पॅरासिटामॉल गोळ्या', nameHi: 'पैरासिटामोल गोलियां', stock: 65, unit: 'tabs', threshold: 30 },
-    { id: 'd3', nameEn: 'ORS Packets (Oral Rehydration)', nameMr: 'ओ.आर.एस. पाकिटे', nameHi: 'ओआरएस पैकेट', stock: 24, unit: 'packets', threshold: 15 },
-    { id: 'd4', nameEn: 'Zinc Sulfate 20mg', nameMr: 'झिंक गोळ्या', nameHi: 'जिंक की गोलियां', stock: 40, unit: 'tabs', threshold: 20 },
-    { id: 'd5', nameEn: 'Pregnancy Test Kits (Nischay)', nameMr: 'गर्भधारणा तपासणी किट', nameHi: 'गर्भावस्था जांच किट', stock: 8, unit: 'kits', threshold: 5 },
-    { id: 'd6', nameEn: 'Clean Delivery Kits (DDK)', nameMr: 'स्वच्छ प्रसूती किट', nameHi: 'प्रसव किट', stock: 3, unit: 'kits', threshold: 2 }
-  ]);
-  const [kitReorderSuccess, setKitReorderSuccess] = useState(false);
 
   const today = new Date().toLocaleDateString(lang === 'mr' ? 'mr-IN' : lang === 'hi' ? 'hi-IN' : 'en-IN', {
     weekday: 'long', day: 'numeric', month: 'long'
@@ -252,37 +254,45 @@ export default function ASHAHome({
 
   const displayTasks = useMemo(() => {
     if (rawDueList && rawDueList.length > 0) {
-      return rawDueList.map((tItem, i) => ({
-        id: `db-task-${tItem.patientId || i}`,
-        patientId: tItem.patientId,
-        type: tItem.type,
-        patientName: tItem.patientName,
-        patientNameLocal: tItem.patientName,
-        ageInfo: tItem.detail,
-        labelEn: tItem.label,
-        labelMr: tItem.label,
-        labelHi: tItem.label,
-        detail: tItem.detail,
-        urgent: tItem.urgent,
-        phone: '+91 98000-00000'
-      }));
+      return rawDueList.map((tItem, i) => {
+        const matchingPatient = patients.find(p => p.id === tItem.patientId);
+        const resolvedPhone = matchingPatient?.mobile || tItem.mobile || '+91 98000-00000';
+        return {
+          id: `db-task-${tItem.patientId || i}`,
+          patientId: tItem.patientId,
+          type: tItem.type,
+          patientName: tItem.patientName,
+          patientNameLocal: tItem.patientName,
+          ageInfo: tItem.detail,
+          labelEn: tItem.label,
+          labelMr: tItem.label,
+          labelHi: tItem.label,
+          detail: tItem.detail,
+          urgent: tItem.urgent,
+          phone: resolvedPhone
+        };
+      });
     }
     return defaultTasks;
-  }, [rawDueList, lang]);
+  }, [rawDueList, patients, lang]);
 
-  const handleManualSync = () => {
+  const handleManualSync = async () => {
     setSyncedToast(true);
+    if (onRefresh) {
+      try {
+        await onRefresh();
+      } catch (err) {
+        console.warn("Manual sync error:", err);
+      }
+    }
     setTimeout(() => setSyncedToast(false), 2500);
-  };
-
-  const handleAdjustDrugStock = (id, delta) => {
-    setDrugKit(prev => prev.map(d => d.id === id ? { ...d, stock: Math.max(0, d.stock + delta) } : d));
   };
 
   // Patients datasets for the Modals
   const maternalPatients = useMemo(() => {
-    const list = patients.filter(p => p.is_pregnant);
-    if (list.length > 0) return list;
+    if (patients && patients.length > 0) {
+      return patients.filter(p => p.is_pregnant);
+    }
     return [
       { id: 'm1', name: 'Rekha Bai', nameLocal: lang === 'mr' ? 'रेखा बाई' : lang === 'hi' ? 'रेखा बाई' : 'Rekha Bai', age: 22, lmp: '10-Feb-2026', ancDone: 2, status: 'red', danger: 'Severe Anemia (Hb 8.2), Swollen Feet', village: 'Koregaon' },
       { id: 'm2', name: 'Pooja Jadhav', nameLocal: lang === 'mr' ? 'पूजा जाधव' : lang === 'hi' ? 'पूजा जाधव' : 'Pooja Jadhav', age: 25, lmp: '14-May-2026', ancDone: 1, status: 'green', danger: 'None (Healthy)', village: 'Wai' }
@@ -290,8 +300,9 @@ export default function ASHAHome({
   }, [patients, lang]);
 
   const childPatients = useMemo(() => {
-    const list = patients.filter(p => p.is_child || (p.age_years && p.age_years <= 5));
-    if (list.length > 0) return list;
+    if (patients && patients.length > 0) {
+      return patients.filter(p => p.is_child || (p.age_years && p.age_years <= 5));
+    }
     return [
       { id: 'c1', name: 'Aarav Patil', nameLocal: lang === 'mr' ? 'आरव पाटील' : lang === 'hi' ? 'आरव पाटिल' : 'Aarav Patil', ageMonths: 9, gender: 'Male', weight: '8.2 kg', status: 'green', dueVaccine: 'Measles-Rubella (MR-1)', village: 'Koregaon' },
       { id: 'c2', name: 'Ananya Shinde', nameLocal: lang === 'mr' ? 'अनन्या शिंदे' : lang === 'hi' ? 'अनन्या शिंदे' : 'Ananya Shinde', ageMonths: 30, gender: 'Female', weight: '10.5 kg', status: 'yellow', dueVaccine: 'DPT Booster 1', village: 'Wai' }
@@ -299,8 +310,9 @@ export default function ASHAHome({
   }, [patients, lang]);
 
   const highRiskPatients = useMemo(() => {
-    const list = patients.filter(p => p.status === 'red');
-    if (list.length > 0) return list;
+    if (patients && patients.length > 0) {
+      return patients.filter(p => p.status === 'red' || p.has_chronic);
+    }
     return [
       { id: 'hr1', name: 'Rekha Bai', nameLocal: lang === 'mr' ? 'रेखा बाई' : lang === 'hi' ? 'रेखा बाई' : 'Rekha Bai', age: 22, condition: 'High Risk Pregnancy (Hb 8.2, Pedal Edema)', village: 'Koregaon', phone: '+91 98234-11029' },
       { id: 'hr2', name: 'Ramesh Patil', nameLocal: lang === 'mr' ? 'रमेश पाटील' : lang === 'hi' ? 'रमेश पाटिल' : 'Ramesh Patil', age: 54, condition: 'Severe Productive Cough, High Fever & SpO2 92%', village: 'Koregaon', phone: '+91 98451-88310' }
@@ -319,7 +331,7 @@ export default function ASHAHome({
 
     if (!censusSearch.trim()) return base;
     return base.filter(p =>
-      p.name.toLowerCase().includes(censusSearch.toLowerCase()) ||
+      (p.name && p.name.toLowerCase().includes(censusSearch.toLowerCase())) ||
       (p.village && p.village.toLowerCase().includes(censusSearch.toLowerCase())) ||
       (p.abha_id && p.abha_id.includes(censusSearch))
     );
@@ -421,7 +433,7 @@ export default function ASHAHome({
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-black text-slate-500 uppercase tracking-wider">{t.totalMembers}</p>
                 <p className="text-3xl font-black text-[#16324F] leading-none my-1">
-                  {loading ? "-" : Math.max(patients.length, censusList.length)}
+                  {loading ? "-" : patients.length}
                 </p>
                 <p className="text-xs text-slate-400 truncate">{t.totalMembersDesc}</p>
               </div>
@@ -439,7 +451,7 @@ export default function ASHAHome({
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-black text-rose-500 uppercase tracking-wider">{t.maternalCare}</p>
                 <p className="text-3xl font-black text-rose-700 leading-none my-1">
-                  {loading ? "-" : Math.max(stats.pregnant, maternalPatients.length)}
+                  {loading ? "-" : stats.pregnant}
                 </p>
                 <p className="text-xs text-slate-400 truncate">{t.maternalDesc}</p>
               </div>
@@ -457,7 +469,7 @@ export default function ASHAHome({
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-black text-amber-500 uppercase tracking-wider">{t.childCare}</p>
                 <p className="text-3xl font-black text-amber-700 leading-none my-1">
-                  {loading ? "-" : Math.max(stats.children, childPatients.length)}
+                  {loading ? "-" : stats.children}
                 </p>
                 <p className="text-xs text-slate-400 truncate">{t.childDesc}</p>
               </div>
@@ -475,7 +487,7 @@ export default function ASHAHome({
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-black text-red-500 uppercase tracking-wider">{t.highRisk}</p>
                 <p className="text-3xl font-black text-red-700 leading-none my-1">
-                  {loading ? "-" : Math.max(stats.highRisk, highRiskPatients.length)}
+                  {loading ? "-" : stats.highRisk}
                 </p>
                 <p className="text-xs text-slate-400 truncate">{t.highRiskDesc}</p>
               </div>
@@ -512,7 +524,7 @@ export default function ASHAHome({
 
             {/* Hospital Referral */}
             <button
-              onClick={() => onNavigate('refer')}
+              onClick={() => onOpenReferral ? onOpenReferral('new') : onNavigate('refer')}
               className="p-4 bg-rose-50 hover:bg-rose-100/80 border border-rose-200 rounded-2xl flex items-center gap-3.5 transition-all text-left cursor-pointer"
             >
               <div className="w-12 h-12 rounded-xl bg-rose-600 text-white flex items-center justify-center text-xl font-bold flex-shrink-0 shadow-xs">
@@ -527,15 +539,29 @@ export default function ASHAHome({
             {/* Drug Kit Stock */}
             <button
               onClick={() => setActiveModal('drug_kit')}
-              className="p-4 bg-indigo-50 hover:bg-indigo-100/80 border border-indigo-200 rounded-2xl flex items-center gap-3.5 transition-all text-left cursor-pointer"
+              className="p-4 bg-indigo-50 hover:bg-indigo-100/80 border border-indigo-200 rounded-2xl flex items-center justify-between gap-3.5 transition-all text-left cursor-pointer group"
             >
-              <div className="w-12 h-12 rounded-xl bg-indigo-600 text-white flex items-center justify-center text-xl font-bold flex-shrink-0 shadow-xs">
-                <Package className="w-6 h-6" />
+              <div className="flex items-center gap-3.5">
+                <div className="w-12 h-12 rounded-xl bg-indigo-600 text-white flex items-center justify-center text-xl font-bold flex-shrink-0 shadow-xs group-hover:scale-105 transition-transform">
+                  <Package className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <p className="font-extrabold text-indigo-950 text-sm">{t.drugKit}</p>
+                    {lowStockMedicinesCount > 0 ? (
+                      <span className="text-[9px] font-black bg-rose-100 text-rose-700 px-1.5 py-0.2 rounded-full border border-rose-200">
+                        {lowStockMedicinesCount} Low ⚠️
+                      </span>
+                    ) : (
+                      <span className="text-[9px] font-bold bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded-full">
+                        {medicinesList.length > 0 ? `${medicinesList.length} items` : 'Stock OK'}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-indigo-800/80 mt-0.5">{t.drugKitDesc}</p>
+                </div>
               </div>
-              <div>
-                <p className="font-extrabold text-indigo-950 text-sm">{t.drugKit}</p>
-                <p className="text-xs text-indigo-800/80 mt-0.5">{t.drugKitDesc}</p>
-              </div>
+              <ChevronRight className="w-4 h-4 text-indigo-300 group-hover:text-indigo-600 transition-colors" />
             </button>
 
           </div>
@@ -617,7 +643,7 @@ export default function ASHAHome({
                           <PhoneCall className="w-3.5 h-3.5" /> {t.call}
                         </a>
                         <button
-                          onClick={() => onNavigate('refer')}
+                          onClick={() => onOpenReferral ? onOpenReferral('new') : onNavigate('refer')}
                           className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs rounded-xl border border-rose-200 transition-colors cursor-pointer"
                         >
                           {t.refer} 🏥
@@ -905,7 +931,8 @@ export default function ASHAHome({
                     <button
                       onClick={() => {
                         setActiveModal(null);
-                        onNavigate('refer');
+                        if (onOpenReferral) onOpenReferral('new');
+                        else onNavigate('refer');
                       }}
                       className="px-3.5 py-1.5 bg-red-600 hover:bg-red-700 text-white font-extrabold rounded-lg shadow-xs cursor-pointer"
                     >
@@ -925,95 +952,12 @@ export default function ASHAHome({
         </div>
       )}
 
-      {/* ── MODAL: DRUG KIT INVENTORY ── */}
+      {/* ── MODAL: DRUG KIT INVENTORY & PHC INDENTS ── */}
       {activeModal === 'drug_kit' && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl border border-slate-200 overflow-hidden max-h-[90vh] flex flex-col">
-            <div className="bg-gradient-to-r from-indigo-700 to-slate-900 text-white px-6 py-4 flex justify-between items-center">
-              <div>
-                <h3 className="font-black text-base flex items-center gap-2">
-                  <Package className="w-5 h-5 text-indigo-300" /> {t.drugKit}
-                </h3>
-                <p className="text-xs text-indigo-200">{t.drugKitDesc}</p>
-              </div>
-              <button onClick={() => setActiveModal(null)} className="p-1 hover:bg-white/10 rounded-lg text-white cursor-pointer">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="p-6 space-y-4 overflow-y-auto text-xs text-slate-800">
-              {kitReorderSuccess && (
-                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 font-bold text-xs flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                  <span>Medicine Restock Request dispatched to PHC Storekeeper!</span>
-                </div>
-              )}
-
-              <div className="border border-slate-200 rounded-xl overflow-hidden shadow-xs">
-                <table className="w-full text-xs">
-                  <thead className="bg-slate-100 text-slate-700 font-bold">
-                    <tr>
-                      <th className="text-left p-3">Medicine</th>
-                      <th className="text-center p-3">Stock Balance</th>
-                      <th className="text-right p-3">Adjust</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {drugKit.map(item => {
-                      const isLow = item.stock <= item.threshold;
-                      const name = lang === 'mr' ? item.nameMr : lang === 'hi' ? item.nameHi : item.nameEn;
-
-                      return (
-                        <tr key={item.id} className="hover:bg-slate-50">
-                          <td className="p-3">
-                            <p className="font-extrabold text-slate-900">{name}</p>
-                          </td>
-                          <td className="p-3 text-center">
-                            <span className={`font-black text-sm ${isLow ? 'text-red-600' : 'text-emerald-700'}`}>
-                              {item.stock} {item.unit}
-                            </span>
-                            {isLow && <span className="block text-[9px] text-red-500 font-bold">Low Stock ⚠️</span>}
-                          </td>
-                          <td className="p-3 text-right">
-                            <div className="inline-flex items-center gap-1">
-                              <button
-                                onClick={() => handleAdjustDrugStock(item.id, -1)}
-                                className="w-6 h-6 rounded bg-slate-100 hover:bg-slate-200 font-bold text-slate-700 cursor-pointer"
-                              >
-                                -
-                              </button>
-                              <button
-                                onClick={() => handleAdjustDrugStock(item.id, +10)}
-                                className="px-2 py-0.5 rounded bg-teal-50 hover:bg-teal-100 font-bold text-teal-800 text-[10px] cursor-pointer"
-                              >
-                                +10
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <div className="bg-slate-50 border-t border-slate-200 p-4 flex justify-between items-center">
-              <button
-                onClick={() => {
-                  setKitReorderSuccess(true);
-                  setTimeout(() => setKitReorderSuccess(false), 3000);
-                }}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center gap-1.5 cursor-pointer"
-              >
-                <Send className="w-3.5 h-3.5" /> Submit Indent to PHC
-              </button>
-              <button onClick={() => setActiveModal(null)} className="px-4 py-2 bg-slate-200 hover:bg-slate-300 font-bold text-xs rounded-xl cursor-pointer">
-                {t.close}
-              </button>
-            </div>
-          </div>
-        </div>
+        <MedicineKitManager
+          onClose={() => setActiveModal(null)}
+          onStockUpdated={(updated) => setMedicinesList(updated)}
+        />
       )}
 
     </div>

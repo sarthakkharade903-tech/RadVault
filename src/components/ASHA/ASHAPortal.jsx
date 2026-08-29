@@ -30,6 +30,8 @@ export default function ASHAPortal({ onBack }) {
   const [addMemberFamily, setAddMemberFamily] = useState(null);
   const [editingFamily, setEditingFamily]   = useState(null);
   const [logVisitPatient, setLogVisitPatient] = useState(null);
+  const [logVisitReturnScreen, setLogVisitReturnScreen] = useState("manage_family");
+  const [referralInitialTab, setReferralInitialTab] = useState("list");
 
   const loadData = async () => {
     setLoading(true);
@@ -61,10 +63,11 @@ export default function ASHAPortal({ onBack }) {
           <ASHAHome
             patients={patients}
             loading={loading}
+            onRefresh={loadData}
             onNavigate={setScreen}
             onOpenAddFamily={() => { setEditingFamily(null); setScreen("add_family"); }}
             onOpenAddMember={() => { setAddMemberFamily(null); setEditingPatient(null); setScreen("add_member"); }}
-            onOpenReferral={() => setScreen("refer")}
+            onOpenReferral={(mode = "new") => { setReferralInitialTab(mode); setScreen("refer"); }}
           />
         )}
         {screen === "village" && (
@@ -77,8 +80,27 @@ export default function ASHAPortal({ onBack }) {
             onAddMember={(fam) => { setAddMemberFamily(fam); setEditingPatient(null); setScreen("add_member"); }}
           />
         )}
-        {screen === "refer"    && <ReferralsDashboard onBack={() => setScreen("home")} />}
-        {screen === "followup" && <FollowUpTracker patients={patients} onEditPatient={p => { setEditingPatient(p); setSelectedFamily(p.families || null); setScreen("edit_member"); }} />}
+        {screen === "refer"    && (
+          <ReferralsDashboard
+            initialTab={referralInitialTab}
+            onBack={() => setScreen("home")}
+          />
+        )}
+        {screen === "followup" && (
+          <FollowUpTracker
+            patients={patients}
+            onLogVisit={(p) => {
+              setLogVisitPatient(p);
+              setLogVisitReturnScreen("followup");
+              setScreen("log_visit");
+            }}
+            onEditPatient={p => {
+              setEditingPatient(p);
+              setSelectedFamily(p.families || null);
+              setScreen("edit_member");
+            }}
+          />
+        )}
         {screen === "activity" && <ActivityTracker patients={patients} />}
         {screen === "add_family" && (
           <AddFamilyForm
@@ -94,7 +116,11 @@ export default function ASHAPortal({ onBack }) {
             onAddMember={(fam) => { setAddMemberFamily(fam); setEditingPatient(null); setScreen("add_member"); }}
             onEditMember={(p) => { setEditingPatient(p); setAddMemberFamily(selectedFamily); setScreen("edit_member"); }}
             onEditFamily={() => { setEditingFamily(selectedFamily); setScreen("add_family"); }}
-            onLogVisit={(p) => { setLogVisitPatient(p); setScreen("log_visit"); }}
+            onLogVisit={(p) => {
+              setLogVisitPatient(p);
+              setLogVisitReturnScreen("manage_family");
+              setScreen("log_visit");
+            }}
           />
         )}
         {screen === "add_member" && (
@@ -116,8 +142,8 @@ export default function ASHAPortal({ onBack }) {
         {screen === "log_visit" && logVisitPatient && (
           <ASHAVisitLogger
             patient={logVisitPatient}
-            onBack={() => setScreen("manage_family")}
-            onSaved={() => { loadData(); setScreen("manage_family"); }}
+            onBack={() => setScreen(logVisitReturnScreen || "manage_family")}
+            onSaved={() => { loadData(); setScreen(logVisitReturnScreen || "manage_family"); }}
           />
         )}
       </div>
@@ -129,8 +155,14 @@ export default function ASHAPortal({ onBack }) {
             {NAV.map(({ key, label, Icon }) => {
               const active = screen === key;
               return (
-                <button key={key} onClick={() => setScreen(key)}
-                  className={"flex flex-col items-center justify-center gap-1 min-w-[64px] py-1.5 rounded-2xl transition-all " + (active ? "bg-[#E8F7F3]" : "hover:bg-gray-50")}>
+                <button
+                  key={key}
+                  onClick={() => {
+                    if (key === "refer") setReferralInitialTab("list");
+                    setScreen(key);
+                  }}
+                  className={"flex flex-col items-center justify-center gap-1 min-w-[64px] py-1.5 rounded-2xl transition-all " + (active ? "bg-[#E8F7F3]" : "hover:bg-gray-50")}
+                >
                   <Icon className={"w-5 h-5 " + (active ? "text-[#008F83]" : "text-[#64748B]")} strokeWidth={active ? 2.5 : 2} />
                   <span className={"text-[10px] font-bold tracking-tight " + (active ? "text-[#008F83]" : "text-[#64748B]")}>{label}</span>
                 </button>

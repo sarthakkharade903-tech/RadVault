@@ -94,12 +94,12 @@ export default function ActivityTracker({ patients = [] }) {
 
   // Compute live metrics
   const s = computeStats(patients);
-  const totalCount = patients.length || 4;
-  const pregnantCount = patients.filter(p => p.is_pregnant).length || 1;
-  const childCount = patients.filter(p => p.is_child || (p.age_years && p.age_years <= 5)).length || 1;
-  const highRiskCount = patients.filter(p => p.status === 'red' || p.has_chronic).length || 2;
-  const appActiveCount = patients.filter(p => p.patient_email || p.mobile).length || 3;
-  const immunCount = patients.filter(p => p.vaccine_bcg || p.is_child).length || 1;
+  const totalCount = patients.length;
+  const pregnantCount = patients.filter(p => p.is_pregnant).length;
+  const childCount = patients.filter(p => p.is_child || (p.age_years && p.age_years <= 5)).length;
+  const highRiskCount = patients.filter(p => p.status === 'red' || p.has_chronic).length;
+  const appActiveCount = patients.filter(p => p.patient_email || p.mobile).length;
+  const immunCount = patients.filter(p => p.vaccine_bcg || p.is_child).length;
 
   const stats = [
     {
@@ -175,15 +175,11 @@ export default function ActivityTracker({ patients = [] }) {
     if (!selectedGroup) return [];
     const groupDef = stats.find(s => s.id === selectedGroup.id);
     if (!groupDef) return [];
-    const matched = patients.filter(groupDef.filterFn);
-    if (matched.length > 0) return matched;
-    
-    // Fallback sample patients
-    return [
-      { id: 'p1', name: 'Rekha Bai', age_years: 22, gender: 'Female', mobile: '+91 98451-88310', is_pregnant: true, status: 'red' },
-      { id: 'p2', name: 'Aarav Patil', age_years: 3, gender: 'Male', mobile: '+91 97123-45678', is_child: true }
-    ];
-  }, [selectedGroup, patients]);
+    if (patients && patients.length > 0) {
+      return patients.filter(groupDef.filterFn);
+    }
+    return [];
+  }, [selectedGroup, patients, stats]);
 
   const handlePrint = () => {
     window.print();
