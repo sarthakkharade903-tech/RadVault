@@ -12,6 +12,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../services/supabase';
 import { ROLES } from '../constants/roles';
+import { mockPatient } from '../data/mockPatientData';
 
 export const AuthContext = createContext();
 
@@ -34,6 +35,33 @@ export function AuthProvider({ children }) {
   const [ashaProfile, setAshaProfile] = useState(null);
   const [ashaVillages, setAshaVillages] = useState([]);
   const [ashaArea, setAshaArea] = useState(null);
+
+  // Patient identity states
+  const [patientProfile, setPatientProfile] = useState(null);
+  const [patientProfileLoading, setPatientProfileLoading] = useState(false);
+  const [patientProfileNotFound, setPatientProfileNotFound] = useState(false);
+
+  // Global Demo Data ON/OFF toggle (defaults to ON initially, persisted in localStorage)
+  const [demoDataEnabled, setDemoDataEnabled] = useState(() => {
+    try {
+      const saved = localStorage.getItem('radvault_demo_data_enabled');
+      return saved !== null ? saved === 'true' : true;
+    } catch {
+      return true;
+    }
+  });
+
+  const toggleDemoData = () => {
+    setDemoDataEnabled(prev => {
+      const next = !prev;
+      try {
+        localStorage.setItem('radvault_demo_data_enabled', String(next));
+      } catch (err) {
+        console.warn('[RadVault Auth] Failed to save demoDataEnabled to localStorage:', err);
+      }
+      return next;
+    });
+  };
 
   // Helper to extract and validate role from Supabase user session
   const extractValidatedRole = (supabaseUser) => {
@@ -130,24 +158,30 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     if (resolvedRole === ROLES.ASHA) {
       if (authStatus === AUTH_STATUS.DEMO_MODE) {
-        // Seed default demo assignments matching the seeded database structures
-        setAshaProfile({
-          id: 'demo-asha-id',
-          worker_id: 'ASHA-MH-7042',
-          name: 'Sunita Deshmukh',
-          phone: '+91 98765 98765',
-          phc_name: 'Shrirampur PHC'
-        });
-        setAshaVillages([
-          { id: 'e1111111-1111-1111-1111-111111111111', name: 'Shrirampur Ward 4' },
-          { id: 'e2222222-2222-2222-2222-222222222222', name: 'Pimpalgaon Rural' },
-          { id: 'e3333333-3333-3333-3333-333333333333', name: 'Khedi Village' }
-        ]);
-        setAshaArea({
-          id: 'd2222222-2222-2222-2222-222222222222',
-          name: 'Sector 4',
-          district: 'Ahmednagar'
-        });
+        if (demoDataEnabled) {
+          // Seed default demo assignments matching the seeded database structures
+          setAshaProfile({
+            id: 'demo-asha-id',
+            worker_id: 'ASHA-MH-7042',
+            name: 'Sunita Deshmukh',
+            phone: '+91 98765 98765',
+            phc_name: 'Shrirampur PHC'
+          });
+          setAshaVillages([
+            { id: 'e1111111-1111-1111-1111-111111111111', name: 'Shrirampur Ward 4' },
+            { id: 'e2222222-2222-2222-2222-222222222222', name: 'Pimpalgaon Rural' },
+            { id: 'e3333333-3333-3333-3333-333333333333', name: 'Khedi Village' }
+          ]);
+          setAshaArea({
+            id: 'd2222222-2222-2222-2222-222222222222',
+            name: 'Sector 4',
+            district: 'Ahmednagar'
+          });
+        } else {
+          setAshaProfile(null);
+          setAshaVillages([]);
+          setAshaArea(null);
+        }
       } else if (authStatus === AUTH_STATUS.AUTHENTICATED && user) {
         const fetchProfile = async () => {
           try {
@@ -192,24 +226,29 @@ export function AuthProvider({ children }) {
             }
           } catch (err) {
             console.error('[RadVault Auth] Error fetching ASHA profile:', err.message);
-            // Graceful fallback to demo profile in case of network or permissions issues
-            setAshaProfile({
-              id: 'demo-asha-id',
-              worker_id: 'ASHA-MH-7042',
-              name: 'Sunita Deshmukh',
-              phone: '+91 98765 98765',
-              phc_name: 'Shrirampur PHC'
-            });
-            setAshaVillages([
-              { id: 'e1111111-1111-1111-1111-111111111111', name: 'Shrirampur Ward 4' },
-              { id: 'e2222222-2222-2222-2222-222222222222', name: 'Pimpalgaon Rural' },
-              { id: 'e3333333-3333-3333-3333-333333333333', name: 'Khedi Village' }
-            ]);
-            setAshaArea({
-              id: 'd2222222-2222-2222-2222-222222222222',
-              name: 'Sector 4',
-              district: 'Ahmednagar'
-            });
+            if (demoDataEnabled) {
+              setAshaProfile({
+                id: 'demo-asha-id',
+                worker_id: 'ASHA-MH-7042',
+                name: 'Sunita Deshmukh',
+                phone: '+91 98765 98765',
+                phc_name: 'Shrirampur PHC'
+              });
+              setAshaVillages([
+                { id: 'e1111111-1111-1111-1111-111111111111', name: 'Shrirampur Ward 4' },
+                { id: 'e2222222-2222-2222-2222-222222222222', name: 'Pimpalgaon Rural' },
+                { id: 'e3333333-3333-3333-3333-333333333333', name: 'Khedi Village' }
+              ]);
+              setAshaArea({
+                id: 'd2222222-2222-2222-2222-222222222222',
+                name: 'Sector 4',
+                district: 'Ahmednagar'
+              });
+            } else {
+              setAshaProfile(null);
+              setAshaVillages([]);
+              setAshaArea(null);
+            }
           }
         };
 
@@ -220,22 +259,154 @@ export function AuthProvider({ children }) {
       setAshaVillages([]);
       setAshaArea(null);
     }
-  }, [resolvedRole, authStatus, user]);
+  }, [resolvedRole, authStatus, user, demoDataEnabled]);
+
+  // Fetch Patient profile when role is PATIENT
+  useEffect(() => {
+    if (resolvedRole === ROLES.PATIENT) {
+      if (authStatus === AUTH_STATUS.DEMO_MODE) {
+        if (demoDataEnabled) {
+          setPatientProfile(mockPatient);
+          setPatientProfileNotFound(false);
+        } else {
+          setPatientProfile(null);
+          setPatientProfileNotFound(true);
+        }
+        setPatientProfileLoading(false);
+      } else if (authStatus === AUTH_STATUS.AUTHENTICATED && user) {
+        let isMounted = true;
+        const fetchPatientProfile = async () => {
+          try {
+            setPatientProfileLoading(true);
+            setPatientProfileNotFound(false);
+            const { data, error } = await supabase
+              .from('patients')
+              .select('*')
+              .eq('user_id', user.id)
+              .maybeSingle();
+
+            if (!isMounted) return;
+
+            if (error) {
+              console.error('[RadVault Auth] Error fetching patient profile:', error.message);
+              setPatientProfile(null);
+              setPatientProfileNotFound(true);
+              return;
+            }
+
+            if (data) {
+              setPatientProfile({
+                id: data.id,
+                fullName: data.full_name,
+                age: data.age,
+                gender: data.gender,
+                bloodGroup: data.blood_group,
+                phone: data.phone_number,
+                abhaId: data.unified_id || 'N/A',
+                insurance: { provider: 'Ayushman Bharat PM-JAY', policyNo: 'N/A' },
+                emergencyContact: data.vitals?.emergencyContact || 'Family Member',
+                emergencyPhone: data.vitals?.emergencyPhone || '9999999999',
+                village_id: data.village_id,
+                area_id: data.area_id
+              });
+              setPatientProfileNotFound(false);
+            } else {
+              console.warn('[RadVault Auth] No linked patient profile found in database for user_id:', user.id);
+              setPatientProfile(null);
+              setPatientProfileNotFound(true);
+            }
+          } catch (err) {
+            if (!isMounted) return;
+            console.error('[RadVault Auth] Error in patient profile fetch:', err.message);
+            setPatientProfile(null);
+            setPatientProfileNotFound(true);
+          } finally {
+            if (isMounted) setPatientProfileLoading(false);
+          }
+        };
+
+        fetchPatientProfile();
+        return () => {
+          isMounted = false;
+        };
+      }
+    } else {
+      setPatientProfile(null);
+      setPatientProfileLoading(false);
+      setPatientProfileNotFound(false);
+    }
+  }, [resolvedRole, authStatus, user, demoDataEnabled]);
+
+const DEMO_ROLE_CREDENTIALS = {
+  [ROLES.ASHA]: {
+    email: 'somu5243d@gmail.com',
+    password: 'Samir@7498'
+  },
+  [ROLES.HOSPITAL_STAFF]: {
+    email: 'myanawar5243d@gmail.com',
+    password: 'Samir@135'
+  },
+  [ROLES.DOCTOR]: {
+    email: 'samir5243d@gmail.com',
+    password: 'Samir@8806'
+  }
+};
 
   /**
    * Prototype Demo Role Switcher
-   * Strictly available only during DEMO_MODE.
-   * Does NOT permit changing real server-side authorization.
+   * Authenticates directly into Supabase using the project's test account credentials.
    */
-  const switchDemoRole = (newRole) => {
-    if (authStatus === AUTH_STATUS.AUTHENTICATED) {
-      console.warn('[RadVault Auth] Role switching is disabled for authenticated users. Real role is enforced by session token.');
+  const switchDemoRole = async (newRole) => {
+    console.log(`[RADVAULT][DEMO_ROLE_SWITCH] targetRole = ${newRole}`);
+
+    if (!Object.values(ROLES).includes(newRole)) {
+      console.error(`[RADVAULT][DEMO_ROLE_SWITCH] Invalid demo role requested: ${newRole}`);
       return;
     }
-    if (Object.values(ROLES).includes(newRole)) {
-      setDemoRole(newRole);
+
+    const creds = DEMO_ROLE_CREDENTIALS[newRole];
+    if (creds) {
+      console.log('[RADVAULT][DEMO_AUTH] authentication started');
+      setAuthStatus(AUTH_STATUS.LOADING);
+      setAuthError(null);
+
+      try {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: creds.email,
+          password: creds.password
+        });
+
+        if (error) {
+          console.error('[RADVAULT][DEMO_AUTH] Login error:', error.message);
+          setDemoRole(newRole);
+          setAuthStatus(AUTH_STATUS.DEMO_MODE);
+        } else if (data?.user) {
+          console.log(`[RADVAULT][DEMO_AUTH] authenticated user = ${data.user.id}`);
+          console.log(`[RADVAULT][DEMO_AUTH] role = ${newRole}`);
+          console.log('[RADVAULT][DEMO_AUTH] session established = true');
+          setUser(data.user);
+          setSession(data.session);
+          setVerifiedRole(newRole);
+          setAuthStatus(AUTH_STATUS.AUTHENTICATED);
+        }
+      } catch (err) {
+        console.error('[RADVAULT][DEMO_AUTH] Exception:', err.message);
+        setDemoRole(newRole);
+        setAuthStatus(AUTH_STATUS.DEMO_MODE);
+      }
     } else {
-      console.error(`[RadVault Auth] Invalid demo role requested: ${newRole}`);
+      // For PATIENT role or client-only demo view
+      console.log(`[RADVAULT][DEMO_ROLE_SWITCH] Switching to client demo role: ${newRole}`);
+      try {
+        await supabase.auth.signOut();
+      } catch (err) {
+        console.warn('[RADVAULT][DEMO_ROLE_SWITCH] Signout warning:', err.message);
+      }
+      setUser(null);
+      setSession(null);
+      setVerifiedRole(null);
+      setDemoRole(newRole);
+      setAuthStatus(AUTH_STATUS.DEMO_MODE);
     }
   };
 
@@ -269,8 +440,6 @@ export function AuthProvider({ children }) {
     }
   };
 
-
-
   // Role verification helper
   const hasRole = (targetRole) => {
     if (!resolvedRole) return false;
@@ -291,6 +460,9 @@ export function AuthProvider({ children }) {
     hasNoRole: authStatus === AUTH_STATUS.AUTHENTICATED_NO_ROLE,
     loading: authStatus === AUTH_STATUS.LOADING,
     authError,
+    demoDataEnabled,
+    setDemoDataEnabled,
+    toggleDemoData,
     switchRole: switchDemoRole, // Alias for prototype compatibility
     switchDemoRole,
     login,
@@ -298,7 +470,11 @@ export function AuthProvider({ children }) {
     hasRole,
     ashaProfile,
     ashaVillages,
-    ashaArea
+    ashaArea,
+    patientProfile,
+    patientProfileLoading,
+    patientProfileNotFound,
+    setPatientProfile
   };
 
   return (

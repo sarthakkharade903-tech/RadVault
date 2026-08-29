@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
+import { useAuth } from "../../context/AuthContext";
 import RecordFilters from "./RecordFilters";
 import RecordCard from "./RecordCard";
 import RecordViewerModal from "./RecordViewerModal";
@@ -15,6 +16,7 @@ export default function MedicalRecordsList({
   initialSelectedRecordId = null,
   patient = {},
 }) {
+  const { isDemoMode, demoDataEnabled } = useAuth();
   const [activeModality, setActiveModality] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedRecord, setSelectedRecord] = useState(() => {
@@ -27,12 +29,12 @@ export default function MedicalRecordsList({
   // Step 5: Sharing & Access Management Modals
   const [showShareModal, setShowShareModal] = useState(false);
   const [showWhoHasAccess, setShowWhoHasAccess] = useState(false);
-  const [activeSharesCount, setActiveSharesCount] = useState(1);
+  const [activeSharesCount, setActiveSharesCount] = useState(0);
 
   // Refresh active shares count
   const refreshSharesCount = async () => {
     try {
-      const active = await getActiveShares(patient.id || "PAT-89210");
+      const active = await getActiveShares(patient.id || "PAT-89210", isDemoMode && demoDataEnabled);
       setActiveSharesCount(active.length);
     } catch (e) {
       console.warn("Could not fetch active shares count:", e);

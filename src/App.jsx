@@ -28,6 +28,8 @@ import DoctorWorkspace from './components/workspaces/DoctorWorkspace';
 import RoleGuard from './components/common/RoleGuard';
 import NoRoleScreen from './components/common/NoRoleScreen';
 import LoadingSpinner from './components/common/LoadingSpinner';
+import { getPatientTimeline } from './services/patientService';
+import { supabase } from './services/supabase';
 
 import {
   HeartPulse,
@@ -143,25 +145,101 @@ function App() {
     loading,
     hasNoRole,
     isDemoMode,
+    demoDataEnabled,
+    toggleDemoData,
     isAuthenticated,
     switchDemoRole,
-    logout
+    logout,
+    patientProfile
   } = useAuth();
 
   const [activePatientTab, setActivePatientTab] = useState('home');
   const [showPortalPicker, setShowPortalPicker] = useState(false);
   const [targetRecordId, setTargetRecordId] = useState(null);
 
+  const [patientRecords, setPatientRecords] = useState([]);
+  const [patientTimeline, setPatientTimeline] = useState([]);
+
+  // Fetch patient portal records and timeline in Real Mode
+  useEffect(() => {
+    if (role === ROLES.PATIENT) {
+      if (isDemoMode && demoDataEnabled) {
+        setPatientRecords(mockMedicalRecords);
+        setPatientTimeline(mockTimelineEvents);
+        return;
+      }
+
+      if (!patientProfile?.id) {
+        setPatientRecords([]);
+        setPatientTimeline([]);
+        return;
+      }
+
+      let isMounted = true;
+      const loadPatientPortalData = async () => {
+        try {
+          // Query medical records
+          const { data: recs, error: recsErr } = await supabase
+            .from('medical_records')
+            .select('*')
+            .eq('patient_id', patientProfile.id)
+            .order('created_at', { ascending: false });
+
+          if (recsErr) throw recsErr;
+
+          // Query chronological timeline
+          const timeline = await getPatientTimeline(patientProfile.id);
+
+          if (!isMounted) return;
+
+          setPatientRecords((recs || []).map(r => ({
+            id: r.id,
+            title: r.title,
+            modality: r.modality,
+            bodyRegion: r.body_region,
+            date: new Date(r.created_at).toISOString().slice(0, 10),
+            time: new Date(r.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            facility: r.facility_name,
+            doctor: r.doctor_name,
+            radiologistLicense: r.report?.radiologistLicense || 'MCI-MH-11223',
+            fileType: r.report?.fileType || 'DICOM Series',
+            fileSize: r.report?.fileSize || '15 MB',
+            status: 'Verified',
+            statusColor: 'emerald',
+            aiTriageRisk: r.report?.aiTriageRisk || 'Low Risk',
+            thumbnailType: r.modality === 'XR' ? 'xray-chest' : r.modality === 'CT' ? 'ct-abdomen' : 'mri-spine',
+            previewUrl: r.record_url || 'https://images.unsplash.com/photo-1516549655169-df83a0774514?w=600&auto=format&fit=crop&q=80',
+            patientFriendlySummary: r.report?.patientFriendlySummary || 'This diagnostic scan is stored in your personal health vault.',
+            report: {
+              clinicalIndication: r.report?.clinicalIndication || 'Routine review.',
+              technique: r.report?.technique || 'Standard imaging scan.',
+              findings: r.report?.findings || [],
+              impression: r.report?.impression || 'Normal findings.',
+              verifiedBy: r.doctor_name
+            }
+          })));
+
+          setPatientTimeline(timeline);
+        } catch (err) {
+          console.error('[RadVault Portal] Error fetching patient data:', err.message);
+        }
+      };
+
+      loadPatientPortalData();
+      return () => {
+        isMounted = false;
+      };
+    }
+  }, [role, isDemoMode, demoDataEnabled, patientProfile?.id]);
+
   // Sync role with URL hash on mount & hashchange for native routing in demo mode
   useEffect(() => {
-    if (!isDemoMode) return;
-
-    const handleHashChange = () => {
+    const handleHashChange = async () => {
       const hash = window.location.hash.replace('#', '').toLowerCase();
       if (hash === 'asha' || hash === 'hospital' || hash === 'doctor' || hash === 'patient') {
         const mappedRole = hash === 'hospital' ? ROLES.HOSPITAL_STAFF : hash;
         if (Object.values(ROLES).includes(mappedRole) && mappedRole !== role) {
-          switchDemoRole(mappedRole);
+          await switchDemoRole(mappedRole);
         }
       }
     };
@@ -169,14 +247,14 @@ function App() {
     handleHashChange();
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
-  }, [role, isDemoMode, switchDemoRole]);
+  }, [role, switchDemoRole]);
 
   // Update hash when demo role changes
-  const handleRoleSelect = (targetRole) => {
-    switchDemoRole(targetRole);
+  const handleRoleSelect = async (targetRole) => {
     setShowPortalPicker(false);
     const hashKey = targetRole === ROLES.HOSPITAL_STAFF ? 'hospital' : targetRole;
     window.location.hash = hashKey;
+    await switchDemoRole(targetRole);
   };
 
   const handleViewRecordFromTimeline = (recordId) => {
@@ -269,6 +347,21 @@ function App() {
 
           {/* Right Side Portal & Role Controls */}
           <div className="flex items-center gap-2">
+            {/* ── Demo Data ON/OFF Toggle Button ── */}
+            <button
+              onClick={toggleDemoData}
+              className={`px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 shadow-xs cursor-pointer ${
+                demoDataEnabled
+                  ? 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100'
+                  : 'bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200'
+              }`}
+              title={demoDataEnabled ? "Click to switch Demo Data OFF (Show real Supabase data only)" : "Click to switch Demo Data ON (Show prototype demo records)"}
+              aria-label={`Toggle demo data: Currently ${demoDataEnabled ? 'ON' : 'OFF'}`}
+            >
+              <span className={`w-2 h-2 rounded-full ${demoDataEnabled ? 'bg-amber-500 animate-pulse' : 'bg-slate-400'}`} aria-hidden="true" />
+              <span>Demo Data: <strong className={demoDataEnabled ? 'text-amber-950 font-black' : 'text-slate-800 font-black'}>{demoDataEnabled ? 'ON' : 'OFF'}</strong></span>
+            </button>
+
             {isAuthenticated && (
               <button
                 onClick={logout}
@@ -470,9 +563,9 @@ function App() {
                     </button>
                   </div>
                   <MedicalRecordsList
-                    records={mockMedicalRecords}
+                    records={patientRecords}
                     initialSelectedRecordId={targetRecordId}
-                    patient={mockPatient}
+                    patient={patientProfile || mockPatient}
                   />
                 </div>
               )}
@@ -493,7 +586,7 @@ function App() {
                     </button>
                   </div>
                   <HealthTimeline
-                    events={mockTimelineEvents}
+                    events={patientTimeline}
                     onViewRecord={handleViewRecordFromTimeline}
                   />
                 </div>
@@ -534,20 +627,32 @@ function App() {
                       <ChevronLeft className="w-4 h-4" /> Back to Home
                     </button>
                   </div>
-                  <div className="rv-profile-layout">
-                    <div className="rv-profile-top-grid">
-                      <PatientProfileCard
-                        patient={mockPatient}
-                        onTriggerEmergencyQR={handleTriggerEmergency}
-                      />
-                      <PatientVitals vitals={mockVitals} />
+                  {!isDemoMode && !patientProfile ? (
+                    <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6 text-center space-y-3">
+                      <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center mx-auto text-amber-700 text-xl font-bold">
+                        ⚠️
+                      </div>
+                      <h3 className="text-base font-bold text-amber-900">Patient Profile Not Linked</h3>
+                      <p className="text-sm text-amber-700 max-w-md mx-auto">
+                        Your login is authenticated, but no registered patient record is associated with your account yet. Please coordinate with your local ASHA worker to link your profile.
+                      </p>
                     </div>
-                    <PatientConditions
-                      allergies={mockAllergies}
-                      conditions={mockConditions}
-                      medications={mockMedications}
-                    />
-                  </div>
+                  ) : (
+                    <div className="rv-profile-layout">
+                      <div className="rv-profile-top-grid">
+                        <PatientProfileCard
+                          patient={isDemoMode ? mockPatient : (patientProfile || {})}
+                          onTriggerEmergencyQR={handleTriggerEmergency}
+                        />
+                        <PatientVitals vitals={mockVitals} />
+                      </div>
+                      <PatientConditions
+                        allergies={mockAllergies}
+                        conditions={mockConditions}
+                        medications={mockMedications}
+                      />
+                    </div>
+                  )}
                 </div>
               )}
 

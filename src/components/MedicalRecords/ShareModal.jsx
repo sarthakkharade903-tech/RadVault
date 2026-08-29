@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useAuth } from "../../context/AuthContext";
 import {
   getDoctors,
   createShareAccess,
@@ -28,6 +29,7 @@ export default function ShareModal({
   patient = {},
   onViewAccess,
 }) {
+  const { isDemoMode, demoDataEnabled } = useAuth();
   // Steps: 'doctor' | 'scope' | 'details' | 'duration' | 'success'
   const [step, setStep] = useState("doctor");
   const [doctorsList, setDoctorsList] = useState([]);
@@ -45,7 +47,7 @@ export default function ShareModal({
   // Selected records (array of record IDs)
   const [selectedRecordIds, setSelectedRecordIds] = useState(() => {
     if (initialRecord) return [initialRecord.id];
-    return mockMedicalRecords.slice(0, 2).map((r) => r.id);
+    return isDemoMode && demoDataEnabled ? mockMedicalRecords.slice(0, 2).map((r) => r.id) : [];
   });
 
   // Duration: '7_days' | '24_hours' | 'until_revoked'
@@ -138,6 +140,7 @@ export default function ShareModal({
         selectedRecords:
           shareScope === "selected_records" ? selectedRecordsObjects : [],
         durationType,
+        isDemoMode
       });
       setCreatedShare(share);
       setStep("success");

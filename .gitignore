@@ -49,3 +49,6 @@ out/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Scratch and temp debug files
+scratch/

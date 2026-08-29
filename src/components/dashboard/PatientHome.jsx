@@ -1,6 +1,8 @@
 import React, { useContext, useState, useEffect } from 'react';
 import { PatientContext } from '../../context/PatientContext';
-import { getVitals, getUpcomingAppointments } from '../../services/patientService';
+import { useAuth } from '../../context/AuthContext';
+import { supabase } from '../../services/supabase';
+import { getVitals, getUpcomingAppointments, getPatientTimeline } from '../../services/patientService';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import {
   Heart,
@@ -11,7 +13,6 @@ import {
   User,
   ShieldAlert,
   Clock,
-  ArrowRight,
   Phone,
   Droplet,
   CheckCircle2,
@@ -22,9 +23,7 @@ import {
   Shield,
   Plus,
   RefreshCw,
-  Sparkles,
   Stethoscope,
-  Building2,
 } from 'lucide-react';
 
 // ─── Structured Mock Data (Ready for Supabase mapping) ───────────────────────
@@ -323,10 +322,10 @@ function AppointmentSection({ appointments, loading, onNavigate }) {
 // ─── Section: Emergency ID Card ───────────────────────────────────────────────
 
 function EmergencyCard({ onNavigate, patient }) {
-  // Use real Supabase patient data; fall back to mock only if field is missing
-  const bloodGroup = patient?.blood_group || MOCK_EMERGENCY.bloodGroup;
-  const allergies = patient?.critical_allergies || MOCK_EMERGENCY.criticalAllergies;
-  const emergencyContact = patient?.emergency_contact || MOCK_EMERGENCY.emergencyContact;
+  const { isDemoMode, demoDataEnabled } = useAuth();
+  const bloodGroup = patient?.blood_group || patient?.bloodGroup || (isDemoMode && demoDataEnabled ? MOCK_EMERGENCY.bloodGroup : 'N/A');
+  const allergies = patient?.critical_allergies || patient?.vitals?.allergies || (isDemoMode && demoDataEnabled ? MOCK_EMERGENCY.criticalAllergies : 'None recorded');
+  const emergencyContact = patient?.emergency_contact || patient?.vitals?.emergencyContact || (isDemoMode && demoDataEnabled ? MOCK_EMERGENCY.emergencyContact : 'None recorded');
 
   return (
     <div className="bg-[#FFF5F5] border-2 border-[#D32F2F]/35 rounded-2xl p-5 sm:p-6 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between">
@@ -381,7 +380,11 @@ function EmergencyCard({ onNavigate, patient }) {
 
 // ─── Section: Medical Records Card ────────────────────────────────────────────
 
-function MedicalRecordsCard({ onNavigate }) {
+// ─── Section: Medical Records Card ────────────────────────────────────────────
+
+function MedicalRecordsCard({ onNavigate, summary }) {
+  const data = summary || MOCK_RECORDS_SUMMARY;
+
   return (
     <div className="bg-white border-2 border-[#008080]/30 rounded-2xl p-5 sm:p-6 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between">
       <div>
@@ -393,33 +396,33 @@ function MedicalRecordsCard({ onNavigate }) {
             <div className="flex items-center justify-between">
               <h3 className="text-base font-bold text-[#008080]">Medical Records & Vault</h3>
               <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-[#FFF5EB] text-[#b35900] border border-[#FF9933]/50">
-                {MOCK_RECORDS_SUMMARY.recentCount} Recently Added
+                {data.recentCount} Verified
               </span>
             </div>
-            <p className="text-xs text-[#555555] mt-1">{MOCK_RECORDS_SUMMARY.types}</p>
+            <p className="text-xs text-[#555555] mt-1">{data.types}</p>
           </div>
         </div>
 
         <div className="flex items-center gap-4 bg-slate-50 border border-slate-200/80 rounded-xl p-3.5 mb-4">
           <div>
             <span className="text-2xl font-extrabold text-[#212121]">
-              {MOCK_RECORDS_SUMMARY.total}
+              {data.total}
             </span>
             <span className="text-xs text-[#555555] block font-medium">Total Documents</span>
           </div>
           <div className="h-8 w-px bg-slate-200" />
           <div>
             <span className="text-2xl font-extrabold text-[#008080]">
-              {MOCK_RECORDS_SUMMARY.recentCount}
+              {data.recentCount}
             </span>
-            <span className="text-xs text-[#555555] block font-medium">New Scans</span>
+            <span className="text-xs text-[#555555] block font-medium">Available Scans</span>
           </div>
         </div>
       </div>
 
       <button
         onClick={() => onNavigate && onNavigate('records')}
-        className="w-full py-2.5 bg-[#800000] hover:bg-[#660000] active:bg-[#4d0000] text-white font-bold rounded-xl text-sm transition-colors shadow-sm flex items-center justify-center gap-2"
+        className="w-full py-2.5 bg-[#800000] hover:bg-[#660000] active:bg-[#4d0000] text-white font-bold rounded-xl text-sm transition-colors shadow-sm flex items-center justify-center gap-2 cursor-pointer"
       >
         <BookOpen className="w-4 h-4" />
         View Medical Records
@@ -493,8 +496,18 @@ function VitalsSection({ vitals, loading }) {
 
 // ─── Section: Referral Summary Card ───────────────────────────────────────────
 
-function ReferralSummaryCard({ onNavigate }) {
-  const ref = MOCK_REFERRAL_SUMMARY;
+function ReferralSummaryCard({ onNavigate, summary }) {
+  if (!summary || !summary.latest) {
+    return (
+      <LightCard className="border-2 border-[#800000]/25 text-center py-6">
+        <Handshake className="w-8 h-8 text-[#800000]/60 mx-auto mb-2" />
+        <h3 className="text-base font-bold text-[#212121]">No Active Referrals</h3>
+        <p className="text-xs text-[#555555] mt-1 max-w-sm mx-auto">
+          When an ASHA worker refers you for specialist care at a PHC or hospital, status tracking will appear here.
+        </p>
+      </LightCard>
+    );
+  }
 
   return (
     <LightCard className="border-2 border-[#800000]/25">
@@ -511,23 +524,23 @@ function ReferralSummaryCard({ onNavigate }) {
           </div>
         </div>
         <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-[#FFF8E1] text-[#855B00] border border-[#FFC107]">
-          {ref.activeCount} Active
+          {summary.activeCount} Active
         </span>
       </div>
 
       <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3.5 mb-4">
         <span className="text-[11px] font-bold uppercase tracking-wider text-[#555555]">
-          Latest Referral
+          Latest Referral · Status: <span className="text-[#800000] font-extrabold">{summary.latest.status}</span>
         </span>
-        <h4 className="text-base font-bold text-[#212121] mt-0.5">{ref.latest.name}</h4>
+        <h4 className="text-base font-bold text-[#212121] mt-0.5">{summary.latest.name}</h4>
         <p className="text-xs text-[#555555] mt-0.5">
-          Referred to: <strong className="text-[#800000]">{ref.latest.doctor}</strong> ({ref.latest.hospital})
+          Referred to: <strong className="text-[#800000]">{summary.latest.doctor}</strong> ({summary.latest.hospital})
         </p>
       </div>
 
       <button
         onClick={() => onNavigate && onNavigate('referrals')}
-        className="w-full py-2.5 bg-[#800000] hover:bg-[#660000] text-white font-bold rounded-xl text-sm transition-colors shadow-sm flex items-center justify-center gap-1.5"
+        className="w-full py-2.5 bg-[#800000] hover:bg-[#660000] text-white font-bold rounded-xl text-sm transition-colors shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
       >
         <Handshake className="w-4 h-4" />
         View All Referrals
@@ -538,18 +551,31 @@ function ReferralSummaryCard({ onNavigate }) {
 
 // ─── Section: Recent Health Activity ──────────────────────────────────────────
 
-function RecentActivityList() {
+function RecentActivityList({ activities }) {
+  const list = activities && activities.length > 0 ? activities : null;
+
+  if (!list) {
+    return (
+      <div className="text-center py-6">
+        <Clock className="w-6 h-6 text-slate-300 mx-auto mb-1.5" />
+        <p className="text-xs text-[#555555] font-medium">No recent care journey activity recorded yet.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="divide-y divide-slate-100">
-      {MOCK_RECENT_ACTIVITY.map((item, idx) => (
-        <div key={item.id} className={`flex items-start gap-3.5 py-3.5 ${idx === 0 ? 'pt-0' : ''}`}>
+      {list.map((item, idx) => (
+        <div key={item.id || idx} className={`flex items-start gap-3.5 py-3.5 ${idx === 0 ? 'pt-0' : ''}`}>
           <div className="w-3 h-3 rounded-full bg-[#008080] shrink-0 mt-1.5 ring-4 ring-[#008080]/15" />
           <div className="flex-1 min-w-0">
             <h4 className="text-sm font-bold text-[#212121] leading-snug">{item.title}</h4>
             <p className="text-xs text-[#555555] mt-0.5 leading-relaxed">{item.description}</p>
-            <p className="text-xs text-[#800000] font-semibold mt-1">
-              Doctor: {item.doctor}
-            </p>
+            {item.doctor && (
+              <p className="text-xs text-[#800000] font-semibold mt-1">
+                Care provider: {item.doctor}
+              </p>
+            )}
           </div>
           <span className="text-xs text-[#555555] font-medium shrink-0 ml-2 mt-0.5">
             {item.date}
@@ -563,14 +589,20 @@ function RecentActivityList() {
 // ─── Main PatientHome Dashboard ───────────────────────────────────────────────
 
 export function PatientHome({ onNavigate }) {
+  const { isDemoMode, demoDataEnabled, patientProfile, patientProfileNotFound, patientProfileLoading } = useAuth();
   const { patients, loading: patientsLoading, error: patientsError } = useContext(PatientContext);
 
   const [selectedPatientIndex, setSelectedPatientIndex] = useState(0);
   const [vitals, setVitals] = useState(null);
   const [appointments, setAppointments] = useState([]);
+  const [referralsSummary, setReferralsSummary] = useState(null);
+  const [recordsSummary, setRecordsSummary] = useState(null);
+  const [recentActivity, setRecentActivity] = useState([]);
   const [detailsLoading, setDetailsLoading] = useState(false);
 
-  const activePatient = patients?.length > 0 ? patients[selectedPatientIndex] : null;
+  const activePatient = isDemoMode
+    ? (patients?.length > 0 ? patients[selectedPatientIndex] : null)
+    : (patientProfile || (patients?.length > 0 ? patients[0] : null));
 
   useEffect(() => {
     if (!activePatient?.id) return;
@@ -579,33 +611,130 @@ export function PatientHome({ onNavigate }) {
     // Immediately clear stale data so old patient info doesn't flash
     setVitals(null);
     setAppointments([]);
+    setReferralsSummary(null);
+    setRecordsSummary(null);
+    setRecentActivity([]);
 
     const fetchDetails = async () => {
       setDetailsLoading(true);
-      const [vitalsResult, apptsResult] = await Promise.allSettled([
-        getVitals(activePatient.id),
-        getUpcomingAppointments(activePatient.id),
-      ]);
-      if (!isMounted) return;
-      setVitals(
-        vitalsResult.status === 'fulfilled' && vitalsResult.value?.length > 0
-          ? vitalsResult.value[0]
-          : null
-      );
-      setAppointments(apptsResult.status === 'fulfilled' ? apptsResult.value || [] : []);
-      setDetailsLoading(false);
+      try {
+        const [vitalsResult, apptsResult] = await Promise.allSettled([
+          getVitals(activePatient.id),
+          getUpcomingAppointments(activePatient.id),
+        ]);
+
+        if (!isMounted) return;
+
+        setVitals(
+          vitalsResult.status === 'fulfilled' && vitalsResult.value?.length > 0
+            ? vitalsResult.value[0]
+            : null
+        );
+        setAppointments(apptsResult.status === 'fulfilled' ? apptsResult.value || [] : []);
+
+        if (!isDemoMode || !demoDataEnabled) {
+          // 1. Fetch Referrals Summary
+          const { data: refData } = await supabase
+            .from('referrals')
+            .select('id, destination_hospital, destination_department, doctor_assigned, status, symptoms, created_at')
+            .eq('patient_id', activePatient.id)
+            .order('created_at', { ascending: false });
+
+          if (!isMounted) return;
+
+          if (refData && refData.length > 0) {
+            const activeRefs = refData.filter(r => r.status !== 'Completed');
+            const latest = refData[0];
+            setReferralsSummary({
+              activeCount: activeRefs.length,
+              totalCount: refData.length,
+              latest: {
+                name: `${latest.destination_department || 'Specialist'} Referral`,
+                doctor: latest.doctor_assigned || 'On-Duty Specialist',
+                hospital: latest.destination_hospital || 'Primary Health Centre',
+                status: latest.status,
+                date: formatDate(latest.created_at)
+              }
+            });
+          } else {
+            setReferralsSummary(null);
+          }
+
+          // 2. Fetch Medical Records Summary
+          const { data: recData } = await supabase
+            .from('medical_records')
+            .select('id, title, modality, created_at')
+            .eq('patient_id', activePatient.id)
+            .order('created_at', { ascending: false });
+
+          if (!isMounted) return;
+
+          if (recData && recData.length > 0) {
+            const modalities = Array.from(new Set(recData.map(r => r.modality))).join(' • ');
+            setRecordsSummary({
+              total: recData.length,
+              recentCount: recData.length,
+              types: modalities || 'Diagnostic Scans & Reports'
+            });
+          } else {
+            setRecordsSummary({
+              total: 0,
+              recentCount: 0,
+              types: 'No documents uploaded yet'
+            });
+          }
+
+          // 3. Fetch Recent Health Activity from Timeline
+          const timeline = await getPatientTimeline(activePatient.id);
+          if (!isMounted) return;
+
+          setRecentActivity(timeline.slice(0, 5).map(t => ({
+            id: t.id,
+            title: t.title,
+            doctor: t.doctor,
+            description: t.summary || t.details,
+            date: t.date,
+            type: t.category
+          })));
+        } else {
+          setReferralsSummary(MOCK_REFERRAL_SUMMARY);
+          setRecordsSummary(MOCK_RECORDS_SUMMARY);
+          setRecentActivity(MOCK_RECENT_ACTIVITY);
+        }
+      } catch (err) {
+        console.error('[RadVault PatientHome] Error loading patient details:', err.message);
+      } finally {
+        if (isMounted) setDetailsLoading(false);
+      }
     };
 
     fetchDetails();
     return () => {
       isMounted = false;
     };
-  }, [activePatient?.id]);
+  }, [activePatient?.id, isDemoMode, demoDataEnabled]);
 
-  if (patientsLoading) {
+  if (patientsLoading || patientProfileLoading) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center">
         <LoadingSpinner message="Loading your health journey records..." />
+      </div>
+    );
+  }
+
+  // Explicit unlinked profile handling per Phase 3 specifications
+  if (!isDemoMode && patientProfileNotFound) {
+    return (
+      <div className="max-w-md mx-auto my-12 px-4">
+        <LightCard className="text-center border-2 border-[#008080]/30 bg-white p-8">
+          <div className="w-14 h-14 bg-[#008080]/10 rounded-full flex items-center justify-center mx-auto mb-3">
+            <User className="w-7 h-7 text-[#008080]" aria-hidden="true" />
+          </div>
+          <h3 className="text-lg font-bold text-[#212121] mb-1">Patient Profile Not Linked</h3>
+          <p className="text-sm text-[#555555] mb-4 leading-relaxed">
+            Your login account is not yet linked to an active patient record in the registry. Please share your Unified ID with your local ASHA healthcare worker or primary health centre to link your account.
+          </p>
+        </LightCard>
       </div>
     );
   }
@@ -728,12 +857,12 @@ export function PatientHome({ onNavigate }) {
                 </span>
               </>
             )}
-            {activePatient.contact && (
+            {(activePatient.phone_number || activePatient.contact) && (
               <>
                 <span className="text-slate-300" aria-hidden="true">·</span>
                 <span className="inline-flex items-center gap-1 text-[#555555] font-medium">
                   <Phone className="w-4 h-4 text-[#008080]" aria-hidden="true" />
-                  {activePatient.contact}
+                  {activePatient.phone_number || activePatient.contact}
                 </span>
               </>
             )}
@@ -751,7 +880,7 @@ export function PatientHome({ onNavigate }) {
 
             <button
               onClick={() => onNavigate && onNavigate('profile')}
-              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-[#212121] font-bold rounded-lg text-xs transition-colors flex items-center gap-1"
+              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-[#212121] font-bold rounded-lg text-xs transition-colors flex items-center gap-1 cursor-pointer"
             >
               Full Profile <ChevronRight className="w-3.5 h-3.5" />
             </button>
@@ -764,7 +893,7 @@ export function PatientHome({ onNavigate }) {
         <SectionHeader icon={AlertCircle} label="What Needs Your Attention" iconColor="text-[#FF9933]" />
         <AttentionSection
           appointment={appointments[0] || null}
-          referral={MOCK_REFERRAL_SUMMARY}
+          referral={referralsSummary}
           onNavigate={onNavigate}
         />
       </section>
@@ -788,7 +917,7 @@ export function PatientHome({ onNavigate }) {
 
         <section aria-labelledby="records-heading" className="flex flex-col">
           <SectionHeader icon={BookOpen} label="Medical Records & Vault" iconColor="text-[#008080]" />
-          <MedicalRecordsCard onNavigate={onNavigate} />
+          <MedicalRecordsCard onNavigate={onNavigate} summary={recordsSummary} />
         </section>
       </div>
 
@@ -801,14 +930,14 @@ export function PatientHome({ onNavigate }) {
       {/* ── 8. Referral Summary (Handshake icon + Maroon doctor name) ── */}
       <section aria-labelledby="referral-heading">
         <SectionHeader icon={Handshake} label="Specialist Referrals" iconColor="text-[#800000]" />
-        <ReferralSummaryCard onNavigate={onNavigate} />
+        <ReferralSummaryCard onNavigate={onNavigate} summary={referralsSummary} />
       </section>
 
       {/* ── 9. Recent Health Activity (Teal timeline dots + Maroon names) ── */}
       <section aria-labelledby="activity-heading">
         <SectionHeader icon={Clock} label="Recent Health Activity" iconColor="text-[#555555]" />
         <LightCard>
-          <RecentActivityList />
+          <RecentActivityList activities={recentActivity} />
         </LightCard>
       </section>
 

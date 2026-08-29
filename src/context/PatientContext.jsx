@@ -66,14 +66,14 @@ const DEMO_PATIENTS = [
 ];
 
 export function PatientProvider({ children }) {
-  const { ashaVillages, role, isDemoMode } = useAuth();
+  const { ashaVillages, role, isDemoMode, demoDataEnabled } = useAuth();
   const [dbPatients, setDbPatients] = useState([]);
   const [demoPatientsList, setDemoPatientsList] = useState(DEMO_PATIENTS);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   const fetchPatients = async (villageIds = null) => {
-    if (isDemoMode) {
+    if (isDemoMode && demoDataEnabled) {
       setLoading(false);
       setError(null);
       return;
@@ -103,17 +103,17 @@ export function PatientProvider({ children }) {
 
   useEffect(() => {
     fetchPatients();
-  }, [ashaVillages, role, isDemoMode]);
+  }, [ashaVillages, role, isDemoMode, demoDataEnabled]);
 
   const addPatient = (patient) => {
-    if (isDemoMode) {
+    if (isDemoMode && demoDataEnabled) {
       setDemoPatientsList((prev) => [patient, ...prev]);
     } else {
       fetchPatients();
     }
   };
 
-  const patients = isDemoMode ? demoPatientsList : dbPatients;
+  const patients = (isDemoMode && demoDataEnabled) ? demoPatientsList : dbPatients;
 
   return (
     <PatientContext.Provider value={{ 

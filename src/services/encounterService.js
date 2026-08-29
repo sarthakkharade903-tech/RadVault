@@ -71,15 +71,30 @@ const INITIAL_SEED_ENCOUNTERS = [
 
 export function getStoredEncounters() {
   try {
-    const raw = localStorage.getItem(ENCOUNTERS_STORAGE_KEY);
+    const isDemoDataEnabled = typeof localStorage !== 'undefined'
+      ? localStorage.getItem('radvault_demo_data_enabled') !== 'false'
+      : true;
+
+    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(ENCOUNTERS_STORAGE_KEY) : null;
     if (!raw) {
-      localStorage.setItem(ENCOUNTERS_STORAGE_KEY, JSON.stringify(INITIAL_SEED_ENCOUNTERS));
-      return INITIAL_SEED_ENCOUNTERS;
+      if (isDemoDataEnabled) {
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem(ENCOUNTERS_STORAGE_KEY, JSON.stringify(INITIAL_SEED_ENCOUNTERS));
+        }
+        return INITIAL_SEED_ENCOUNTERS;
+      }
+      return [];
     }
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    if (!isDemoDataEnabled) {
+      return (parsed || []).filter(
+        (e) => !e.id?.startsWith('ENC-20260826-001') && !e.id?.startsWith('ENC-20260824-002')
+      );
+    }
+    return parsed;
   } catch (err) {
     console.error('Error reading encounters from storage:', err);
-    return INITIAL_SEED_ENCOUNTERS;
+    return [];
   }
 }
 
@@ -120,11 +135,48 @@ export async function createEncounter({
 
   // 1. If a referral / consultation was created, construct payload and insert it
   if (!isDemoMode && actionType === 'REFERRAL' && referralData) {
+    let destination_facility_id = referralData.facilityId || null;
+    let actual_destination_hospital = referralData.hospital;
+
+    if (!destination_facility_id) {
+      try {
+        // Clean up string mismatch between ASHA mock array and DB seed
+        let searchName = referralData.hospital || '';
+        if (searchName === 'Primary Health Centre — Shrirampur') {
+          searchName = 'Shrirampur Primary Health Centre';
+          actual_destination_hospital = searchName;
+        }
+
+        // Lookup facility_id so PHC staff can actually query it
+        const { data: fac } = await supabase
+          .from('facilities')
+          .select('id, name')
+          .ilike('name', `%${searchName.split(' ')[0]}%`) // Loose match
+          .limit(1)
+          .maybeSingle();
+
+        if (fac) {
+          destination_facility_id = fac.id;
+          actual_destination_hospital = fac.name;
+        } else {
+          // Ultimate fallback to default facility in DB
+          const { data: anyFac } = await supabase.from('facilities').select('id, name').limit(1).maybeSingle();
+          if (anyFac) {
+            destination_facility_id = anyFac.id;
+            actual_destination_hospital = anyFac.name;
+          }
+        }
+      } catch (e) {
+        console.warn('[RADVAULT] Facility lookup warning:', e.message);
+      }
+    }
+
     referralPayload = {
-      patient_id: patient.unified_id || patient.id,
+      patient_id: patient.id, // MUST be UUID! patient.unified_id will crash postgres type cast
       patient_name: patient.full_name || patient.name,
       created_by: `ASHA Worker: ${ashaWorkerName}`,
-      destination_hospital: referralData.hospital,
+      destination_facility_id: destination_facility_id,
+      destination_hospital: actual_destination_hospital,
       destination_department: referralData.department,
       doctor_assigned: referralData.doctor || 'On-Duty Specialist',
       priority: priority,
@@ -135,17 +187,22 @@ export async function createEncounter({
       ai_note: aiNote || 'Frontline ASHA triage assessment.'
     };
 
+    console.log(`[RADVAULT][REFERRAL_CREATE] Initiating referral insert -> Patient: ${patient.id} (${patient.full_name || patient.name}), Destination Facility: ${destination_facility_id} (${actual_destination_hospital}), Priority: ${priority}, Status: Pending`);
+
     try {
       const { data, error } = await supabase
         .from('referrals')
         .insert([referralPayload])
         .select();
 
-      if (!error && data && data.length > 0) {
+      if (error) {
+        console.error('[RADVAULT][REFERRAL_CREATE] Supabase error:', error.message);
+      } else if (data && data.length > 0) {
         createdReferralId = data[0].id;
+        console.log(`[RADVAULT][REFERRAL_CREATE] Referral successfully persisted in DB. Referral ID: ${createdReferralId}, Destination Facility: ${destination_facility_id}`);
       }
     } catch (err) {
-      console.warn('Supabase referral direct save note (persisting as local draft):', err.message);
+      console.error('[RADVAULT][REFERRAL_CREATE] Exception:', err.message);
     }
   }
 
@@ -511,7 +568,7 @@ export async function getTrackedReferrals(scopedPatientIds = [], isDemoMode = fa
     if (!error && dbReferrals) {
       return referralEncounters.map((enc) => {
         const matched = dbReferrals.find(
-          (r) => r.id === enc.referralId || (r.patient_id === enc.patientUnifiedId && r.symptoms.includes(enc.complaint))
+          (r) => r.id === enc.referralId || (r.patient_id === enc.patientId && r.symptoms.includes(enc.complaint))
         );
         return {
           ...enc,

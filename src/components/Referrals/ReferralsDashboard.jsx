@@ -24,7 +24,7 @@ export default function ReferralsDashboard({ onBack }) {
         // or just use DB fields directly. The ReferralList expects some specific names:
         const mapped = data.map(d => ({
           id: d.id,
-          patientName: d.patient_name || 'Rajesh Kumar',
+          patientName: d.patient_name || 'Beneficiary',
           patientId: d.patient_id,
           createdBy: d.created_by,
           department: d.destination_department,

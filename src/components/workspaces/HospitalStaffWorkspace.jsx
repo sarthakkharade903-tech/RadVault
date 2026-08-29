@@ -71,7 +71,7 @@ const INITIAL_DEMO_REFERRALS = [
 ];
 
 export default function HospitalStaffWorkspace({ onNavigateToPatientView }) {
-  const { user, isDemoMode } = useAuth();
+  const { user, isDemoMode, demoDataEnabled } = useAuth();
   
   // Navigation Tabs: 'home' | 'queue' | 'referrals'
   const [activeTab, setActiveTab] = useState('home');
@@ -93,7 +93,14 @@ export default function HospitalStaffWorkspace({ onNavigateToPatientView }) {
 
   // Fetch real data from Supabase
   const loadSupabaseData = useCallback(async () => {
-    if (!user) return;
+    if (!user) {
+      setStaffProfile(null);
+      setFacility(null);
+      setDoctors([]);
+      setReferrals([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError('');
 
@@ -108,14 +115,27 @@ export default function HospitalStaffWorkspace({ onNavigateToPatientView }) {
       if (staffErr) throw staffErr;
 
       if (!staffData) {
-        setError('No hospital staff profile associated with this account. Please contact the administrator.');
+        setError('No hospital staff profile linked to this user. Please contact system admin.');
+        setStaffProfile(null);
+        setFacility(null);
+        setDoctors([]);
+        setReferrals([]);
         setLoading(false);
         return;
       }
 
-      setStaffProfile(staffData);
-      setFacility(staffData.facilities);
+      setStaffProfile({
+        name: staffData.name,
+        role: staffData.role || 'Hospital Staff',
+        phc_name: staffData.facilities?.name || 'Assigned PHC'
+      });
+
       const facilityId = staffData.facility_id;
+      setFacility({
+        id: facilityId,
+        name: staffData.facilities?.name || 'Assigned PHC',
+        district: staffData.facilities?.district || 'General District'
+      });
 
       // 2. Fetch Scoped Doctors
       const { data: doctorsData, error: docErr } = await supabase
@@ -134,11 +154,13 @@ export default function HospitalStaffWorkspace({ onNavigateToPatientView }) {
         .order('created_at', { ascending: false });
 
       if (refErr) throw refErr;
+      console.log(`[RADVAULT][PHC_REFERRAL_LOAD] User: ${user.id}, Staff: ${staffData.id}, Facility: ${facilityId} (${staffData.facilities?.name}), Fetched Referrals Count: ${refData?.length || 0}`);
       setReferrals(refData || []);
 
     } catch (err) {
-      console.error('[RadVault PHC] Data load error:', err.message);
+      console.error('[RADVAULT][PHC_REFERRAL_LOAD] Data load error:', err.message);
       setError('Unable to load referrals and facility data. Please try again.');
+      setReferrals([]);
     } finally {
       setLoading(false);
     }
@@ -146,7 +168,7 @@ export default function HospitalStaffWorkspace({ onNavigateToPatientView }) {
 
   // Load Initial Data
   useEffect(() => {
-    if (isDemoMode) {
+    if (isDemoMode && demoDataEnabled) {
       setStaffProfile({
         name: 'Sagar Deshpande (Operations Desk)',
         phc_name: 'Pune Sassoon General Hospital'
@@ -162,7 +184,7 @@ export default function HospitalStaffWorkspace({ onNavigateToPatientView }) {
     } else {
       loadSupabaseData();
     }
-  }, [isDemoMode, loadSupabaseData]);
+  }, [isDemoMode, demoDataEnabled, loadSupabaseData]);
 
   // Clear toast alert helper
   const showToast = (msg) => {

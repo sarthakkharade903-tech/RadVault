@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useAuth } from "../../context/AuthContext";
 import {
   getAllShares,
   revokeShareAccess,
@@ -21,6 +22,7 @@ export default function WhoHasAccessModal({
   patient = {},
   onOpenShareNew,
 }) {
+  const { isDemoMode, demoDataEnabled } = useAuth();
   const [shares, setShares] = useState([]);
   const [selectedShare, setSelectedShare] = useState(null);
   const [showRevokeConfirm, setShowRevokeConfirm] = useState(false);
@@ -30,8 +32,12 @@ export default function WhoHasAccessModal({
 
   // Load shares
   const refreshShares = async () => {
-    const list = await getAllShares(patient.id || "PAT-89210");
-    setShares(list);
+    try {
+      const list = await getAllShares(patient.id || "PAT-89210", isDemoMode && demoDataEnabled);
+      setShares(list);
+    } catch (err) {
+      console.warn("Could not load shares list:", err.message);
+    }
   };
 
   useEffect(() => {
@@ -72,12 +78,12 @@ export default function WhoHasAccessModal({
     if (!selectedShare || isRevoking) return;
     setIsRevoking(true);
     try {
-      const updated = await revokeShareAccess(selectedShare.id);
+      const updated = await revokeShareAccess(selectedShare.id, isDemoMode);
       await refreshShares();
       setSelectedShare(updated);
       setShowRevokeConfirm(false);
       setRevokeSuccessMessage(
-        `✓ Access revoked: ${updated.doctorName} can no longer view this shared information.`
+        `✓ Access revoked: ${updated.doctorName || 'Doctor'} can no longer view this shared information.`
       );
     } catch (err) {
       console.error("Failed to revoke access:", err);

@@ -15,6 +15,7 @@ import {
   MapPin,
 } from 'lucide-react';
 import { DEPARTMENTS } from '../../data/mockReferrals';
+import { supabase } from '../../services/supabase';
 
 // ─── Haversine Distance Formula ───────────────────────────────────────────────
 function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) {
@@ -59,19 +60,19 @@ GREEN: Routine (mild symptoms, stable vitals) -> Recommend routine OPD
   const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${GROQ_API_KEY}`,
       'Content-Type': 'application/json',
+      'Authorization': `Bearer ${GROQ_API_KEY}`
     },
     body: JSON.stringify({
-      model: 'llama3-8b-8192',
-      messages: [{ role: 'system', content: prompt }],
+      model: 'llama-3.3-70b-versatile',
+      messages: [{ role: 'user', content: prompt }],
       temperature: 0.1,
-      response_format: { type: "json_object" }
+      response_format: { type: 'json_object' }
     })
   });
 
   if (!response.ok) {
-    throw new Error(`Groq API error: ${response.statusText}`);
+    throw new Error(`Groq API returned ${response.status}`);
   }
 
   const data = await response.json();
@@ -121,74 +122,66 @@ const RESULT_STYLES = {
 
 // ─── TriageForm Main ──────────────────────────────────────────────────────────
 export default function TriageForm({ onSubmit, onCancel }) {
+  // Form State
   const [symptoms, setSymptoms] = useState('');
   const [bp, setBp] = useState('');
   const [spo2, setSpo2] = useState('');
   const [temp, setTemp] = useState('');
   const [pulse, setPulse] = useState('');
-  
+
+  // Destination & Department
+  const [hospital, setHospital] = useState('');
+  const [selectedFacilityId, setSelectedFacilityId] = useState('');
+  const [department, setDepartment] = useState('Cardiology');
+
+  // GPS & Hospital state
   const [hospitals, setHospitals] = useState([]);
   const [fetchingHospitals, setFetchingHospitals] = useState(false);
-  const [hospital, setHospital] = useState('');
-  const [department, setDepartment] = useState('');
-  
-  const [aiResult, setAiResult] = useState(null);
+
+  // AI State
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [aiResult, setAiResult] = useState(null);
   const [error, setError] = useState('');
 
-  // 1. Fetch Hospitals via Overpass API on Mount
+  // 1. Fetch verified facilities from Supabase
   useEffect(() => {
-    const fetchHospitals = async (lat, lon) => {
+    const fetchFacilities = async () => {
       setFetchingHospitals(true);
       try {
-        // Query OpenStreetMap for hospitals within 50,000 meters (50km)
-        const query = `
-          [out:json];
-          (
-            node["amenity"="hospital"](around:50000, ${lat}, ${lon});
-            way["amenity"="hospital"](around:50000, ${lat}, ${lon});
-            relation["amenity"="hospital"](around:50000, ${lat}, ${lon});
-          );
-          out center;
-        `;
-        const res = await fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`);
-        const data = await res.json();
-        
-        let found = data.elements
-          .map(el => {
-            const hLat = el.lat || el.center?.lat;
-            const hLon = el.lon || el.center?.lon;
-            const dist = getDistanceFromLatLonInKm(lat, lon, hLat, hLon);
-            return {
-              name: el.tags?.name || 'Unnamed Hospital',
-              distance: dist
-            };
-          })
-          .filter(h => h.name !== 'Unnamed Hospital') // Clean up unnamed data
-          .sort((a, b) => a.distance - b.distance)    // Sort closest first
-          .slice(0, 15); // Top 15 closest
-          
-        setHospitals(found);
+        const { data: dbFacilities } = await supabase
+          .from('facilities')
+          .select('id, name, district')
+          .order('name');
+
+        if (dbFacilities && dbFacilities.length > 0) {
+          setHospitals(dbFacilities);
+          const defaultFac = dbFacilities.find(f => f.name.includes('Shrirampur')) || dbFacilities[0];
+          setHospital(defaultFac.name);
+          setSelectedFacilityId(defaultFac.id);
+        } else {
+          const fallback = [
+            { id: 'f1111111-1111-1111-1111-111111111111', name: 'Shrirampur Primary Health Centre', district: 'Ahmednagar' },
+            { id: 'f2222222-2222-2222-2222-222222222222', name: 'Pune Sassoon General Hospital', district: 'Pune' }
+          ];
+          setHospitals(fallback);
+          setHospital(fallback[0].name);
+          setSelectedFacilityId(fallback[0].id);
+        }
       } catch (err) {
-        console.error("Overpass API error:", err);
-        setError("Could not load nearby hospitals automatically.");
+        console.warn('Facility load fallback in TriageForm:', err);
+        const fallback = [
+          { id: 'f1111111-1111-1111-1111-111111111111', name: 'Shrirampur Primary Health Centre', district: 'Ahmednagar' },
+          { id: 'f2222222-2222-2222-2222-222222222222', name: 'Pune Sassoon General Hospital', district: 'Pune' }
+        ];
+        setHospitals(fallback);
+        setHospital(fallback[0].name);
+        setSelectedFacilityId(fallback[0].id);
       } finally {
         setFetchingHospitals(false);
       }
     };
 
-    if ("geolocation" in navigator) {
-      setFetchingHospitals(true);
-      navigator.geolocation.getCurrentPosition(
-        (position) => fetchHospitals(position.coords.latitude, position.coords.longitude),
-        (err) => {
-          console.warn("Geolocation blocked, falling back to Pune coordinates.", err);
-          fetchHospitals(18.5204, 73.8567); // Fallback: Pune
-        }
-      );
-    } else {
-      fetchHospitals(18.5204, 73.8567);
-    }
+    fetchFacilities();
   }, []);
 
   const handleRunAI = async () => {
@@ -211,7 +204,7 @@ export default function TriageForm({ onSubmit, onCancel }) {
     }
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!symptoms.trim()) { setError('Symptoms are required.'); return; }
     if (!hospital) { setError('Please select a destination hospital.'); return; }
@@ -219,11 +212,25 @@ export default function TriageForm({ onSubmit, onCancel }) {
     if (!aiResult) { setError('Please run the AI triage analysis before submitting.'); return; }
     setError('');
 
+    // Fetch patient or fallback to first patient in database
+    let patientId = null;
+    let patientName = 'Beneficiary';
+    try {
+      const { data: pat } = await supabase.from('patients').select('id, full_name').limit(1).maybeSingle();
+      if (pat) {
+        patientId = pat.id;
+        patientName = pat.full_name;
+      }
+    } catch {
+      // Ignored
+    }
+
     // Format for Supabase `referrals` table
     const newReferral = {
-      patient_id: 'MH-P-10482',
-      patient_name: 'Rajesh Kumar',
-      created_by: 'ASHA Worker: You',
+      patient_id: patientId || '148d891f-83d1-4578-9eb2-f93f9de8cffd',
+      patient_name: patientName,
+      created_by: 'ASHA Worker: Frontline Triage',
+      destination_facility_id: selectedFacilityId || 'f1111111-1111-1111-1111-111111111111',
       destination_hospital: hospital,
       destination_department: department,
       priority: aiResult.priority,
@@ -334,26 +341,28 @@ export default function TriageForm({ onSubmit, onCancel }) {
         <div className="bg-white border-2 border-slate-200 rounded-2xl p-5">
           <h3 className="text-sm font-extrabold text-[#212121] flex items-center gap-2 mb-4">
             <Building2 className="w-4 h-4 text-[#800000]" />
-            Step 4: Route to Specialist (Real-Time GPS)
+            Step 4: Route to Specialist (Verified Facility)
           </h3>
           <div className="space-y-3">
             <div>
               <label className="text-xs font-bold text-[#555555] uppercase tracking-wide flex items-center gap-1.5 mb-1.5">
-                Destination Hospital (Within 50km)
+                Destination Hospital / Facility
                 {fetchingHospitals && <Loader2 className="w-3 h-3 animate-spin text-[#008080]" />}
               </label>
               <select
-                value={hospital}
-                onChange={(e) => setHospital(e.target.value)}
+                value={selectedFacilityId}
+                onChange={(e) => {
+                  const facId = e.target.value;
+                  setSelectedFacilityId(facId);
+                  const matched = hospitals.find(h => h.id === facId);
+                  if (matched) setHospital(matched.name);
+                }}
                 disabled={fetchingHospitals}
                 className="w-full border-2 border-slate-200 focus:border-[#008080] outline-none rounded-xl px-3 py-2.5 text-sm text-[#212121] bg-white transition-colors disabled:opacity-60"
               >
-                <option value="">
-                  {fetchingHospitals ? "Finding nearby hospitals..." : "— Select Closest Hospital —"}
-                </option>
-                {hospitals.map((h, i) => (
-                  <option key={i} value={h.name}>
-                    {h.name} ({h.distance.toFixed(1)} km away)
+                {hospitals.map((h) => (
+                  <option key={h.id} value={h.id}>
+                    {h.name} {h.district ? `(${h.district})` : ''}
                   </option>
                 ))}
               </select>

@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { HOSPITALS, DEPARTMENTS } from '../../data/mockReferrals';
 import { createEncounter } from '../../services/encounterService';
+import { supabase } from '../../services/supabase';
 
 function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) {
   const R = 6371;
@@ -32,6 +33,7 @@ export default function ReferralCreationModal({
   const [hospitals, setHospitals] = useState([]);
   const [fetchingHospitals, setFetchingHospitals] = useState(false);
   const [hospital, setHospital] = useState('');
+  const [selectedFacilityId, setSelectedFacilityId] = useState('');
   const [department, setDepartment] = useState('Cardiology');
   const [doctorAssigned, setDoctorAssigned] = useState('On-Duty Specialist');
   const [urgencyNotes, setUrgencyNotes] = useState('');
@@ -39,63 +41,48 @@ export default function ReferralCreationModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
 
-  // 1. Fetch nearby hospitals using OpenStreetMap Overpass API
+  // 1. Fetch verified facilities from Supabase
   useEffect(() => {
     if (!isOpen) return;
 
-    const fetchHospitals = async (lat, lon) => {
+    const fetchFacilities = async () => {
       setFetchingHospitals(true);
       try {
-        const query = `
-          [out:json];
-          (
-            node["amenity"="hospital"](around:50000, ${lat}, ${lon});
-            way["amenity"="hospital"](around:50000, ${lat}, ${lon});
-            relation["amenity"="hospital"](around:50000, ${lat}, ${lon});
-          );
-          out center;
-        `;
-        const res = await fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`);
-        const data = await res.json();
+        const { data: dbFacilities, error: dbErr } = await supabase
+          .from('facilities')
+          .select('id, name, district')
+          .order('name');
 
-        let found = data.elements
-          .map((el) => {
-            const hLat = el.lat || el.center?.lat;
-            const hLon = el.lon || el.center?.lon;
-            const dist = getDistanceFromLatLonInKm(lat, lon, hLat, hLon);
-            return {
-              name: el.tags?.name || 'Unnamed Hospital',
-              distance: dist
-            };
-          })
-          .filter((h) => h.name !== 'Unnamed Hospital')
-          .sort((a, b) => a.distance - b.distance)
-          .slice(0, 15);
-
-        if (found.length > 0) {
-          setHospitals(found);
-          setHospital(found[0].name);
+        if (!dbErr && dbFacilities && dbFacilities.length > 0) {
+          setHospitals(dbFacilities);
+          // Default to Shrirampur PHC or first facility
+          const defaultFac = dbFacilities.find(f => f.name.includes('Shrirampur')) || dbFacilities[0];
+          setHospital(defaultFac.name);
+          setSelectedFacilityId(defaultFac.id);
         } else {
-          setHospitals(HOSPITALS.map((h) => ({ name: h, distance: 12.5 })));
-          setHospital(HOSPITALS[0]);
+          const fallback = [
+            { id: 'f1111111-1111-1111-1111-111111111111', name: 'Shrirampur Primary Health Centre', district: 'Ahmednagar' },
+            { id: 'f2222222-2222-2222-2222-222222222222', name: 'Pune Sassoon General Hospital', district: 'Pune' }
+          ];
+          setHospitals(fallback);
+          setHospital(fallback[0].name);
+          setSelectedFacilityId(fallback[0].id);
         }
       } catch (err) {
-        console.warn('Overpass API fallback active:', err);
-        setHospitals(HOSPITALS.map((h) => ({ name: h, distance: 15.0 })));
-        setHospital(HOSPITALS[0]);
+        console.warn('Facility load fallback:', err);
+        const fallback = [
+          { id: 'f1111111-1111-1111-1111-111111111111', name: 'Shrirampur Primary Health Centre', district: 'Ahmednagar' },
+          { id: 'f2222222-2222-2222-2222-222222222222', name: 'Pune Sassoon General Hospital', district: 'Pune' }
+        ];
+        setHospitals(fallback);
+        setHospital(fallback[0].name);
+        setSelectedFacilityId(fallback[0].id);
       } finally {
         setFetchingHospitals(false);
       }
     };
 
-    if ('geolocation' in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => fetchHospitals(pos.coords.latitude, pos.coords.longitude),
-        () => fetchHospitals(18.5204, 73.8567) // Fallback: Pune coordinates
-      );
-    } else {
-      fetchHospitals(18.5204, 73.8567);
-    }
+    fetchFacilities();
   }, [isOpen]);
 
   if (!isOpen || !encounterContext) return null;
@@ -143,6 +130,7 @@ export default function ReferralCreationModal({
         actionType: 'REFERRAL',
         referralData: {
           hospital,
+          facilityId: selectedFacilityId,
           department,
           doctor: doctorAssigned,
           followUpDate: followUpDate.toISOString().slice(0, 10)
@@ -210,27 +198,32 @@ export default function ReferralCreationModal({
             </span>
           </div>
 
-          {/* Destination Hospital (GPS Discovery) */}
+          {/* Destination Hospital / Facility */}
           <div>
             <label className="text-xs font-bold text-slate-700 uppercase tracking-wide block mb-1 flex items-center justify-between">
               <span className="flex items-center gap-1">
                 <Building2 className="w-3.5 h-3.5 text-[#008080]" />
-                Destination Hospital (Nearby GPS) *
+                Destination Hospital / Facility *
               </span>
               {fetchingHospitals && (
                 <span className="text-[10px] text-slate-400 font-normal flex items-center gap-1">
-                  <Loader2 className="w-3 h-3 animate-spin" /> Discovering nearby...
+                  <Loader2 className="w-3 h-3 animate-spin" /> Loading facilities...
                 </span>
               )}
             </label>
             <select
-              value={hospital}
-              onChange={(e) => setHospital(e.target.value)}
+              value={selectedFacilityId}
+              onChange={(e) => {
+                const facId = e.target.value;
+                setSelectedFacilityId(facId);
+                const matched = hospitals.find(h => h.id === facId);
+                if (matched) setHospital(matched.name);
+              }}
               className="w-full px-3.5 py-2.5 bg-slate-50 border-2 border-slate-200 focus:border-[#008080] focus:bg-white rounded-xl text-xs font-bold outline-none"
             >
-              {hospitals.map((h, idx) => (
-                <option key={idx} value={h.name}>
-                  {h.name} {h.distance ? `(${h.distance.toFixed(1)} km away)` : ''}
+              {hospitals.map((h) => (
+                <option key={h.id} value={h.id}>
+                  {h.name} {h.district ? `(${h.district})` : ''}
                 </option>
               ))}
             </select>

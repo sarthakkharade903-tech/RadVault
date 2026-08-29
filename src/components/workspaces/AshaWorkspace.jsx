@@ -37,7 +37,7 @@ import {
 
 export default function AshaWorkspace({ onNavigateToPatientView }) {
   const { patients, refreshPatients, addPatient } = usePatient();
-  const { user, logout, isDemoMode, ashaProfile, ashaVillages, ashaArea } = useAuth();
+  const { user, logout, isDemoMode, demoDataEnabled, ashaProfile, ashaVillages, ashaArea } = useAuth();
 
   // Scope patients list to ASHA worker's assigned villages (supporting relational & legacy string matching)
   const scopedPatients = useMemo(() => {
@@ -73,9 +73,9 @@ export default function AshaWorkspace({ onNavigateToPatientView }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   // Operational Data
-  const [stats, setStats] = useState(getAshaDashboardStats());
-  const [recentEncounters, setRecentEncounters] = useState(getAllRecentEncounters());
-  const [followUpTasks, setFollowUpTasks] = useState(getFollowUpTasks());
+  const [stats, setStats] = useState(() => (isDemoMode && demoDataEnabled ? getAshaDashboardStats() : { totalScreened: 0, pendingFollowUps: 0, highRiskWatchlist: 0, syncPending: 0, emergencyTransfers: 0, totalFollowUps: 0, completedFollowUps: 0, overdues: 0 }));
+  const [recentEncounters, setRecentEncounters] = useState(() => (isDemoMode && demoDataEnabled ? getAllRecentEncounters() : []));
+  const [followUpTasks, setFollowUpTasks] = useState(() => (isDemoMode && demoDataEnabled ? getFollowUpTasks() : []));
   const [trackedReferrals, setTrackedReferrals] = useState([]);
   const [successBanner, setSuccessBanner] = useState(null);
 
@@ -84,17 +84,23 @@ export default function AshaWorkspace({ onNavigateToPatientView }) {
   const [isSyncing, setIsSyncing] = useState(false);
 
   const refreshAllData = useCallback(async () => {
-    setStats(getAshaDashboardStats());
-    setRecentEncounters(getAllRecentEncounters());
-    setFollowUpTasks(getFollowUpTasks());
+    if (isDemoMode && demoDataEnabled) {
+      setStats(getAshaDashboardStats());
+      setRecentEncounters(getAllRecentEncounters());
+      setFollowUpTasks(getFollowUpTasks());
+    } else {
+      setStats({ totalScreened: scopedPatients.length, pendingFollowUps: 0, highRiskWatchlist: 0, syncPending: 0, emergencyTransfers: 0, totalFollowUps: 0, completedFollowUps: 0, overdues: 0 });
+      setRecentEncounters([]);
+      setFollowUpTasks([]);
+    }
     try {
-      const scopedIds = scopedPatients.map((p) => p.unified_id || p.id);
-      const refs = await getTrackedReferrals(scopedIds, isDemoMode);
+      const scopedIds = scopedPatients.map((p) => p.id);
+      const refs = await getTrackedReferrals(scopedIds, isDemoMode && demoDataEnabled);
       setTrackedReferrals(refs);
     } catch {
       // Handled gracefully in service
     }
-  }, [scopedPatients, isDemoMode]);
+  }, [scopedPatients, isDemoMode, demoDataEnabled]);
 
   const handleManualSync = useCallback(async () => {
     if (isDemoMode) {

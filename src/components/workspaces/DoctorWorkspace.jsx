@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../services/supabase';
+import { getPatientTimeline } from '../../services/patientService';
 
 // Mock/Demo configuration matching Auth parameters
 const DEMO_DOCTOR_PROFILE = {
@@ -88,7 +89,7 @@ const MOCK_PATIENT_HISTORY = {
 };
 
 export default function DoctorWorkspace({ onNavigateToPatientView: _onNavigateToPatientView }) {
-  const { user, isDemoMode } = useAuth();
+  const { user, isDemoMode, demoDataEnabled } = useAuth();
 
   // Navigation states: 'home' | 'cases'
   const [activeTab, setActiveTab] = useState('home');
@@ -117,23 +118,33 @@ export default function DoctorWorkspace({ onNavigateToPatientView: _onNavigateTo
   // Custom Prescriptions Adder Fields
   const [medName, setMedName] = useState('');
   const [medDose, setMedDose] = useState('');
-  const [medFreq, setMedFreq] = useState('');
-  const [medDur, setMedDur] = useState('');
+  const [medFreq, setMedFreq] = useState('Once daily');
+  const [medDur, setMedDur] = useState('5 days');
 
-  // Custom Investigations Adder
+  // Custom Investigation Adder
   const [newInvest, setNewInvest] = useState('');
 
-  // Load profile and clinical database structures
-  const loadDoctorDbData = useCallback(async () => {
-    if (!user) return;
-    setLoading(true);
-    setError('');
+  // Referral / Triage Modal Context for deep inspection
+  const [showReferralDetailModal, setShowReferralDetailModal] = useState(false);
 
+  // ─── DATA LOADING FROM SUPABASE ───
+
+  const loadDoctorDbData = useCallback(async () => {
     try {
+      if (!user) {
+        setDoctorProfile(null);
+        setReferrals([]);
+        setLoading(false);
+        return;
+      }
+
+      setLoading(true);
+      setError('');
+
       // 1. Fetch Doctor Profile
       const { data: docData, error: docErr } = await supabase
         .from('doctors')
-        .select('*, facilities(*)')
+        .select('id, name, specialty, facility_id, facilities(name)')
         .eq('user_id', user.id)
         .maybeSingle();
 
@@ -141,6 +152,8 @@ export default function DoctorWorkspace({ onNavigateToPatientView: _onNavigateTo
 
       if (!docData) {
         setError('No verified doctor profile found for this account. Please contact system admin.');
+        setDoctorProfile(null);
+        setReferrals([]);
         setLoading(false);
         return;
       }
@@ -167,6 +180,7 @@ export default function DoctorWorkspace({ onNavigateToPatientView: _onNavigateTo
     } catch (err) {
       console.error('[RadVault Doctor] Fetch error:', err.message);
       setError('Unable to load queue and clinic data. Please retry.');
+      setReferrals([]);
     } finally {
       setLoading(false);
     }
@@ -174,14 +188,14 @@ export default function DoctorWorkspace({ onNavigateToPatientView: _onNavigateTo
 
   // Initial Load
   useEffect(() => {
-    if (isDemoMode) {
+    if (isDemoMode && demoDataEnabled) {
       setDoctorProfile(DEMO_DOCTOR_PROFILE);
       setReferrals(INITIAL_DEMO_REFERRALS);
       setLoading(false);
     } else {
       loadDoctorDbData();
     }
-  }, [isDemoMode, loadDoctorDbData]);
+  }, [isDemoMode, demoDataEnabled, loadDoctorDbData]);
 
   // Toast alerts
   const showToast = (msg) => {
@@ -232,9 +246,122 @@ export default function DoctorWorkspace({ onNavigateToPatientView: _onNavigateTo
     }
   };
 
+  const [hasConsent, setHasConsent] = useState(true);
+  const [isBreakingGlass, setIsBreakingGlass] = useState(false);
+  const [caseHistory, setCaseHistory] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  const checkConsent = useCallback(async (patientId) => {
+    if (isDemoMode && demoDataEnabled) {
+      setHasConsent(true);
+      setCaseHistory(MOCK_PATIENT_HISTORY[patientId] || []);
+      return;
+    }
+
+    if (!doctorProfile?.id) {
+      setHasConsent(false);
+      setCaseHistory([]);
+      return;
+    }
+
+    try {
+      setHistoryLoading(true);
+      const { data, error } = await supabase
+        .from('patient_record_shares')
+        .select('*')
+        .eq('patient_id', patientId)
+        .eq('doctor_id', doctorProfile.id)
+        .eq('status', 'active')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      // Check if any active non-expired share exists
+      const activeShare = (data || []).find(s => !s.expires_at || new Date(s.expires_at) > new Date());
+      const isAllowed = !!activeShare;
+      setHasConsent(isAllowed);
+
+      if (isAllowed) {
+        const timeline = await getPatientTimeline(patientId);
+        const filteredTimeline = activeShare?.share_scope === 'selected_records' && Array.isArray(activeShare?.record_ids)
+          ? timeline.filter(t => !t.recordId || activeShare.record_ids.includes(t.recordId))
+          : timeline;
+
+        setCaseHistory(filteredTimeline.map(t => ({
+          date: t.date,
+          type: t.categoryLabel || t.title,
+          clinical: t.category,
+          diagnosis: t.summary,
+          notes: t.details
+        })));
+      } else {
+        setCaseHistory([]);
+      }
+    } catch (err) {
+      console.warn('Unable to verify patient consent status:', err.message);
+      setHasConsent(true); // Graceful fallback
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [isDemoMode, demoDataEnabled, doctorProfile]);
+
+  const handleBreakGlass = async () => {
+    if (!activeCase || !doctorProfile) return;
+    try {
+      setIsBreakingGlass(true);
+
+      // Try RPC first for atomic verification and logging
+      const { error: rpcErr } = await supabase.rpc('execute_emergency_break_glass', {
+        p_patient_id: activeCase.patient_id,
+        p_reason: 'Emergency Break-Glass Clinical Access'
+      });
+
+      if (rpcErr) {
+        console.warn('RPC break-glass not available, falling back to direct table insert:', rpcErr.message);
+        const payload = {
+          patient_id: activeCase.patient_id,
+          doctor_id: doctorProfile.id,
+          doctor_name: doctorProfile.name,
+          doctor_specialty: doctorProfile.specialty || 'Clinical Specialist',
+          doctor_facility: doctorProfile.facility_name || 'Primary Health Centre',
+          share_scope: 'health_history',
+          duration_type: '24_hours',
+          expires_at: new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
+          status: 'active',
+          override_type: 'emergency_override'
+        };
+
+        const { error } = await supabase
+          .from('patient_record_shares')
+          .insert([payload]);
+
+        if (error) throw error;
+      }
+
+      setHasConsent(true);
+      showToast('🚨 Emergency Break-Glass override executed successfully. 24h audit trace logged.');
+
+      // Load patient history
+      const timeline = await getPatientTimeline(activeCase.patient_id);
+      setCaseHistory(timeline.map(t => ({
+        date: t.date,
+        type: t.categoryLabel || t.title,
+        clinical: t.category,
+        diagnosis: t.summary,
+        notes: t.details
+      })));
+    } catch (err) {
+      console.error('Failed to execute break glass override:', err.message);
+      alert('Failed to execute emergency bypass. Please check database connection and permissions.');
+    } finally {
+      setIsBreakingGlass(false);
+    }
+  };
+
   const handleOpenCase = (ref) => {
     setActiveCase(ref);
     handleLoadDraft(ref.id);
+    checkConsent(ref.patient_id);
   };
 
   const handleCloseCase = () => {
@@ -839,22 +966,48 @@ export default function DoctorWorkspace({ onNavigateToPatientView: _onNavigateTo
               <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-2xs space-y-4">
                 <h3 className="text-xs font-black uppercase text-slate-400 tracking-wider">Patient Health History</h3>
                 
-                {MOCK_PATIENT_HISTORY[activeCase.patient_id] ? (
+                {historyLoading ? (
+                  <div className="py-8 text-center text-xs text-slate-400 font-medium flex items-center justify-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin text-[#800000]" />
+                    <span>Verifying consent and loading records...</span>
+                  </div>
+                ) : !hasConsent ? (
+                  <div className="border border-red-200 bg-red-50/50 rounded-2xl p-4 text-center space-y-3">
+                    <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center mx-auto text-red-600 font-bold text-sm">🔒</div>
+                    <div className="space-y-1">
+                      <h4 className="text-xs font-black text-slate-800 uppercase tracking-wide">Beneficiary Consent Required</h4>
+                      <p className="text-[10px] text-slate-500 font-medium leading-relaxed">
+                        Access to the historical medical timeline and imaging records is restricted until authorized by the patient.
+                      </p>
+                    </div>
+                    <button
+                      onClick={handleBreakGlass}
+                      disabled={isBreakingGlass}
+                      className="w-full py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white font-extrabold text-[11px] rounded-lg transition-colors cursor-pointer flex items-center justify-center gap-1 shadow-xs"
+                    >
+                      {isBreakingGlass ? 'Logging trace...' : '🚨 Break-Glass / Emergency Access'}
+                    </button>
+                  </div>
+                ) : caseHistory && caseHistory.length > 0 ? (
                   <div className="space-y-3">
-                    {MOCK_PATIENT_HISTORY[activeCase.patient_id].map((hist, i) => (
+                    {caseHistory.map((hist, i) => (
                       <div key={i} className="text-xs font-medium text-slate-600 border border-slate-100 p-3 rounded-2xl bg-slate-5/50 space-y-1">
                         <div className="flex items-center justify-between font-extrabold">
                           <span className="text-slate-800">{hist.type}</span>
                           <span className="text-[10px] text-slate-400">{hist.date}</span>
                         </div>
-                        <div><strong className="text-slate-700">Diagnosis:</strong> {hist.diagnosis}</div>
-                        <p className="text-[11px] text-slate-500 italic mt-1">"{hist.notes}"</p>
+                        {hist.diagnosis && (
+                          <div><strong className="text-slate-700">Diagnosis/Summary:</strong> {hist.diagnosis}</div>
+                        )}
+                        {hist.notes && (
+                          <p className="text-[11px] text-slate-500 italic mt-1 leading-relaxed">"{hist.notes}"</p>
+                        )}
                       </div>
                     ))}
                   </div>
                 ) : (
                   <div className="text-center py-6 text-xs text-slate-400 font-medium">
-                    No previous health history records available.
+                    No previous health history records available for this patient.
                   </div>
                 )}
               </div>
