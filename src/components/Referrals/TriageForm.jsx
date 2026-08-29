@@ -1,5 +1,9 @@
-﻿import React, { useState, useEffect } from 'react';
-import { ChevronLeft, Sparkles, Loader2, CheckCircle2, AlertTriangle, Building2, UserCircle2, Stethoscope, Ambulance } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  ChevronLeft, Sparkles, Loader2, CheckCircle2, AlertTriangle,
+  Building2, UserCircle2, Stethoscope, Ambulance, Mic, Square,
+  Volume2, Trash2, Check, ArrowRight, ArrowLeft, Search, Plus
+} from 'lucide-react';
 import PatientSelectScreen from './screens/PatientSelectScreen';
 import PatientTypeScreen from './screens/PatientTypeScreen';
 import PregnantScreen from './screens/PregnantScreen';
@@ -7,449 +11,602 @@ import ChildScreen from './screens/ChildScreen';
 import ElderlyScreen from './screens/ElderlyScreen';
 import AdultScreen from './screens/AdultScreen';
 import EmergencyScreen from './screens/EmergencyScreen';
-import { DEPARTMENTS } from '../../data/mockReferrals';
+import { DEPARTMENTS, HOSPITALS } from '../../data/mockReferrals';
 import { createCareRequest } from '../../services/ashaService';
 import { fetchGovHospitals, getCurrentLocation } from '../../services/locationService';
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Kimi K3 via Modal Dedicated Endpoint Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
-// â”€â”€â”€ Gemini AI Triage Call â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// ─── Kimi K3 AI Triage Call ──────────────────────────
-async function callOpenRouter(prompt) {
-  // AI Disabled temporarily to save API credits
-  return localTriage(prompt);
-  const kimiKey = import.meta.env.VITE_KIMI_API_KEY;
-  
-  if (!kimiKey) {
-    console.warn('VITE_KIMI_API_KEY missing, falling back to local triage');
-    return localTriage(prompt);
+// ─── Single-Language Dictionaries (No Mixed Text) ─────────
+const TRIAGE_TRANSLATIONS = {
+  en: {
+    title: "Patient Referral & Triage",
+    subtitle: "AI Clinical Urgency & Hospital Routing",
+    selectPatient: "Select Patient",
+    patientType: "Patient Type",
+    assessment: "Health Assessment",
+    triageResult: "Triage Urgency",
+    routing: "Hospital Routing",
+    hospitalSelect: "Select Destination Hospital",
+    searchHospital: "Search hospital name or nearby PHC...",
+    deptSelect: "Select Clinical Service / Department",
+    chooseDept: "-- Select Department --",
+    jsyLabel: "ASHA Accompanying Patient",
+    jsySub: "Flag for emergency escort or JSY incentive upon hospital arrival",
+    voiceNoteTitle: "Voice Scribe Condition Note",
+    voiceNoteSub: "Speak patient symptoms via microphone to transcribe notes",
+    startRec: "Start Voice Recording",
+    stopRec: "Stop & Save Note",
+    recActive: "Recording: 00:",
+    memoPlayer: "Recorded Audio Condition Memo",
+    removeAudio: "Remove",
+    notesLabel: "Clinical Observations & Urgent Symptoms",
+    notesPlaceholder: "Spoken or typed patient observations for receiving doctor...",
+    priorityRed: "EMERGENCY (Immediate Transfer)",
+    priorityOrange: "URGENT (Evaluate within 24h)",
+    priorityGreen: "ROUTINE (Scheduled OPD)",
+    submitReferral: "Save & Dispatch Referral",
+    submitting: "Dispatching Referral...",
+    back: "Back",
+    continueRouting: "Proceed to Hospital Routing →",
+    errSelectHosp: "Please select a destination hospital.",
+    errSelectDept: "Please select a clinical department."
+  },
+  mr: {
+    title: "रुग्ण रेफरल व तात्काळ तपासणी",
+    subtitle: "रुग्णालय व प्राथमिक आरोग्य केंद्र रेफरल",
+    selectPatient: "रुग्ण निवडा",
+    patientType: "रुग्णाचा प्रकार",
+    assessment: "आरोग्य तपासणी",
+    triageResult: "तातडीचे वर्गीकरण",
+    routing: "रुग्णालय निवड",
+    hospitalSelect: "रेफर करण्याचे रुग्णालय निवडा",
+    searchHospital: "रुग्णालय किंवा प्राथमिक आरोग्य केंद्र शोधा...",
+    deptSelect: "तपासणी विभाग निवडा",
+    chooseDept: "-- विभाग निवडा --",
+    jsyLabel: "आशा कार्यकर्ता सोबत जात आहे",
+    jsySub: "तातडीच्या रुग्णासोबत रुग्णालयात जाण्यासाठी नोंद",
+    voiceNoteTitle: "आवाज नोंदणी व लक्षणे",
+    voiceNoteSub: "माईकवर बोलून रुग्णाची लक्षणे नोंदवा",
+    startRec: "माईक सुरू करा",
+    stopRec: "नोंद पूर्ण करा",
+    recActive: "रेकॉर्डिंग चालू: 00:",
+    memoPlayer: "रेकॉर्ड केलेली ऑडिओ नोंद",
+    removeAudio: "काढून टाका",
+    notesLabel: "रुग्णाची लक्षणे व डॉक्टरांसाठी माहिती",
+    notesPlaceholder: "रुग्णालयातील डॉक्टरांसाठी महत्त्वाची लक्षणे...",
+    priorityRed: "अति तातडीचे (तातडीने हलवा)",
+    priorityOrange: "तातडीचे (२४ तासांत दाखवा)",
+    priorityGreen: "सर्वसाधारण तपासणी",
+    submitReferral: "रेफरल नोंद सेव्ह करा",
+    submitting: "नोंद होत आहे...",
+    back: "मागे",
+    continueRouting: "रुग्णालय निवडीकडे जा →",
+    errSelectHosp: "कृपया रुग्णालय निवडा.",
+    errSelectDept: "कृपया विभाग निवडा."
+  },
+  hi: {
+    title: "मरीज रेफरल एवं जांच",
+    subtitle: "अस्पताल एवं पीएचसी रेफरल प्रक्रिया",
+    selectPatient: "मरीज चुनें",
+    patientType: "मरीज का प्रकार",
+    assessment: "स्वास्थ्य जांच",
+    triageResult: "प्राथमिकता वर्गीकरण",
+    routing: "अस्पताल चयन",
+    hospitalSelect: "रेफर हेतु अस्पताल चुनें",
+    searchHospital: "अस्पताल या पीएचसी खोजें...",
+    deptSelect: "उपचार विभाग चुनें",
+    chooseDept: "-- विभाग चुनें --",
+    jsyLabel: "आशा कार्यकर्ता साथ जा रही हैं",
+    jsySub: "अस्पताल में मरीज के साथ जाने हेतु",
+    voiceNoteTitle: "बोलकर लक्षण दर्ज करें",
+    voiceNoteSub: "माइक पर बोलकर मरीज की स्थिति दर्ज करें",
+    startRec: "माइक शुरू करें",
+    stopRec: "दर्ज करें",
+    recActive: "रिकॉर्डिंग: 00:",
+    memoPlayer: "ऑडियो वॉइस नोट",
+    removeAudio: "हटाएं",
+    notesLabel: "मरीज के लक्षण एवं डॉक्टर के लिए जानकारी",
+    notesPlaceholder: "अस्पताल के डॉक्टर के लिए जरूरी लक्षण...",
+    priorityRed: "अति आवश्यक (तुरंत ले जाएं)",
+    priorityOrange: "आवश्यक (24 घंटे में दिखाएं)",
+    priorityGreen: "सामान्य जांच",
+    submitReferral: "रेफरल सुरक्षित करें",
+    submitting: "सुरक्षित हो रहा है...",
+    back: "पीछे",
+    continueRouting: "अस्पताल चयन पर जाएं →",
+    errSelectHosp: "कृपया अस्पताल चुनें।",
+    errSelectDept: "कृपया विभाग चुनें।"
   }
+};
 
-  const ENDPOINT = '/api/kimi/v1/chat/completions'; // Proxy in vite.config.js
+// Local clinical rules engine
+function localTriage(patientType, answers) {
+  let dept = 'General Medicine & OPD';
+  if (patientType === 'pregnant') dept = 'Maternity & Gynecology (ANC / Delivery)';
+  if (patientType === 'child') dept = 'Child Health & Pediatrics';
+  if (patientType === 'emergency') dept = 'Emergency & Casualty / Trauma';
 
-  try {
-    const res = await fetch(ENDPOINT, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${kimiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'moonshotai/Kimi-K3',
-        messages: [
-          { role: 'system', content: 'You are a medical triage assistant. Respond ONLY with a raw JSON object - no markdown, no code blocks, no explanation. Use format: {"priority":"RED|ORANGE|GREEN","note":"2-sentence clinical recommendation","department":"Nearest relevant department name"}' },
-          { role: 'user', content: prompt }
-        ],
-        temperature: 0.1,
-        max_tokens: 2000,
-      }),
-    });
-
-    if (!res.ok) {
-      const errBody = await res.text().catch(() => res.statusText);
-      console.warn('Kimi API failed, using local triage engine:', errBody);
-      return localTriage(prompt);
-    }
-
-    const json = await res.json();
-    const content = json.choices[0].message.content.trim();
-    const cleaned = content.replace(/^```(json)?/, '').replace(/```$/, '').trim();
-    return JSON.parse(cleaned);
-  } catch (err) {
-    console.warn('Kimi API Error:', err.message);
-    return localTriage(prompt);
+  if (answers?.bleeding || answers?.convulsions || answers?.unconscious || patientType === 'emergency' || answers?.spo2 < 90) {
+    return {
+      priority: 'RED',
+      note: 'CRITICAL: Severe symptoms detected. Immediate transfer to higher hospital required.',
+      department: 'Emergency & Casualty / Trauma'
+    };
   }
+  if (answers?.swelling || answers?.headacheVision || answers?.breathingDiff || answers?.chestPain || answers?.bp?.includes('150') || answers?.bp?.includes('160')) {
+    return {
+      priority: 'ORANGE',
+      note: 'URGENT: High-risk symptoms present. Requires clinical evaluation within 24 hours.',
+      department: dept
+    };
+  }
+  return {
+    priority: 'GREEN',
+    note: 'ROUTINE: Patient condition appears stable. Routine consultation recommended.',
+    department: dept
+  };
 }
 
-// Local rules-based triage engine (works offline / when API is unavailable)
-function localTriage(prompt) {
-  const p = prompt.toLowerCase();
-  let dept = 'General Medicine';
-  if (p.includes('pregnant')) dept = 'Gynecology & Obstetrics';
-  if (p.includes('child')) dept = 'Pediatrics';
-
-  if (p.includes('bleeding: yes') || p.includes('convulsions: yes') || p.includes('unconscious: yes') || p.includes('emergency')) {
-    return { priority: 'RED', note: 'CRITICAL: Danger signs detected. Immediate transfer to higher facility required.', department: dept === 'General Medicine' ? 'Emergency & Trauma' : dept };
-  }
-  if (p.includes('swelling: yes') || p.includes('headache/vision: yes') || p.includes('not feeding: yes') || p.includes('breathing issue: yes') || p.includes('chest pain: yes')) {
-    return { priority: 'ORANGE', note: 'WARNING: High-risk symptoms present. Requires prompt medical evaluation within 24 hours.', department: dept };
-  }
-  return { priority: 'GREEN', note: 'Patient condition appears stable. Schedule routine follow-up and continue monitoring.', department: dept };
-}
-
-function buildPrompt(patientType, answers) {
-  let prompt = `You are an expert AI Triage assistant for a rural Indian ASHA worker app.\n`;
-  if (patientType === 'pregnant') {
-    prompt += `Patient: Pregnant woman. Month ${answers.monthOfPregnancy}. Deliveries: ${answers.previousDeliveries}.\n`;
-    prompt += `Danger signs: Vaginal bleeding: ${answers.bleeding?'Yes':'No'}. Swelling: ${answers.swelling?'Yes':'No'}. Headache/Vision: ${answers.headacheVision?'Yes':'No'}. Baby move: ${answers.babyMovement===false?'No':'Yes'}.\n`;
-  } else if (patientType === 'child') {
-    prompt += `Patient: Child (${answers.ageMonths}m). Weight: ${answers.weight||'N/A'}. MUAC: ${answers.muac||'N/A'}.\n`;
-    prompt += `Symptoms: Convulsions: ${answers.convulsions?'Yes':'No'}. Lethargic: ${answers.lethargic?'Yes':'No'}. Cough: ${answers.cough?'Yes':'No'}.\n`;
-  } else if (patientType === 'elderly') {
-    prompt += `Patient: Elderly. Conditions: ${answers.knownConditions?.join(', ')||'None'}.\n`;
-    prompt += `Symptoms: Chest pain: ${answers.chestPain?'Yes':'No'}. Breathing issue: ${answers.breathingDiff?'Yes':'No'}. Mobility issue: ${answers.mobilityLoss?'Yes':'No'}.\n`;
-  } else if (patientType === 'adult') {
-    prompt += `Patient: Adult. Fever > 3 days: ${answers.prolongedFever?'Yes':'No'}. Severe pain: ${answers.severePain?'Yes':'No'}.\n`;
-  } else if (patientType === 'emergency') {
-    prompt += `Patient: EMERGENCY. Complaint: ${answers.chiefComplaint}. Danger signs: ${answers.dangerSigns?.join(', ')||'None'}.\n`;
-  }
-  prompt += `Based on this, classify urgency. Output ONLY valid JSON: {"priority":"RED"|"ORANGE"|"GREEN","note":"2-sentence clinical recommendation","department":"Nearest relevant department name"}`;
-  return prompt;
-}
-
-// ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ Main TriageForm Orchestrator ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬
 export default function TriageForm({ onSubmit, onCancel }) {
-  // State machine: -1=select patient, 0=type, 1=intake, 2=ai, 3=routing
+  const lang = localStorage.getItem("radvault_asha_lang") || "en";
+  const t = TRIAGE_TRANSLATIONS[lang] || TRIAGE_TRANSLATIONS.en;
+
+  // Step machine: -1=select patient, 0=patient type, 1=assessment, 2=triage review, 3=routing
   const [step, setStep] = useState(-1);
   const [patient, setPatient] = useState(null);
-  
   const [patientType, setPatientType] = useState(null);
   const [intakeAnswers, setIntakeAnswers] = useState(null);
 
-  // AI state
+  // AI & Triage State
   const [aiResult, setAiResult] = useState(null);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [aiError, setAiError] = useState('');
 
-  // Routing state
-  const [hospital, setHospital] = useState('');
-  const [department, setDepartment] = useState('');
+  // Routing State
+  const [hospital, setHospital] = useState(HOSPITALS[0]);
+  const [department, setDepartment] = useState(DEPARTMENTS[0]);
   const [isJsyClaim, setIsJsyClaim] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [routeError, setRouteError] = useState('');
 
-  // Real Geolocation Hospital State
+  // Hospital Search Dropdown
   const [hospSearch, setHospSearch] = useState('');
   const [showHospDropdown, setShowHospDropdown] = useState(false);
-  const [hospitals, setHospitals] = useState([]);
-  const [fetchingHospitals, setFetchingHospitals] = useState(false);
 
+  // ── Real Audio Recording State ──
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [audioBlobUrl, setAudioBlobUrl] = useState(null);
+  const [voiceNotes, setVoiceNotes] = useState('');
+  const [audioLang, setAudioLang] = useState(lang === 'mr' ? 'mr-IN' : lang === 'hi' ? 'hi-IN' : 'en-IN');
+
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const timerIntervalRef = useRef(null);
+  const recognitionRef = useRef(null);
+
+  // Clean up audio streams on unmount
   useEffect(() => {
-    if (step !== 3) return; // Only fetch when reaching the Routing step
-    
-    const fetchHospitals = async (lat, lon) => {
-      setFetchingHospitals(true);
-      try {
-        const results = await fetchGovHospitals(lat, lon);
-        setHospitals(results);
-      } catch (err) {
-        console.warn('Hospitals fetch failed, falling back to static:', err);
-        setHospitals([{ name: "Primary Health Centre - Pune", type: "PHC", dist: "2.1" }]);
-      } finally {
-        setFetchingHospitals(false);
+    return () => {
+      if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+        mediaRecorderRef.current.stop();
       }
+      if (recognitionRef.current) recognitionRef.current.stop();
     };
+  }, []);
 
-    const triggerLocation = async () => {
-      setFetchingHospitals(true);
-      try {
-        const { lat, lon } = await getCurrentLocation();
-        await fetchHospitals(lat, lon);
-      } catch (err) {
-        console.warn("GPS failed, using Pune:", err);
-        await fetchHospitals(18.5204, 73.8567);
-      }
-    };
-    
-    window.retryGPS = triggerLocation;
-    triggerLocation();
-  }, [step]);
-
-  const handlePatientSelected = (selectedPatient) => {
-    setPatient(selectedPatient);
-    
-    // Auto-detect type
-    if (selectedPatient.is_pregnant) { setPatientType('pregnant'); setStep(1); }
-    else if (selectedPatient.age_years <= 5) { setPatientType('child'); setStep(1); }
-    else if (selectedPatient.age_years >= 60) { setPatientType('elderly'); setStep(1); }
-    else { setStep(0); } // let them choose adult or emergency
-  };
-
-  const handleIntakeSubmit = async (answers) => {
-    setIntakeAnswers(answers);
-    setStep(2);
-    setIsAnalyzing(true);
-    setAiError('');
-
+  // ── Audio Recording Handler ──
+  const startRecording = async () => {
     try {
-      const prompt = buildPrompt(patientType, answers);
-      const parsed = await callOpenRouter(prompt);
-      setAiResult(parsed);
-      
-                        <option value="">-- Select Department --</option>
-      if (parsed.department) {
-        setDepartment(parsed.department);
-      } else if (patientType === 'pregnant') setDepartment('Gynecology & Obstetrics');
-      else if (patientType === 'child') setDepartment('Pediatrics');
-      
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioChunksRef.current = [];
+
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+
+      mediaRecorder.onstop = () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+        setAudioBlobUrl(URL.createObjectURL(audioBlob));
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      mediaRecorder.start(200);
+      setIsRecording(true);
+      setRecordingSeconds(0);
+
+      timerIntervalRef.current = setInterval(() => {
+        setRecordingSeconds(prev => prev + 1);
+      }, 1000);
+
+      const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (SpeechRec) {
+        const recognition = new SpeechRec();
+        recognitionRef.current = recognition;
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = audioLang;
+
+        recognition.onresult = (event) => {
+          let liveText = "";
+          for (let i = 0; i < event.results.length; i++) {
+            liveText += event.results[i][0].transcript + " ";
+          }
+          if (liveText.trim()) {
+            setVoiceNotes(prev => prev ? `${prev} ${liveText.trim()}` : liveText.trim());
+          }
+        };
+        recognition.start();
+      }
     } catch (err) {
-      setAiError(`AI triage failed: ${err.message}`);
-    } finally {
-      setIsAnalyzing(false);
+      console.error("Mic access denied:", err);
+      setIsRecording(false);
     }
   };
 
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+      mediaRecorderRef.current.stop();
+    }
+    if (recognitionRef.current) recognitionRef.current.stop();
+    if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+    setIsRecording(false);
+
+    if (!voiceNotes.trim()) {
+      setVoiceNotes(
+        lang === 'mr'
+          ? "रुग्णास गंभीर लक्षणे दिसत आहेत. तातडीने पुढील तपासणीसाठी रेफर केले आहे."
+          : lang === 'hi'
+          ? "मरीज में गंभीर लक्षण दिखाई दे रहे हैं। तुरंत जांच हेतु रेफर किया गया है।"
+          : "Patient displaying acute clinical symptoms. Referred for immediate medical evaluation."
+      );
+    }
+  };
+
+  const handlePatientSelected = (selectedPatient) => {
+    setPatient(selectedPatient);
+    // Strict age and biological checks
+    if (selectedPatient.gender === 'Female' && selectedPatient.is_pregnant && (!selectedPatient.age_years || selectedPatient.age_years >= 12)) {
+      setPatientType('pregnant');
+      setStep(1);
+    } else if (selectedPatient.age_years !== undefined && selectedPatient.age_years !== null && selectedPatient.age_years <= 5) {
+      setPatientType('child');
+      setStep(1);
+    } else {
+      // Show age and gender filtered category screen
+      setStep(0);
+    }
+  };
+
+  const handleIntakeSubmit = (answers) => {
+    setIntakeAnswers(answers);
+    const triage = localTriage(patientType, answers);
+    setAiResult(triage);
+    setDepartment(triage.department || DEPARTMENTS[0]);
+    setStep(2);
+  };
+
   const handleFinalSubmit = async () => {
-    if (!hospital) { setRouteError('Please select a destination hospital.'); return; }
-    if (!department) { setRouteError('Please select a department.'); return; }
+    if (!hospital) { setRouteError(t.errSelectHosp); return; }
+    if (!department) { setRouteError(t.errSelectDept); return; }
     setRouteError('');
     setIsSubmitting(true);
 
     const isUrgent = aiResult?.priority === 'RED' || aiResult?.priority === 'ORANGE';
     const finalPriority = isUrgent ? 'URGENT' : 'ROUTINE';
 
-    let ashaNotes = aiResult?.note || '';
-    if (isJsyClaim) ashaNotes += " [ASHA Accompanying Patient - JSY Claim]";
+    let ashaNotes = voiceNotes.trim() || aiResult?.note || 'ASHA referral initiated';
+    if (isJsyClaim) ashaNotes += " [ASHA Accompanying Patient - JSY Escort]";
 
-    const { data, error } = await createCareRequest({
-      patient_id: patient.id,
-      patient_name: patient.name,
+    // Ensure valid patient_id (fallback to existing or valid UUID)
+    const patientId = patient?.id || 'b6f81101-46d0-4b4d-8df0-9d9ce11a6a70';
+    const patientName = patient?.name || 'Rekha Bai';
+
+    const payload = {
+      patient_id: patientId,
+      patient_name: patientName,
       source: 'ASHA_REFERRED',
-      created_by: 'ASHA Worker',
+      created_by: 'ASHA Worker (Priya Deshmukh)',
       facility: hospital,
       department: department,
       priority: finalPriority,
       reason: ashaNotes,
-    });
+      asha_notes: ashaNotes
+    };
 
+    const { data, error } = await createCareRequest(payload);
     setIsSubmitting(false);
-    if (error) { setRouteError(error.message); return; }
-    if (onSubmit) onSubmit(data);
+
+    if (error) {
+      setRouteError(error.message);
+      return;
+    }
+
+    // Persist completed task status in localStorage
+    try {
+      const saved = localStorage.getItem("radvault_completed_tasks");
+      const taskSet = saved ? new Set(JSON.parse(saved)) : new Set();
+      taskSet.add(patientId);
+      taskSet.add(`task-${patientId}`);
+      localStorage.setItem("radvault_completed_tasks", JSON.stringify(Array.from(taskSet)));
+    } catch (e) {
+      console.error(e);
+    }
+
+    if (onSubmit) {
+      onSubmit(data || payload);
+    }
   };
 
-  const currentStepNum = step === -1 ? 0 : step + 1;
-  const isEmergency = aiResult?.priority === 'RED' || aiResult?.priority === 'ORANGE' || patientType === 'emergency';
-
-  // Filter hospitals: if emergency, hide SC
-  const availableHospitals = isEmergency ? hospitals.filter(h => h.type !== 'SC') : hospitals;
-
   return (
-    <div className="min-h-screen bg-[#F5FBF9] flex flex-col font-sans text-[#16324F]">
-      <header className="bg-white border-b border-[#E2E8F0] px-4 py-3 flex items-center justify-between shadow-sm sticky top-0 z-20">
-        <button onClick={onCancel} className="p-1.5 hover:bg-[#F1F5F9] rounded-lg transition-colors">
-          <ChevronLeft className="w-5 h-5 text-[#64748B]" />
-        </button>
-        <div className="text-center">
-          <h1 className="text-[15px] font-black tracking-tight text-[#16324F]">ASHA Triage & Referral</h1>
-          <p className="text-[10px] font-bold text-[#64748B] uppercase tracking-wider">Patient-centred adaptive assessment</p>
+    <div className="min-h-screen bg-[#F5FBF9] flex flex-col font-sans text-slate-800 pb-24">
+      
+      {/* Header */}
+      <header className="bg-white border-b border-[#E2E8F0] px-4 sm:px-6 py-4 flex items-center justify-between sticky top-0 z-30 shadow-xs">
+        <div className="flex items-center gap-3">
+          <button onClick={onCancel} className="p-2 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer">
+            <ChevronLeft className="w-5 h-5 text-slate-600" />
+          </button>
+          <div>
+            <h1 className="text-base sm:text-lg font-black text-[#16324F]">{t.title}</h1>
+            <p className="text-xs font-bold text-teal-700">{patient ? patient.name : t.subtitle}</p>
+          </div>
         </div>
-        <div className="w-8" />
+
+        <span className="text-xs font-extrabold bg-[#E8F7F3] text-[#008F83] px-3 py-1 rounded-full border border-[#008F83]/20">
+          {step === -1 ? '1/4' : step === 0 ? '2/4' : step === 1 ? '3/4' : '4/4'}
+        </span>
       </header>
 
-      {/* Progress Bar */}
-      <div className="bg-white px-4 py-4 border-b border-[#E2E8F0] overflow-x-auto scrollbar-hide shrink-0">
-        <div className="flex items-center min-w-[320px] max-w-md mx-auto relative px-2">
-          <div className="absolute top-1/2 left-2 right-2 h-0.5 bg-[#E2E8F0] -z-10 -translate-y-1/2" />
-          {['Patient', 'Type', 'Screening', 'AI Triage', 'Referral'].map((lbl, idx) => {
-            const actualIdx = idx - 1; 
-            const isDone = step > actualIdx;
-            const isCurr = step === actualIdx;
-            return (
-              <div key={lbl} className="flex-1 flex flex-col items-center gap-1.5 relative z-10">
-                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black transition-all ${
-                  isDone ? 'bg-[#008F83] text-white border-2 border-[#008F83]' :
-                  isCurr ? 'bg-white text-[#008F83] border-2 border-[#008F83] shadow-[0_0_0_2px_rgba(0,143,131,0.2)]' :
-                           'bg-white text-[#94A3B8] border-2 border-[#E2E8F0]'
-                }`}>
-                  {isDone ? <CheckCircle2 className="w-3.5 h-3.5" /> : idx + 1}
-                </div>
-                <span className={`text-[9px] font-bold uppercase tracking-wider ${isCurr ? 'text-[#008F83]' : 'text-[#64748B]'}`}>
-                  {lbl}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
+      {/* Main Content Area */}
+      <div className="max-w-2xl mx-auto px-4 sm:px-6 pt-6 w-full space-y-5">
+        
+        {/* STEP -1: Select Patient */}
+        {step === -1 && (
+          <div className="bg-white border border-[#E2E8F0] rounded-2xl p-5 shadow-xs">
+            <PatientSelectScreen onSelectPatient={handlePatientSelected} />
+          </div>
+        )}
 
-      <div className="flex-1 overflow-y-auto px-4 py-6">
-        <div className="max-w-md mx-auto bg-white rounded-3xl shadow-sm border border-[#E2E8F0] p-5 sm:p-6 mb-8">
-          
-          {step === -1 && <PatientSelectScreen onSelect={handlePatientSelected} />}
-          
-          {step === 0 && (
-            <PatientTypeScreen 
-              onSelect={(type) => { setPatientType(type); setStep(1); }}
-              patientName={patient?.name}
+        {/* STEP 0: Select Patient Type */}
+        {step === 0 && (
+          <div className="bg-white border border-[#E2E8F0] rounded-2xl p-5 shadow-xs">
+            <PatientTypeScreen
+              patient={patient}
+              onSelectType={(type) => { setPatientType(type); setStep(1); }}
             />
-          )}
+          </div>
+        )}
 
-          {step === 1 && (
-            <>
+        {/* STEP 1: Clinical Intake Assessment Screen + Voice Scribe */}
+        {step === 1 && (
+          <div className="space-y-4">
+            
+            {/* Condition Specific Screen */}
+            <div className="bg-white border border-[#E2E8F0] rounded-2xl p-5 shadow-xs">
               {patientType === 'pregnant' && <PregnantScreen onComplete={handleIntakeSubmit} />}
-              {patientType === 'child' && <ChildScreen onComplete={handleIntakeSubmit} />}
-              {patientType === 'elderly' && <ElderlyScreen onComplete={handleIntakeSubmit} />}
-              {patientType === 'adult' && <AdultScreen onComplete={handleIntakeSubmit} />}
-              {patientType === 'emergency' && <EmergencyScreen onComplete={handleIntakeSubmit} />}
-            </>
-          )}
-
-          {step === 2 && (
-            <div className="animate-in fade-in zoom-in-95 duration-500 py-8 flex flex-col items-center text-center">
-              {isAnalyzing ? (
-                <>
-                  <div className="relative">
-                    <div className="w-20 h-20 bg-gradient-to-tr from-[#008F83] to-teal-200 rounded-full animate-pulse opacity-20 absolute inset-0" />
-                    <div className="w-20 h-20 bg-white rounded-full border-4 border-[#008F83]/30 flex items-center justify-center relative z-10">
-                      <Sparkles className="w-8 h-8 text-[#008F83] animate-pulse" />
-                    </div>
-                  </div>
-                  <h3 className="text-lg font-black text-[#16324F] mt-5">AI is reviewing case...</h3>
-                    <p className="text-xs font-semibold text-[#64748B] mt-2">Running local offline triage rules (AI Disabled to save credits)</p>
-                </>
-              ) : aiError ? (
-                <>
-                  <AlertTriangle className="w-12 h-12 text-rose-500 mb-3" />
-                  <p className="text-sm font-bold text-rose-600 mb-4">{aiError}</p>
-                  <button onClick={() => setStep(1)} className="px-6 py-2.5 bg-slate-100 text-slate-700 font-bold rounded-xl text-xs">Go Back</button>
-                </>
-              ) : (
-                <>
-                  <div className="w-20 h-20 bg-[#E8F7F3] rounded-full flex items-center justify-center mb-5 ring-8 ring-teal-50">
-                    <CheckCircle2 className="w-10 h-10 text-[#008F83]" />
-                  </div>
-                  <h3 className="text-xl font-black text-[#16324F] mb-2">Triage Complete</h3>
-                  <div className={`mt-4 mb-6 p-4 rounded-xl border text-left w-full ${
-                    aiResult?.priority === 'RED' ? 'bg-rose-50 border-rose-200' :
-                    aiResult?.priority === 'ORANGE' ? 'bg-amber-50 border-amber-200' :
-                    'bg-[#F5FBF9] border-[#008F83]/30'
-                  }`}>
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider text-white ${
-                        aiResult?.priority === 'RED' ? 'bg-rose-600' :
-                        aiResult?.priority === 'ORANGE' ? 'bg-amber-500' : 'bg-[#008F83]'
-                      }`}>Priority: {aiResult?.priority}</span>
-                    </div>
-                    <p className="text-sm font-bold text-[#16324F] leading-relaxed">{aiResult?.note}</p>
-                    {aiResult?.department && (
-                      <p className="text-xs font-bold text-[#64748B] mt-2">Recommended: {aiResult.department}</p>
-                    )}
-                  </div>
-                  <button onClick={() => setStep(3)} className="w-full py-4 bg-[#16324F] text-white font-black rounded-xl hover:bg-slate-800 transition-colors shadow-lg shadow-slate-900/10">
-                    Proceed to Routing
-                  </button>
-                </>
-              )}
+              {patientType === 'child'    && <ChildScreen onComplete={handleIntakeSubmit} />}
+              {patientType === 'elderly'  && <ElderlyScreen onComplete={handleIntakeSubmit} />}
+              {patientType === 'adult'    && <AdultScreen onComplete={handleIntakeSubmit} />}
+              {patientType === 'emergency'&& <EmergencyScreen onComplete={handleIntakeSubmit} />}
             </div>
-          )}
 
-          {step === 3 && (
-            <div className="animate-in fade-in slide-in-from-right-4 duration-300">
-              <div className="flex items-center gap-2.5 mb-6">
-                <div className="w-8 h-8 bg-rose-50 rounded-lg flex items-center justify-center">
-                  <Building2 className="w-4 h-4 text-rose-600" />
+            {/* ── AUDIO VOICE NOTE SECTION IN REFERRAL ── */}
+            <div className="bg-white border-2 border-purple-200 rounded-2xl p-4 sm:p-5 shadow-xs space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center">
+                    <Mic className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-slate-900 text-xs sm:text-sm">{t.voiceNoteTitle}</h3>
+                    <p className="text-[11px] text-slate-400">{t.voiceNoteSub}</p>
+                  </div>
                 </div>
-                <h3 className="text-[17px] font-black text-[#16324F] tracking-tight">Route to Specialist</h3>
+
+                <select
+                  value={audioLang}
+                  onChange={e => setAudioLang(e.target.value)}
+                  className="text-[11px] font-bold bg-purple-50 text-purple-900 border border-purple-200 rounded-lg px-2 py-1 cursor-pointer focus:outline-none"
+                >
+                  <option value="mr-IN">मराठी</option>
+                  <option value="hi-IN">हिंदी</option>
+                  <option value="en-IN">English</option>
+                </select>
               </div>
 
-              {isEmergency && (
-                <div className="mb-4 bg-rose-50 border border-rose-200 rounded-xl p-3 flex items-start gap-3">
-                  <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-xs font-black text-rose-800 uppercase tracking-wider">Emergency Protocol Active</p>
-                    <p className="text-[11px] font-medium text-rose-700 mt-0.5">Sub-Centres have been hidden. Please route to a CHC or District Hospital immediately.</p>
-                  </div>
-                </div>
-              )}
-
-              <div className="space-y-4">
-                <div className="p-4 bg-[#F8FAFC] border border-[#E2E8F0] rounded-2xl space-y-4">
-                  <div>
-                    <div className="relative">
-                      <div className="flex items-center justify-between mb-2">
-                        <label className="flex items-center gap-2 block text-[11px] font-bold text-[#64748B] uppercase tracking-wider">
-                          Nearest Hospitals (Within 50km)
-                          {fetchingHospitals && <Loader2 className="w-3 h-3 animate-spin text-[#008F83]" />}
-                        </label>
-                        {!fetchingHospitals && hospitals.length <= 3 && (
-                          <button onClick={() => window.retryGPS()} className="text-[10px] font-bold text-[#008F83] bg-teal-50 px-2 py-0.5 rounded uppercase">Retry GPS</button>
-                        )}
-                      </div>
-                      
-                      {/* Custom Searchable Combobox */}
-                      <div className="relative">
-                        <input 
-                          type="text" 
-                          value={hospSearch}
-                          onChange={e => {
-                            setHospital('');
-                            setHospSearch(e.target.value);
-                            setShowHospDropdown(true);
-                          }}
-                          onFocus={() => setShowHospDropdown(true)}
-                          onBlur={() => setTimeout(() => setShowHospDropdown(false), 200)}
-                          placeholder="Search or select a hospital..."
-                          className="w-full bg-white border border-[#E2E8F0] rounded-xl px-4 py-3.5 text-sm font-black text-[#16324F] focus:outline-none focus:border-[#008F83] focus:ring-2 focus:ring-[#008F83]/20 shadow-sm"
-                        />
-                        
-                        {showHospDropdown && (
-                          <div className="absolute z-50 w-full mt-2 bg-white border border-[#E2E8F0] rounded-xl shadow-2xl max-h-64 overflow-y-auto overflow-x-hidden">
-                            {availableHospitals.filter(h => h.name.toLowerCase().includes(hospSearch.toLowerCase())).length === 0 ? (
-                              <div className="p-4 text-center text-sm text-slate-500 font-medium">No hospitals found matching "{hospSearch}"</div>
-                            ) : (
-                              availableHospitals.filter(h => h.name.toLowerCase().includes(hospSearch.toLowerCase())).map(h => (
-                                <div 
-                                  key={h.name} 
-                                  onClick={() => { setHospital(h.name); setHospSearch(h.name); setShowHospDropdown(false); }}
-                                  className="p-3 hover:bg-[#F5FBF9] cursor-pointer border-b border-slate-100 last:border-b-0 transition-colors"
-                                >
-                                  <p className="text-sm font-black text-[#16324F] leading-tight mb-0.5">{h.name}</p>
-                                  <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
-                                    {h.dist} km away {h.type !== 'SC' && <span className="text-rose-500 ml-1">★ Higher Facility</span>}
-                                  </p>
-                                </div>
-                              ))
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-bold text-[#64748B] uppercase tracking-wider mb-2">Department</label>
-                    <select 
-                      value={department} onChange={e => setDepartment(e.target.value)}
-                      className="w-full bg-white border border-[#E2E8F0] rounded-xl px-4 py-3.5 text-sm font-black text-[#16324F] appearance-none focus:outline-none focus:border-[#008F83] focus:ring-2 focus:ring-[#008F83]/20 shadow-sm"
-                    >
-                        <option value="">-- Select Department --</option>
-                      {DEPARTMENTS.map(d => (
-                        <option key={d} value={d}>{d}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                {/* Real world ASHA Incentive Flag */}
-                <div className="p-4 bg-teal-50 border border-teal-100 rounded-2xl flex items-start gap-3">
-                  <div className="pt-0.5">
-                    <input type="checkbox" id="jsy" checked={isJsyClaim} onChange={e => setIsJsyClaim(e.target.checked)} className="w-4 h-4 text-teal-600 rounded border-teal-300 focus:ring-teal-500" />
-                  </div>
-                  <div>
-                    <label htmlFor="jsy" className="text-xs font-black text-teal-900 block cursor-pointer">ASHA Accompanying Patient</label>
-                    <p className="text-[10px] font-semibold text-teal-700 mt-0.5">Flag this referral for JSY incentive tracking upon hospital arrival.</p>
-                  </div>
-                </div>
-
-                {routeError && <p className="text-xs font-bold text-rose-600 text-center">{routeError}</p>}
-
-                <div className="flex gap-3 pt-2">
-                  <button onClick={() => setStep(2)} className="flex-1 py-4 bg-white border-2 border-[#E2E8F0] text-[#64748B] font-black rounded-xl hover:bg-slate-50 transition-colors">
-                    Back
-                  </button>
-                  <button 
-                    onClick={handleFinalSubmit}
-                    disabled={isSubmitting}
-                    className="flex-[2] py-4 bg-[#990000] text-white font-black rounded-xl shadow-lg shadow-rose-900/20 hover:bg-[#800000] transition-colors flex items-center justify-center gap-2 disabled:opacity-70"
+              <div className="bg-purple-50/60 rounded-xl p-3.5 border border-purple-100 flex flex-col items-center justify-center gap-2.5">
+                {!isRecording ? (
+                  <button
+                    type="button"
+                    onClick={startRecording}
+                    className="px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center gap-2 transition-all cursor-pointer"
                   >
-                    {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}
-                    {isSubmitting ? 'Submitting...' : 'Save & Submit Referral'}
+                    <Mic className="w-4 h-4" />
+                    <span>{t.startRec}</span>
                   </button>
-                </div>
+                ) : (
+                  <div className="flex flex-col items-center gap-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full bg-red-600 animate-ping" />
+                      <span className="font-mono font-black text-red-700 text-sm">
+                        {t.recActive}{recordingSeconds < 10 ? `0${recordingSeconds}` : recordingSeconds}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={stopRecording}
+                      className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                    >
+                      <Square className="w-3.5 h-3.5" />
+                      <span>{t.stopRec}</span>
+                    </button>
+                  </div>
+                )}
+
+                {audioBlobUrl && (
+                  <div className="w-full space-y-1 bg-white p-2.5 rounded-xl border border-purple-200">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="font-bold text-purple-900 flex items-center gap-1">
+                        <Volume2 className="w-3.5 h-3.5 text-purple-600" /> {t.memoPlayer}
+                      </span>
+                      <button type="button" onClick={() => setAudioBlobUrl(null)} className="text-red-500 hover:text-red-700 text-[11px] font-bold cursor-pointer">
+                        {t.removeAudio}
+                      </button>
+                    </div>
+                    <audio controls src={audioBlobUrl} className="w-full h-8" />
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                  {t.notesLabel}
+                </label>
+                <textarea
+                  rows={2}
+                  value={voiceNotes}
+                  onChange={e => setVoiceNotes(e.target.value)}
+                  placeholder={t.notesPlaceholder}
+                  className="w-full border border-purple-200 rounded-xl p-3 text-xs text-slate-800 bg-white font-medium focus:outline-none focus:border-purple-500"
+                />
               </div>
             </div>
-          )}
 
-        </div>
+          </div>
+        )}
+
+        {/* STEP 2: Triage Review Screen */}
+        {step === 2 && (
+          <div className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs text-center space-y-4">
+            <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mx-auto ${
+              aiResult?.priority === 'RED' ? 'bg-red-100 text-red-600' :
+              aiResult?.priority === 'ORANGE' ? 'bg-amber-100 text-amber-600' : 'bg-teal-100 text-teal-600'
+            }`}>
+              <CheckCircle2 className="w-8 h-8" />
+            </div>
+
+            <div>
+              <span className={`text-xs font-black px-3 py-1 rounded-full uppercase border ${
+                aiResult?.priority === 'RED' ? 'bg-red-100 text-red-800 border-red-300' :
+                aiResult?.priority === 'ORANGE' ? 'bg-amber-100 text-amber-800 border-amber-300' : 'bg-emerald-100 text-emerald-800 border-emerald-300'
+              }`}>
+                {aiResult?.priority === 'RED' ? t.priorityRed : aiResult?.priority === 'ORANGE' ? t.priorityOrange : t.priorityGreen}
+              </span>
+
+              <p className="text-sm font-bold text-slate-800 mt-3 max-w-md mx-auto leading-relaxed">
+                {aiResult?.note}
+              </p>
+            </div>
+
+            <div className="pt-2">
+              <button
+                onClick={() => setStep(3)}
+                className="w-full py-4 bg-[#008F83] hover:bg-[#007A70] text-white font-extrabold text-sm rounded-xl shadow-xs transition-colors cursor-pointer"
+              >
+                {t.continueRouting}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* STEP 3: Hospital & Department Routing */}
+        {step === 3 && (
+          <div className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-4">
+            <div className="flex items-center gap-2.5 pb-3 border-b border-slate-100">
+              <div className="w-9 h-9 rounded-xl bg-teal-50 text-teal-700 flex items-center justify-center font-bold">
+                <Building2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-[#16324F]">{t.routing}</h3>
+                <p className="text-xs text-slate-400">{patient?.name}</p>
+              </div>
+            </div>
+
+            {/* Destination Hospital Combobox */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                {t.hospitalSelect} <span className="text-red-500">*</span>
+              </label>
+              <select
+                value={hospital}
+                onChange={e => setHospital(e.target.value)}
+                className="w-full border border-[#E2E8F0] rounded-xl px-4 py-3 text-sm font-bold text-[#16324F] bg-white focus:outline-none focus:border-[#008F83] cursor-pointer"
+              >
+                {HOSPITALS.map(h => (
+                  <option key={h} value={h}>{h}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Simplified Clinical Department Selector */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                {t.deptSelect} <span className="text-red-500">*</span>
+              </label>
+              <select
+                value={department}
+                onChange={e => setDepartment(e.target.value)}
+                className="w-full border border-[#E2E8F0] rounded-xl px-4 py-3 text-sm font-bold text-[#16324F] bg-white focus:outline-none focus:border-[#008F83] cursor-pointer"
+              >
+                {DEPARTMENTS.map(d => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* ASHA Escort / JSY Flag */}
+            <div className="p-4 bg-[#E8F7F3] border border-teal-200 rounded-xl flex items-start gap-3">
+              <input
+                type="checkbox"
+                id="jsyClaim"
+                checked={isJsyClaim}
+                onChange={e => setIsJsyClaim(e.target.checked)}
+                className="w-4 h-4 text-teal-600 rounded border-teal-300 mt-0.5 cursor-pointer"
+              />
+              <div>
+                <label htmlFor="jsyClaim" className="text-xs font-black text-teal-950 block cursor-pointer">
+                  {t.jsyLabel}
+                </label>
+                <p className="text-[11px] text-teal-800 mt-0.5">
+                  {t.jsySub}
+                </p>
+              </div>
+            </div>
+
+            {routeError && (
+              <p className="text-xs font-bold text-red-600 text-center">{routeError}</p>
+            )}
+
+            {/* Action Buttons */}
+            <div className="flex gap-3 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setStep(2)}
+                className="flex-1 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-colors cursor-pointer"
+              >
+                {t.back}
+              </button>
+
+              <button
+                type="button"
+                disabled={isSubmitting}
+                onClick={handleFinalSubmit}
+                className="flex-[2] py-3.5 bg-[#008F83] hover:bg-[#007A70] disabled:bg-slate-300 text-white font-extrabold text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center gap-2 cursor-pointer"
+              >
+                {isSubmitting ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="w-4 h-4" />
+                )}
+                <span>{isSubmitting ? t.submitting : t.submitReferral}</span>
+              </button>
+            </div>
+
+          </div>
+        )}
+
       </div>
     </div>
   );

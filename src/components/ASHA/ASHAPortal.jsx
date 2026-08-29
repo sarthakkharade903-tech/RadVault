@@ -57,7 +57,16 @@ export default function ASHAPortal({ onBack }) {
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        {screen === "home"    && <ASHAHome patients={patients} loading={loading} onNavigate={setScreen} />}
+        {screen === "home"    && (
+          <ASHAHome
+            patients={patients}
+            loading={loading}
+            onNavigate={setScreen}
+            onOpenAddFamily={() => { setEditingFamily(null); setScreen("add_family"); }}
+            onOpenAddMember={() => { setAddMemberFamily(null); setEditingPatient(null); setScreen("add_member"); }}
+            onOpenReferral={() => setScreen("refer")}
+          />
+        )}
         {screen === "village" && (
           <MyVillage
             families={families}
