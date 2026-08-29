@@ -1,6 +1,6 @@
-import { supabase } from './supabase';
+﻿import { supabase } from './supabase';
 
-// ── ABHA ID Generator ──
+// â”€â”€ ABHA ID Generator â”€â”€
 // Generates a mock 14-digit ABHA number in the format XX-XXXX-XXXX-XXXX
 export function generateMockABHA() {
   const rand = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
@@ -11,11 +11,11 @@ export function generateMockABHA() {
   return `${p1}-${p2}-${p3}-${p4}`;
 }
 
-// ── Families ──
+// â”€â”€ Families â”€â”€
 export async function getFamilies() {
   const { data, error } = await supabase
     .from('families')
-    .select('*, village_patients(id, name, gender, age_years, status, is_pregnant, is_child, relation_to_head, blood_group, mobile, tb_symptoms, has_chronic, abha_id, asha_verified_at, asha_worker_name)')
+    .select('*, village_patients(id, name, gender, age_years, status, is_pregnant, is_child, relation_to_head, blood_group, mobile, tb_symptoms, has_chronic, abha_id, asha_verified_at, asha_worker_name, avatar_url)')
     .order('created_at', { ascending: false });
   return { data, error };
 }
@@ -53,7 +53,7 @@ export async function getFamilyWithMembers(familyId) {
   return { data, error };
 }
 
-// ── Patients ──
+// â”€â”€ Patients â”€â”€
 export async function getVillagePatients() {
   const { data, error } = await supabase
     .from('village_patients')
@@ -93,7 +93,7 @@ export async function deletePatient(id) {
   return { error };
 }
 
-// ── Computed helpers ──
+// â”€â”€ Computed helpers â”€â”€
 export function computeStats(patients) {
   return {
     total: patients.length,
@@ -126,7 +126,7 @@ export function computeDueList(patients) {
   return items;
 }
 
-// ── Family Portal Auth ──
+// â”€â”€ Family Portal Auth â”€â”€
 export async function familyLogin(email, password) {
   const { data: family, error: fetchErr } = await supabase
     .from('families')
@@ -146,7 +146,7 @@ export async function familyLogin(email, password) {
   return { data: { family, members: members || [] } };
 }
 
-// ─── Vitals History ────────────────────────────────────────────────────────
+// â”€â”€â”€ Vitals History â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * Fetch all vitals history for a patient, newest first.
