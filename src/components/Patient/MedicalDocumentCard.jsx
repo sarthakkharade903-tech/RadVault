@@ -1,21 +1,16 @@
-﻿import React, { useState } from 'react';
-import { FileText, Droplet, Pill, FileImage, Syringe, Stethoscope, Sparkles, ArrowRight, FlaskConical, Building2 } from 'lucide-react';
+import React, { useState } from 'react';
+import {
+  FileText, Droplet, Pill, FileImage, Syringe, Stethoscope, Sparkles,
+  ArrowRight, FlaskConical, Building2, Share2, Eye, Download, Check
+} from 'lucide-react';
 
 const CATEGORY_META = {
-  'Lab Reports':   { Icon: FlaskConical, color: 'text-sky-500',    border: 'border-sky-200/60', bg: 'bg-sky-50',    label: 'LAB REPORT', shape: 'bg-gradient-to-tl from-sky-200/40 to-transparent border-t border-l border-sky-100/50 rounded-tl-full' },
-  'Prescriptions': { Icon: Pill,         color: 'text-orange-500', border: 'border-orange-200/60', bg: 'bg-orange-50', label: 'PRESCRIPTION', shape: 'bg-gradient-to-tl from-orange-200/40 to-transparent border-t border-l border-orange-100/50 rounded-tl-full' },
-  'Scans':         { Icon: FileImage,    color: 'text-amber-500',  border: 'border-amber-200/60', bg: 'bg-amber-50',  label: 'SCAN & IMAGING', shape: 'bg-gradient-to-tl from-amber-200/40 to-transparent border-t border-l border-amber-100/50 rounded-tl-[100px]' },
-  'Vaccination':   { Icon: Syringe,      color: 'text-emerald-500',border: 'border-emerald-200/60', bg: 'bg-emerald-50',label: 'VACCINATION', shape: 'bg-gradient-to-tl from-emerald-200/40 to-transparent border-t border-l border-emerald-100/50 rounded-tl-full' },
-  'Hospital':      { Icon: Building2,    color: 'text-amber-600',  border: 'border-amber-200/60', bg: 'bg-amber-50',  label: 'HOSPITAL RECORD', shape: 'bg-gradient-to-tl from-amber-200/40 to-transparent border-t border-l border-amber-100/50 rounded-tl-[100px]' },
-  'Other':         { Icon: FileText,     color: 'text-amber-600',  border: 'border-amber-200/60', bg: 'bg-amber-50',  label: 'DOCUMENT', shape: 'bg-gradient-to-tl from-amber-200/30 to-transparent border-t border-l border-amber-100/50 rounded-tl-[100px]' },
-};
-
-const SOURCE_STYLE = {
-  'Self uploaded': 'text-amber-500',
-  'ASHA':          'text-emerald-600',
-  'PHC':           'text-sky-600',
-  'Hospital':      'text-violet-600',
-  'Clinical':      'text-amber-600',
+  'Lab Reports':   { Icon: FlaskConical, color: 'text-sky-600',    border: 'border-sky-200', bg: 'bg-sky-50',    label: 'LAB REPORT' },
+  'Prescriptions': { Icon: Pill,         color: 'text-amber-600',  border: 'border-amber-200', bg: 'bg-amber-50', label: 'PRESCRIPTION' },
+  'Scans':         { Icon: FileImage,    color: 'text-purple-600', border: 'border-purple-200', bg: 'bg-purple-50',  label: 'SCAN & X-RAY' },
+  'Vaccination':   { Icon: Syringe,      color: 'text-emerald-600',border: 'border-emerald-200', bg: 'bg-emerald-50',label: 'VACCINE' },
+  'Hospital':      { Icon: Building2,    color: 'text-blue-600',   border: 'border-blue-200', bg: 'bg-blue-50',  label: 'HOSPITAL' },
+  'Other':         { Icon: FileText,     color: 'text-slate-600',  border: 'border-slate-200', bg: 'bg-slate-50',  label: 'DOCUMENT' },
 };
 
 function fmtDate(iso) {
@@ -32,105 +27,122 @@ function fmtBytes(bytes) {
 
 export default function MedicalDocumentCard({ doc, onView }) {
   const [showAI, setShowAI] = useState(false);
+  const [copied, setCopied] = useState(false);
   const meta = CATEGORY_META[doc.category] || CATEGORY_META['Other'];
-  const sourceCls = SOURCE_STYLE[doc.source] || SOURCE_STYLE['Self uploaded'];
   const sizeStr = fmtBytes(doc.file_size);
+
+  const handleShare = (e) => {
+    e.stopPropagation();
+    const shareText = `RadVault Verified Health Document: ${doc.title || doc.file_name} (${doc.category}). Category: ${doc.category}.`;
+    if (navigator.share) {
+      navigator.share({
+        title: doc.title || doc.file_name,
+        text: shareText,
+        url: window.location.href,
+      }).catch(() => {});
+    } else {
+      navigator.clipboard.writeText(shareText);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
 
   return (
     <>
-      <div className="bg-white rounded-[24px] border border-amber-100/60 shadow-[0_8px_30px_-12px_rgba(251,191,36,0.15)] hover:shadow-[0_12px_40px_-12px_rgba(251,191,36,0.3)] transition-all duration-500 overflow-hidden relative group flex flex-col h-full">
+      <div className="bg-white rounded-[24px] border border-amber-100/80 shadow-[0_4px_20px_-8px_rgba(251,191,36,0.15)] hover:shadow-[0_8px_30px_-8px_rgba(251,191,36,0.25)] transition-all duration-300 overflow-hidden relative group flex flex-col h-full">
         
-        {/* Decorative inner background shape (corner) */}
-        <div className={`absolute -right-2 -bottom-2 w-40 h-40 ${meta.shape} opacity-80 group-hover:scale-110 transition-transform duration-700 pointer-events-none`} />
-        
-        <div className="p-6 relative z-10 flex-1 flex flex-col">
-          {/* Top Row - icon + category label + source badge */}
-          <div className="flex items-center justify-between mb-4">
-            <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border ${meta.bg} ${meta.border}`}>
+        <div className="p-5 sm:p-6 relative z-10 flex-1 flex flex-col">
+          {/* Top Row */}
+          <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-100">
+            <div className={`flex items-center gap-1.5 px-3 py-1 rounded-xl border ${meta.bg} ${meta.border}`}>
               <meta.Icon className={`w-3.5 h-3.5 ${meta.color}`} />
-              <span className={`text-[10px] font-black uppercase tracking-[0.15em] ${meta.color}`}>{meta.label}</span>
+              <span className={`text-[10px] font-black uppercase tracking-wider ${meta.color}`}>{meta.label}</span>
             </div>
-            <span className={`text-[10px] font-black uppercase tracking-wider ${sourceCls} bg-white px-2 py-1 rounded-md border border-slate-100/50 shadow-sm`}>
-              {doc.source || 'SELF UPLOADED'}
-            </span>
+            
+            <button
+              onClick={handleShare}
+              className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors flex items-center gap-1 text-[11px] font-bold cursor-pointer"
+              title="Share Document"
+            >
+              {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Share2 className="w-3.5 h-3.5" />}
+              <span>{copied ? "Copied" : "Share"}</span>
+            </button>
           </div>
 
           {/* Main Content */}
-          <h4 className="text-[17px] font-black text-[#16324F] leading-snug mb-1.5">
+          <h4 className="text-base sm:text-lg font-black text-[#16324F] leading-snug mb-1">
             {doc.title || doc.file_name}
           </h4>
-          <p className="text-[13px] text-[#64748B] font-medium truncate mb-auto">{doc.file_name}</p>
+          <p className="text-xs text-slate-500 font-medium truncate">{doc.file_name}</p>
           
           {doc.notes && (
-            <p className="text-[12px] text-[#94A3B8] mt-2 italic line-clamp-1">"{doc.notes}"</p>
+            <p className="text-xs text-slate-600 mt-2 bg-slate-50 p-2.5 rounded-xl border border-slate-100 italic line-clamp-2">
+              "{doc.notes}"
+            </p>
           )}
 
           {/* Metadata row */}
-          <div className="flex items-center justify-between mt-6 pt-4 border-t border-slate-100">
-            <span className="text-[12px] font-bold text-[#94A3B8]">{fmtDate(doc.created_at)}</span>
-            {sizeStr && (
-              <span className="text-[12px] font-bold text-[#94A3B8]">{sizeStr}</span>
-            )}
+          <div className="flex items-center justify-between mt-4 pt-3 border-t border-slate-100 text-xs text-slate-400 font-semibold">
+            <span>{fmtDate(doc.created_at)}</span>
+            {sizeStr && <span>{sizeStr}</span>}
           </div>
         </div>
 
         {/* Action Row */}
-        <div className="px-6 pb-6 pt-0 flex flex-col sm:flex-row items-center gap-3 relative z-10" onClick={e => e.stopPropagation()}>
+        <div className="px-5 pb-5 pt-0 flex items-center gap-2 relative z-10" onClick={e => e.stopPropagation()}>
           <button
             onClick={() => onView(doc)}
-            className="w-full sm:flex-1 flex items-center justify-center gap-1.5 bg-[#16324F] text-white text-[12px] font-bold py-3 rounded-[16px] hover:bg-slate-800 transition-all hover:shadow-lg hover:shadow-slate-900/20 group/btn"
+            className="flex-1 flex items-center justify-center gap-1.5 bg-[#008F83] hover:bg-[#007A70] text-white text-xs font-black py-2.5 rounded-xl shadow-xs transition-all cursor-pointer"
           >
-            View document <ArrowRight className="w-3.5 h-3.5 group-hover/btn:translate-x-1 transition-transform" />
+            <Eye className="w-3.5 h-3.5" />
+            <span>View File</span>
           </button>
           <button
             onClick={() => setShowAI(true)}
-            className="w-full sm:flex-1 flex items-center justify-center gap-1.5 text-[12px] font-bold text-amber-700 bg-amber-50 border border-amber-100/80 py-3 rounded-[16px] hover:bg-amber-100 hover:border-amber-200 transition-all hover:shadow-md hover:shadow-amber-100"
+            className="flex items-center justify-center gap-1.5 text-xs font-bold text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-200 px-4 py-2.5 rounded-xl transition-all cursor-pointer"
           >
-            <Sparkles className="w-3.5 h-3.5 text-amber-500" /> Understand this
+            <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+            <span>Explain</span>
           </button>
         </div>
       </div>
 
-      {/* AI Modal */}
+      {/* AI Explanation Modal */}
       {showAI && (
         <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-[#16324F]/30 backdrop-blur-sm p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in"
           onClick={() => setShowAI(false)}
         >
           <div
-            className="bg-white rounded-3xl shadow-2xl max-w-sm w-full p-6"
+            className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-amber-200 space-y-4 text-slate-800"
             onClick={e => e.stopPropagation()}
           >
-            <div className="w-12 h-12 bg-amber-50 rounded-2xl flex items-center justify-center mb-4 mx-auto border border-amber-100">
-              <Sparkles className="w-6 h-6 text-amber-500" />
-            </div>
-            <h3 className="text-[16px] font-black text-[#16324F] text-center mb-1">AI Health Summary</h3>
-            <p className="text-[13px] text-center text-[#64748B] font-medium mb-5 leading-relaxed">
-              RadVault will turn this document into an easy-to-understand summary while keeping the original medical record completely unchanged.
-            </p>
-            <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 space-y-3 mb-5">
-              <div className="flex items-start gap-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-amber-400 mt-1.5 shrink-0" />
-                <p className="text-[12px] text-[#64748B] font-medium">Identify key findings from reports</p>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-amber-100 text-amber-800 rounded-xl flex items-center justify-center">
+                <Sparkles className="w-5 h-5" />
               </div>
-              <div className="flex items-start gap-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-amber-400 mt-1.5 shrink-0" />
-                <p className="text-[12px] text-[#64748B] font-medium">Explain medical terms in plain language</p>
-              </div>
-              <div className="flex items-start gap-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-amber-400 mt-1.5 shrink-0" />
-                <p className="text-[12px] text-[#64748B] font-medium">Never replace your doctor's advice</p>
+              <div>
+                <h3 className="font-black text-sm text-[#16324F]">Medical Document Summary</h3>
+                <p className="text-xs text-slate-400">{doc.category} · RadVault AI Assistant</p>
               </div>
             </div>
-            <div className="bg-amber-50 rounded-xl px-4 py-3 text-center border border-amber-100 mb-2">
-              <p className="text-[11px] font-black text-amber-700 uppercase tracking-widest">Coming Soon</p>
-              <p className="text-[11px] text-amber-600 font-bold mt-0.5">Powered by Kimi Vision AI</p>
+
+            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 text-xs space-y-2 leading-relaxed">
+              <p className="font-bold text-slate-900">• Document Type: {doc.category}</p>
+              <p className="text-slate-600">
+                {doc.category === 'Prescriptions'
+                  ? 'This prescription contains doctor-ordered medications. Ensure you follow dosage times and complete the prescribed course.'
+                  : doc.category === 'Lab Reports'
+                  ? 'This laboratory test report has been safely cataloged in your digital health locker. You can show it directly to your doctor during consultations.'
+                  : 'Diagnostic imaging/scan record safely stored with high fidelity.'}
+              </p>
             </div>
+
             <button
               onClick={() => setShowAI(false)}
-              className="w-full text-[13px] font-bold text-[#64748B] hover:text-[#16324F] transition-colors py-3"
+              className="w-full py-3 bg-[#008F83] text-white font-extrabold text-xs rounded-xl shadow-xs"
             >
-              Close
+              Close Summary
             </button>
           </div>
         </div>
