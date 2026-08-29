@@ -1,22 +1,23 @@
-// ─── Mock Referrals Data (Ready for Supabase mapping) ────────────────────────
+// ─── Referral Facilities & Simplified Hospital Services ────────────────────────
 
 export const HOSPITALS = [
-  'Ahmednagar District Civil Hospital',
+  'Primary Health Centre (PHC) — Shirwal',
+  'Sub-District Hospital — Wai',
+  'Satara District Civil Hospital',
   'Pune Sassoon General Hospital',
-  'Nashik District Hospital',
-  'Aurangabad Government Medical College',
-  'Primary Health Centre — Shrirampur',
+  'Government Medical College Hospital'
 ];
 
+// Simplified, accessible departments for village ASHA referrals
 export const DEPARTMENTS = [
-  'Cardiology',
-  'Orthopedics',
-  'Neurology',
-  'Gynecology & Obstetrics',
-  'General Medicine',
-  'Pediatrics',
-  'Pulmonology',
-  'Emergency & Trauma',
+  'General Medicine & OPD',
+  'Maternity & Gynecology (ANC / Delivery)',
+  'Child Health & Pediatrics',
+  'Emergency & Casualty / Trauma',
+  'Chest, Cough & TB DOTS',
+  'Bone & Orthopedics (Fractures / Pain)',
+  'Eye & Vision Care',
+  'Dental OPD'
 ];
 
 export const MOCK_REFERRALS = [];
