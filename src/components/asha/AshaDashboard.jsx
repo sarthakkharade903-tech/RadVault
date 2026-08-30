@@ -9,7 +9,8 @@ import {
   Clock,
   Building2,
   Users,
-  ChevronRight
+  ChevronRight,
+  FileSpreadsheet
 } from 'lucide-react';
 
 export default function AshaDashboard({
@@ -23,6 +24,7 @@ export default function AshaDashboard({
   onManualSync,
   onOpenSearch,
   onOpenRegister,
+  onOpenSurvey,
   _onSelectPatient,
   onNavigateToTab,
   ashaProfile,
@@ -87,24 +89,58 @@ export default function AshaDashboard({
         </div>
       </div>
 
-      {/* ── B. PRIMARY SEARCH & REGISTRATION ACTION CARD ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+      {/* ── B. PRIMARY SEARCH, REGISTRATION & VILLAGE SURVEY ACTION CARDS ── */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <button
           type="button"
           onClick={onOpenSearch}
-          className="p-5 bg-[#008080] hover:bg-[#006666] text-white font-black text-sm rounded-2xl transition-all shadow-sm hover:scale-[1.01] active:scale-99 flex flex-col items-center justify-center gap-2.5 cursor-pointer"
+          className="p-4 bg-[#008080] hover:bg-[#006666] text-white font-black text-xs rounded-2xl transition-all shadow-sm hover:scale-[1.01] active:scale-99 flex flex-col items-center justify-center gap-2 cursor-pointer"
         >
-          <Search className="w-6 h-6 text-white" />
+          <Search className="w-5 h-5 text-white" />
           <span>Find Patient</span>
         </button>
 
         <button
           type="button"
           onClick={onOpenRegister}
-          className="p-5 bg-[#FF9933] hover:bg-[#e68a2e] text-slate-950 font-black text-sm rounded-2xl transition-all shadow-sm hover:scale-[1.01] active:scale-99 flex flex-col items-center justify-center gap-2.5 cursor-pointer"
+          className="p-4 bg-[#FF9933] hover:bg-[#e68a2e] text-slate-950 font-black text-xs rounded-2xl transition-all shadow-sm hover:scale-[1.01] active:scale-99 flex flex-col items-center justify-center gap-2 cursor-pointer"
         >
-          <UserPlus className="w-6 h-6 text-slate-950" />
-          <span>+ Register Patient</span>
+          <UserPlus className="w-5 h-5 text-slate-950" />
+          <span>+ Single Patient</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={onOpenSurvey}
+          className="p-4 bg-teal-50 hover:bg-teal-100 text-[#006666] border-2 border-[#008080]/30 hover:border-[#008080] font-black text-xs rounded-2xl transition-all shadow-sm hover:scale-[1.01] active:scale-99 flex flex-col items-center justify-center gap-2 cursor-pointer"
+        >
+          <FileSpreadsheet className="w-5 h-5 text-[#008080]" />
+          <span>📋 Village Survey</span>
+        </button>
+      </div>
+
+      {/* ── VILLAGE SURVEY HIGHLIGHT CARD ── */}
+      <div className="bg-white border-2 border-teal-200/80 rounded-2xl p-4 shadow-2xs flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-teal-50 border border-teal-200 flex items-center justify-center text-lg">
+            📋
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-xs font-black text-slate-900">Conduct Village Survey (गाव सर्वेक्षण)</h3>
+              <span className="text-[9px] font-black uppercase bg-teal-100 text-teal-800 px-1.5 py-0.2 rounded font-mono">
+                CSV Bulk Import
+              </span>
+            </div>
+            <p className="text-[10px] text-slate-500 font-bold">Import household survey data, deduplicate, and auto-group families</p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onOpenSurvey}
+          className="text-xs font-black text-white bg-[#008080] hover:bg-[#006666] px-3.5 py-2 rounded-xl shadow-xs transition-colors cursor-pointer shrink-0"
+        >
+          <span>Start Survey →</span>
         </button>
       </div>
 
@@ -165,7 +201,34 @@ export default function AshaDashboard({
         </div>
       </div>
 
-      {/* ── D. QUICK ACTIONS SHORTCUTS ── */}
+      {/* ── D. COMPACT MEDICINE KIT STATUS SUMMARY ── */}
+      <div className="bg-white border-2 border-slate-200 rounded-2xl p-4 shadow-2xs space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-[#FFF5EB] border border-[#FF9933]/40 flex items-center justify-center text-base shrink-0">
+              💊
+            </div>
+            <div>
+              <div className="flex items-center gap-1.5">
+                <h3 className="text-xs font-black text-slate-900">Frontline Drug Kit (औषध किट)</h3>
+                <span className="text-[9px] font-black uppercase px-1.5 py-0.2 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
+                  NHM Field Stock
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-500 font-bold">Essential tablets, ORS, test & delivery kits</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => onNavigateToTab('medicine_kit')}
+            className="text-xs font-black text-[#b35900] hover:text-[#FF9933] flex items-center gap-1 cursor-pointer bg-[#FFF5EB] hover:bg-[#ffe8d1] px-2.5 py-1.5 rounded-xl border border-[#FF9933]/30 transition-colors"
+          >
+            <span>Manage Kit →</span>
+          </button>
+        </div>
+      </div>
+
+      {/* ── E. QUICK ACTIONS SHORTCUTS ── */}
       <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs space-y-2">
         <h2 className="text-xs font-black uppercase text-slate-400 tracking-wider">Quick Actions</h2>
         
@@ -195,10 +258,18 @@ export default function AshaDashboard({
           </button>
 
           <button
-            onClick={() => onNavigateToTab('followups')}
+            onClick={onOpenSurvey}
             className="w-full text-left py-2.5 flex items-center justify-between hover:text-[#008080] transition-colors"
           >
-            <span>⏰ Frontline Follow-ups</span>
+            <span>📋 Village Survey & Onboarding</span>
+            <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+          </button>
+
+          <button
+            onClick={() => onNavigateToTab('medicine_kit')}
+            className="w-full text-left py-2.5 flex items-center justify-between hover:text-[#008080] transition-colors"
+          >
+            <span>💊 Dispense / Indent Medicines</span>
             <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
           </button>
         </div>

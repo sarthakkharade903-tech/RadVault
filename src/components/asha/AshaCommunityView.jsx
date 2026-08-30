@@ -1,14 +1,20 @@
 import React from 'react';
-import { MapPin, Users, Clock, Building2, AlertTriangle, ChevronRight } from 'lucide-react';
+import { MapPin, AlertTriangle, ChevronRight } from 'lucide-react';
 import { getCommunityAreaSummary } from '../../services/encounterService';
 
 export default function AshaCommunityView({
   patients = [],
   encounters = [],
   onSelectVillage,
-  onSelectPatient
+  onSelectPatient,
+  onOpenSurvey
 }) {
   const summaries = getCommunityAreaSummary(patients, encounters);
+
+  // Compute total unique households
+  const totalHouseholds = new Set(
+    patients.filter(p => p.household_id).map(p => p.household_id)
+  ).size;
 
   return (
     <div className="space-y-6">
@@ -17,13 +23,47 @@ export default function AshaCommunityView({
         <div>
           <h1 className="text-2xl font-black text-slate-900">Today in My Area</h1>
           <p className="text-xs text-slate-500 font-medium">
-            Community-level breakdown by village and ward in Sector 4
+            Community-level breakdown by village and ward · {patients.length} Registered Beneficiaries
           </p>
         </div>
 
-        <div className="flex items-center gap-2 text-xs font-bold bg-white border border-slate-200 p-2 rounded-xl self-start sm:self-auto shadow-2xs">
-          <MapPin className="w-4 h-4 text-[#008080]" />
-          <span>Active Villages: <strong>{summaries.length}</strong></span>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onOpenSurvey}
+            className="px-4 py-2 bg-[#008080] hover:bg-[#006666] text-white text-xs font-black rounded-xl transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
+          >
+            <span>📋 Conduct Village Survey</span>
+          </button>
+        </div>
+      </div>
+
+      {/* ── SURVEY & HOUSEHOLD STATS BAR ── */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="p-4 bg-white border border-slate-200 rounded-2xl">
+          <span className="text-[10px] font-bold uppercase text-slate-400 block">Total Beneficiaries</span>
+          <span className="text-2xl font-black text-slate-900">{patients.length}</span>
+        </div>
+
+        <div className="p-4 bg-white border border-slate-200 rounded-2xl">
+          <span className="text-[10px] font-bold uppercase text-slate-400 block">Households Surveyed</span>
+          <span className="text-2xl font-black text-[#008080]">{totalHouseholds || Math.ceil(patients.length / 3)}</span>
+        </div>
+
+        <div className="p-4 bg-white border border-slate-200 rounded-2xl">
+          <span className="text-[10px] font-bold uppercase text-slate-400 block">Active Villages</span>
+          <span className="text-2xl font-black text-slate-900">{summaries.length}</span>
+        </div>
+
+        <div className="p-4 bg-white border border-slate-200 rounded-2xl">
+          <span className="text-[10px] font-bold uppercase text-slate-400 block">Survey Tool</span>
+          <button
+            type="button"
+            onClick={onOpenSurvey}
+            className="text-xs font-black text-[#b35900] hover:underline mt-1 block"
+          >
+            + Onboard CSV →
+          </button>
         </div>
       </div>
 

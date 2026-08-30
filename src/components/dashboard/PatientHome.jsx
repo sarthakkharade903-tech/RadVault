@@ -25,6 +25,7 @@ import {
   RefreshCw,
   Stethoscope,
 } from 'lucide-react';
+import AbhaModal from '../Patient/AbhaModal';
 
 // ─── Structured Mock Data (Ready for Supabase mapping) ───────────────────────
 
@@ -599,6 +600,7 @@ export function PatientHome({ onNavigate }) {
   const [recordsSummary, setRecordsSummary] = useState(null);
   const [recentActivity, setRecentActivity] = useState([]);
   const [detailsLoading, setDetailsLoading] = useState(false);
+  const [showAbhaModal, setShowAbhaModal] = useState(false);
 
   const activePatient = isDemoMode
     ? (patients?.length > 0 ? patients[selectedPatientIndex] : null)
@@ -868,7 +870,7 @@ export function PatientHome({ onNavigate }) {
             )}
           </div>
 
-          <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+          <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
             <div>
               <span className="text-[11px] font-bold uppercase tracking-wider text-[#555555]">
                 Unified Patient ID
@@ -878,12 +880,23 @@ export function PatientHome({ onNavigate }) {
               </p>
             </div>
 
-            <button
-              onClick={() => onNavigate && onNavigate('profile')}
-              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-[#212121] font-bold rounded-lg text-xs transition-colors flex items-center gap-1 cursor-pointer"
-            >
-              Full Profile <ChevronRight className="w-3.5 h-3.5" />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowAbhaModal(true)}
+                className="px-3 py-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-bold rounded-lg text-xs transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer"
+              >
+                <Shield className="w-3.5 h-3.5 text-white" />
+                <span>View ABHA Card</span>
+              </button>
+
+              <button
+                onClick={() => onNavigate && onNavigate('profile')}
+                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-[#212121] font-bold rounded-lg text-xs transition-colors flex items-center gap-1 cursor-pointer"
+              >
+                Full Profile <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
         </div>
       </section>
@@ -921,25 +934,63 @@ export function PatientHome({ onNavigate }) {
         </section>
       </div>
 
-      {/* ── 7. Latest Vitals Grid (Teal outline + Amber empty state) ── */}
+      {/* ── 7. Government Health Schemes & Benefits Card ── */}
+      <section aria-labelledby="schemes-heading" className="flex flex-col">
+        <SectionHeader icon={Shield} label="Government Health Schemes & Benefits" iconColor="text-[#FF9933]" />
+        <div className="bg-gradient-to-br from-amber-50/70 via-white to-white border-2 border-amber-300/80 rounded-2xl p-5 shadow-2xs hover:shadow-md transition-shadow flex flex-col justify-between">
+          <div className="flex items-start justify-between gap-3 mb-3">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center shrink-0">
+                <Shield className="w-5 h-5 text-amber-700" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Ayushman Bharat & State Benefits</h3>
+                <p className="text-xs text-slate-500 mt-0.5">PM-JAY, Janani Suraksha (JSY), PMSMA, & MJPJAY</p>
+              </div>
+            </div>
+            <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300">
+              Public Benefits
+            </span>
+          </div>
+          <p className="text-xs text-slate-600 mb-4 leading-relaxed font-medium">
+            Financial protection up to ₹5,00,000 for secondary/tertiary hospital procedures, maternal institutional delivery incentives, and nutritional support.
+          </p>
+          <button
+            type="button"
+            onClick={() => onNavigate && onNavigate('schemes')}
+            className="w-full py-2.5 bg-[#008080] hover:bg-[#006666] text-white font-bold rounded-xl text-xs transition-colors shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+          >
+            <span>Explore Available Schemes & Benefits →</span>
+          </button>
+        </div>
+      </section>
+
+      {/* ── 8. Latest Vitals Grid (Teal outline + Amber empty state) ── */}
       <section aria-labelledby="vitals-heading">
         <SectionHeader icon={Activity} label="Latest Vitals Summary" iconColor="text-[#008080]" />
         <VitalsSection vitals={vitals} loading={detailsLoading} />
       </section>
 
-      {/* ── 8. Referral Summary (Handshake icon + Maroon doctor name) ── */}
+      {/* ── 9. Referral Summary (Handshake icon + Maroon doctor name) ── */}
       <section aria-labelledby="referral-heading">
         <SectionHeader icon={Handshake} label="Specialist Referrals" iconColor="text-[#800000]" />
         <ReferralSummaryCard onNavigate={onNavigate} summary={referralsSummary} />
       </section>
 
-      {/* ── 9. Recent Health Activity (Teal timeline dots + Maroon names) ── */}
+      {/* ── 10. Recent Health Activity (Teal timeline dots + Maroon names) ── */}
       <section aria-labelledby="activity-heading">
         <SectionHeader icon={Clock} label="Recent Health Activity" iconColor="text-[#555555]" />
         <LightCard>
           <RecentActivityList activities={recentActivity} />
         </LightCard>
       </section>
+
+      {/* ── ABHA Digital ID Modal ── */}
+      <AbhaModal
+        isOpen={showAbhaModal}
+        onClose={() => setShowAbhaModal(false)}
+        patient={activePatient}
+      />
 
     </div>
   );

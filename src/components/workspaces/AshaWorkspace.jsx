@@ -10,7 +10,9 @@ import {
   UserCheck,
   Menu,
   X,
-  LogOut
+  LogOut,
+  Pill,
+  MapPin
 } from 'lucide-react';
 
 import AshaDashboard from '../asha/AshaDashboard';
@@ -22,6 +24,8 @@ import AshaAlertsView from '../asha/AshaAlertsView';
 import AshaCommunityView from '../asha/AshaCommunityView';
 import PatientContextView from '../asha/PatientContextView';
 import EncounterWizard from '../asha/EncounterWizard';
+import MedicineKitManager from '../asha/MedicineKitManager';
+import VillageSurveyModal from '../asha/VillageSurveyModal';
 import PatientSearchModal from '../asha/PatientSearchModal';
 import PatientRegistrationModal from '../asha/PatientRegistrationModal';
 import ReferralCreationModal from '../asha/ReferralCreationModal';
@@ -67,6 +71,7 @@ export default function AshaWorkspace({ onNavigateToPatientView }) {
   const [showRegisterModal, setShowRegisterModal] = useState(false);
   const [registerInitialName, setRegisterInitialName] = useState('');
   const [showReferralModal, setShowReferralModal] = useState(false);
+  const [showSurveyModal, setShowSurveyModal] = useState(false);
   const [encounterForReferral, setEncounterForReferral] = useState(null);
 
   // Responsive Sidebar (Tablet / Mobile)
@@ -173,6 +178,17 @@ export default function AshaWorkspace({ onNavigateToPatientView }) {
     setTimeout(() => setSuccessBanner(null), 4000);
   };
 
+  const handleSurveyCompleted = (onboardedList) => {
+    if (isDemoMode) {
+      onboardedList.forEach(p => addPatient(p));
+    } else {
+      refreshPatients();
+    }
+    refreshAllData();
+    setSuccessBanner(`✓ Onboarded ${onboardedList.length} beneficiaries from village survey.`);
+    setTimeout(() => setSuccessBanner(null), 5000);
+  };
+
   const handleStartEncounter = () => {
     setActiveSubView('encounter_wizard');
   };
@@ -209,9 +225,11 @@ export default function AshaWorkspace({ onNavigateToPatientView }) {
 
   const navItems = [
     { key: 'home', label: 'Home', icon: Home, badge: null },
+    { key: 'community', label: 'Village Survey', icon: MapPin, badge: null },
     { key: 'patients', label: 'Patients', icon: Users, badge: null },
     { key: 'referrals', label: 'Referrals', icon: Building2, badge: stats.pendingReferrals || null, badgeColor: 'bg-sky-100 text-sky-900' },
-    { key: 'followups', label: 'Follow-ups', icon: Clock, badge: stats.followupsDue || null, badgeColor: 'bg-amber-100 text-amber-900' }
+    { key: 'followups', label: 'Follow-ups', icon: Clock, badge: stats.followupsDue || null, badgeColor: 'bg-amber-100 text-amber-900' },
+    { key: 'medicine_kit', label: 'Medicine Kit', icon: Pill, badge: null }
   ];
 
   const workerName = user?.email ? user.email.split('@')[0] : 'Sunita Deshmukh';
@@ -259,6 +277,7 @@ export default function AshaWorkspace({ onNavigateToPatientView }) {
               setRegisterInitialName(query || '');
               setShowRegisterModal(true);
             }}
+            onOpenSurvey={() => setShowSurveyModal(true)}
           />
         );
 
@@ -302,6 +321,15 @@ export default function AshaWorkspace({ onNavigateToPatientView }) {
           />
         );
 
+      case 'medicine_kit':
+        return (
+          <MedicineKitManager
+            ashaId={ashaProfile?.id || user?.id}
+            ashaName={ashaProfile?.name || 'Sunita Deshmukh'}
+            phcName={ashaProfile?.phc_name || 'Shrirampur Primary Health Centre'}
+          />
+        );
+
       case 'community':
         return (
           <AshaCommunityView
@@ -312,6 +340,7 @@ export default function AshaWorkspace({ onNavigateToPatientView }) {
               setActiveTab('patients');
             }}
             onSelectPatient={handleSelectPatient}
+            onOpenSurvey={() => setShowSurveyModal(true)}
           />
         );
 
@@ -389,6 +418,7 @@ export default function AshaWorkspace({ onNavigateToPatientView }) {
               setRegisterInitialName('');
               setShowRegisterModal(true);
             }}
+            onOpenSurvey={() => setShowSurveyModal(true)}
             onSelectPatient={handleSelectPatient}
             onNavigateToTab={(tab) => {
               setActiveSubView(null);
@@ -635,6 +665,16 @@ export default function AshaWorkspace({ onNavigateToPatientView }) {
           onReferralSuccess={handleReferralSuccess}
           isDemoMode={isDemoMode}
           ashaProfile={ashaProfile}
+        />
+      )}
+
+      {showSurveyModal && (
+        <VillageSurveyModal
+          isOpen={showSurveyModal}
+          onClose={() => setShowSurveyModal(false)}
+          assignedVillages={ashaVillages}
+          existingPatients={patients}
+          onSurveyCompleted={handleSurveyCompleted}
         />
       )}
     </div>

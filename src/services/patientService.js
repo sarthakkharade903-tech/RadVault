@@ -150,16 +150,17 @@ export async function getPatientTimeline(patientId) {
 
     // 3. Map consultations to consultation category
     (consultations || []).forEach(c => {
+      const isTeleconsult = (c.clinical_assessment || '').includes('REMOTE TELECONSULTATION');
       events.push({
         id: `cons-${c.id}`,
         date: new Date(c.created_at).toISOString().slice(0, 10),
         time: new Date(c.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        title: `Specialist Consultation signed`,
+        title: isTeleconsult ? '📡 Remote Specialist Tele-Advice Signed' : '🏥 Specialist Consultation Signed',
         category: 'consultation',
-        categoryLabel: 'Specialist Review',
+        categoryLabel: isTeleconsult ? 'Tele-Consultation' : 'Specialist Review',
         facility: c.referrals?.destination_hospital || 'Shrirampur Primary Health Centre',
         doctor: c.doctor_id || 'Specialist Physician',
-        summary: `Diagnosis: ${c.diagnosis || 'Clinical review'}. Follow-up scheduled: ${c.follow_up_recommended_date || 'None'}`,
+        summary: `Diagnosis: ${c.diagnosis || 'Clinical review'}. Follow-up: ${c.follow_up_recommended_date || 'Routine'}`,
         details: `Clinical assessment: ${c.clinical_assessment}. Treatment advice: ${c.treatment_advice}. Prescriptions: ${(c.prescriptions || []).map(p => `${p.name} (${p.dose})`).join(', ') || 'None'}.`,
         status: 'Completed',
         isImportant: true
@@ -195,3 +196,128 @@ export async function getPatientTimeline(patientId) {
     return [];
   }
 }
+
+/**
+ * Batch register beneficiaries from village survey
+ */
+export async function batchRegisterPatients(patientsList, isDemoMode = false) {
+  if (!patientsList || patientsList.length === 0) {
+    return { success: true, count: 0, registered: [] };
+  }
+
+  const registered = [];
+  const errors = [];
+
+  for (const p of patientsList) {
+    const generatedUnifiedId = p.abhaId || `MH-P-${Math.floor(10000 + Math.random() * 90000)}`;
+
+    const patientPayload = {
+      unified_id: generatedUnifiedId,
+      full_name: p.fullName.trim(),
+      age: parseInt(p.age, 10),
+      gender: p.gender,
+      blood_group: p.bloodGroup || null,
+      phone_number: p.phone || null,
+      village_id: p.villageId || null,
+      area_id: p.areaId || null,
+      household_id: p.householdId || null,
+      relation_to_head: p.relationToHead || null,
+      vitals: {
+        village_name: p.village,
+        household_id: p.householdId || null,
+        relation_to_head: p.relationToHead || null,
+        conditions: p.knownConditions || [],
+        allergies: '',
+        isPregnant: p.isPregnant || false,
+        pregnancyNotes: p.pregnancyNotes || null
+      }
+    };
+
+    if (isDemoMode) {
+      registered.push({
+        id: `pat-local-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        ...patientPayload,
+        created_at: new Date().toISOString()
+      });
+      continue;
+    }
+
+    try {
+      // 1. Attempt insert with all columns
+      let { data, error } = await supabase
+        .from('patients')
+        .insert([patientPayload])
+        .select();
+
+      // 2. If table is missing top-level household columns, fallback to storing inside vitals JSONB
+      if (error && (error.message.includes('household_id') || error.message.includes('relation_to_head'))) {
+        const fallbackPayload = { ...patientPayload };
+        delete fallbackPayload.household_id;
+        delete fallbackPayload.relation_to_head;
+
+        const retryRes = await supabase
+          .from('patients')
+          .insert([fallbackPayload])
+          .select();
+
+        data = retryRes.data;
+        error = retryRes.error;
+      }
+
+      if (error) throw error;
+      if (data && data.length > 0) {
+        registered.push(data[0]);
+      }
+    } catch (err) {
+      console.warn(`[patientService] Error registering beneficiary ${p.fullName}:`, err.message);
+      errors.push({ name: p.fullName, error: err.message });
+      // Fallback local registration
+      registered.push({
+        id: `pat-local-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        ...patientPayload,
+        created_at: new Date().toISOString()
+      });
+    }
+  }
+
+  return {
+    success: errors.length === 0,
+    count: registered.length,
+    registered,
+    errors
+  };
+}
+
+/**
+ * Fetch all family members belonging to a specific household ID
+ */
+export async function getHouseholdMembers(householdId, allPatients = []) {
+  if (!householdId) return [];
+
+  // Check in-memory list first (checking both top-level and vitals JSONB)
+  const inMemoryMatches = allPatients.filter(
+    (p) =>
+      (p.household_id && p.household_id.toLowerCase().trim() === householdId.toLowerCase().trim()) ||
+      (p.vitals?.household_id && p.vitals.household_id.toLowerCase().trim() === householdId.toLowerCase().trim())
+  );
+  if (inMemoryMatches.length > 0) return inMemoryMatches;
+
+  try {
+    const { data, error } = await supabase
+      .from('patients')
+      .select('*')
+      .order('age', { ascending: false });
+
+    if (error) throw error;
+    
+    return (data || []).filter(
+      (p) =>
+        (p.household_id && p.household_id.toLowerCase().trim() === householdId.toLowerCase().trim()) ||
+        (p.vitals?.household_id && p.vitals.household_id.toLowerCase().trim() === householdId.toLowerCase().trim())
+    );
+  } catch (err) {
+    console.warn(`[patientService] Error querying household members for ${householdId}:`, err.message);
+    return [];
+  }
+}
+

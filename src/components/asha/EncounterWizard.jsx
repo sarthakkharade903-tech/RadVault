@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Sparkles,
   Loader2,
@@ -10,91 +10,190 @@ import {
   ShieldAlert,
   Building2,
   CheckCircle2,
-  Info
+  Info,
+  Droplet,
+  Baby,
+  UserCheck,
+  Zap,
+  RotateCcw,
+  ArrowRight
 } from 'lucide-react';
 import { createEncounter } from '../../services/encounterService';
+import { assessVitalsPayload } from '../../utils/vitalsValidator';
 
-const COMMON_COMPLAINTS = [
-  { id: 'fever', label: 'Fever', icon: '🌡️' },
-  { id: 'cough', label: 'Cough', icon: '💨' },
-  { id: 'chest_pain', label: 'Chest Pain', icon: '❤️' },
-  { id: 'breathlessness', label: 'Shortness of Breath', icon: '🫁' },
-  { id: 'weakness', label: 'Severe Weakness / Fatigue', icon: '⚡' },
-  { id: 'headache', label: 'Severe Headache', icon: '🧠' },
-  { id: 'injury', label: 'Trauma / Injury / Fall', icon: '🩹' },
-  { id: 'abdominal', label: 'Abdominal Pain', icon: '🩺' },
-  { id: 'vomiting', label: 'Vomiting / Nausea', icon: '🤢' },
-  { id: 'diarrhea', label: 'Diarrhea / Dehydration', icon: '💧' }
-];
+// ─── DEMOGRAPHIC SCREENING PATHWAYS ──────────────────────────────────────────
+export const SCREENING_PATHWAYS = {
+  PEDIATRIC: {
+    id: 'PEDIATRIC',
+    label: 'Pediatric (Under 5)',
+    marathi: 'बाल आरोग्य (५ वर्षांखालील)',
+    hindi: 'बाल स्वास्थ्य (५ वर्ष से कम)',
+    icon: '👶',
+    color: '#008F83',
+    complaints: [
+      { id: 'ped_fever', label: 'High Fever (तीव्र ताप)', icon: '🌡️' },
+      { id: 'ped_inability_feed', label: 'Cannot Drink / Breastfeed (दूध पिण्यास असमर्थ)', icon: '🍼' },
+      { id: 'ped_vomiting', label: 'Vomits Everything (सतत उलट्या)', icon: '🤢' },
+      { id: 'ped_diarrhea', label: 'Watery Diarrhea / Dehydration (पाण्यासारखे जुलाब)', icon: '💧' },
+      { id: 'ped_fast_breath', label: 'Fast Breathing / Chest Indrawing (छाती भरणे / जलद श्वास)', icon: '🫁' },
+      { id: 'ped_lethargy', label: 'Lethargic / Unresponsive (अतिशय सुस्त / प्रतिसाद नसणे)', icon: '💤' },
+      { id: 'ped_cough', label: 'Persistent Cough (> 14 days) (दीर्घकालीन खोकला)', icon: '💨' },
+      { id: 'ped_rash', label: 'Skin Rash / Measles (अंगावर पुरळ / गोवर)', icon: '🔴' }
+    ],
+    dangerSigns: [
+      { id: 'peds_stridor', label: 'Stridor while calm (शांत असताना श्वास घेताना आवाज)', severity: 'HIGH' },
+      { id: 'peds_indrawing', label: 'Severe lower chest wall indrawing (छाती खोलवर खचणे)', severity: 'HIGH' },
+      { id: 'peds_convulsion', label: 'Convulsions / Fits during illness (आचके / झटके येणे)', severity: 'HIGH' },
+      { id: 'peds_muac', label: 'Severe Acute Malnutrition (MUAC < 11.5 cm) (तीव्र कुपोषण)', severity: 'HIGH' },
+      { id: 'peds_unconscious', label: 'Unconscious or abnormally sleepy (बेभान / अचेत अवस्था)', severity: 'HIGH' }
+    ]
+  },
+  MATERNAL: {
+    id: 'MATERNAL',
+    label: 'Maternal ANC / Pregnancy',
+    marathi: 'माता आरोग्य व प्रसूतीपूर्व तपासणी (ANC)',
+    hindi: 'मातृ स्वास्थ्य एवं प्रसव पूर्व जांच',
+    icon: '🤰',
+    color: '#D97706',
+    complaints: [
+      { id: 'mat_headache', label: 'Severe Headache & Vision Blur (तीव्र डोकेदुखी / अंधुक दिसणे)', icon: '🧠' },
+      { id: 'mat_bleeding', label: 'Vaginal Bleeding / Spotting (योनीतून रक्तस्त्राव)', icon: '🩸' },
+      { id: 'mat_swelling', label: 'Facial / Hand Swelling (चेहरा व हातावर सूज)', icon: '🦶' },
+      { id: 'mat_abd_pain', label: 'Severe Abdominal / Epigastric Pain (पोटात तीव्र कळा)', icon: '🩺' },
+      { id: 'mat_fever', label: 'High Fever with Chills (थंडी वाजून तीव्र ताप)', icon: '🌡️' },
+      { id: 'mat_movement', label: 'Reduced Fetal Movement (बाळाची हालचाल मंदावणे)', icon: '👶' },
+      { id: 'mat_fluid', label: 'Water Leaking before Labor (पाणी जाणे)', icon: '💧' },
+      { id: 'mat_fatigue', label: 'Severe Breathlessness / Pale Skin (अतिशय थकवा / धाप लागणे)', icon: '⚡' }
+    ],
+    dangerSigns: [
+      { id: 'mats_bp', label: 'High BP (≥ 140/90 mmHg) with Proteinuria / Swelling (उच्च रक्तदाब)', severity: 'HIGH' },
+      { id: 'mats_hemorrhage', label: 'Active antepartum / postpartum hemorrhage (अति रक्तस्त्राव)', severity: 'HIGH' },
+      { id: 'mats_seizure', label: 'Eclampsia / Seizures (गरोदरपणात झटके येणे)', severity: 'HIGH' },
+      { id: 'mats_no_movement', label: 'Absence of fetal heart sounds / movements (बाळाची हालचाल बंद)', severity: 'HIGH' }
+    ]
+  },
+  GERIATRIC: {
+    id: 'GERIATRIC',
+    label: 'Geriatric & Chronic NCD',
+    marathi: 'ज्येष्ठ नागरिक व असंसर्गजन्य रोग (NCD)',
+    hindi: 'वरिष्ठ नागरिक एवं गैर-संचारी रोग',
+    icon: '👴',
+    color: '#800000',
+    complaints: [
+      { id: 'ger_chest', label: 'Chest Pressure / Angina (छातीत जडपणा / दुखणे)', icon: '❤️' },
+      { id: 'ger_weakness', label: 'Sudden One-Sided Weakness (एका बाजूला अशक्तपणा / पक्षाघात)', icon: '⚡' },
+      { id: 'ger_breathless', label: 'Shortness of Breath on Exertion (किरकोळ कामात धाप लागणे)', icon: '🫁' },
+      { id: 'ger_dizziness', label: 'Dizziness & Loss of Balance / Falls (चक्कर येणे / तोल जाणे)', icon: '🌀' },
+      { id: 'ger_ulcer', label: 'Non-Healing Foot Wound / Diabetic Ulcer (पायाची न भरणारी जखम)', icon: '🩹' },
+      { id: 'ger_vision', label: 'Sudden Vision Loss / Clouding (दृष्टी अंधुक होणे)', icon: '👁️' },
+      { id: 'ger_joint', label: 'Severe Joint Pain & Immobility (तीव्र सांधेदुखी / हालचाल मंद)', icon: '🦴' },
+      { id: 'ger_urinary', label: 'Urinary Incontinence / Retention (लघवीचा त्रास)', icon: '💧' }
+    ],
+    dangerSigns: [
+      { id: 'gers_stroke', label: 'FAST Signs: Facial droop, arm weakness, slurred speech (पक्षाघात लक्षणे)', severity: 'HIGH' },
+      { id: 'gers_mi', label: 'Suspected Myocardial Infarction / Radiating chest pain (हृदयविकार झटका)', severity: 'HIGH' },
+      { id: 'gers_rbs', label: 'Extreme Blood Glucose (< 55 or > 350 mg/dL) (अनियंत्रित साखर)', severity: 'HIGH' },
+      { id: 'gers_hypoxia', label: 'Chronic Hypoxemia (SpO₂ < 90% at rest) (ऑक्सिजन कमतरता)', severity: 'HIGH' }
+    ]
+  },
+  ADULT: {
+    id: 'ADULT',
+    label: 'Adult General OPD',
+    marathi: 'प्रौढ सामान्य आरोग्य तपासणी',
+    hindi: 'वयस्क सामान्य स्वास्थ्य जांच',
+    icon: '👤',
+    color: '#008080',
+    complaints: [
+      { id: 'fever', label: 'Fever (ताप)', icon: '🌡️' },
+      { id: 'cough', label: 'Cough / Cold (खोकला / सर्दी)', icon: '💨' },
+      { id: 'chest_pain', label: 'Chest Pain (छातीत दुखणे)', icon: '❤️' },
+      { id: 'breathlessness', label: 'Shortness of Breath (धाप लागणे)', icon: '🫁' },
+      { id: 'weakness', label: 'Severe Weakness / Fatigue (अशक्तपणा)', icon: '⚡' },
+      { id: 'headache', label: 'Severe Headache (डोकेदुखी)', icon: '🧠' },
+      { id: 'injury', label: 'Trauma / Injury / Fall (जखम / मार लागणे)', icon: '🩹' },
+      { id: 'abdominal', label: 'Abdominal Pain (पोटदुखी)', icon: '🩺' },
+      { id: 'vomiting', label: 'Vomiting / Nausea (उलट्या / मळमळ)', icon: '🤢' },
+      { id: 'diarrhea', label: 'Diarrhea / Loose Stools (जुलाब)', icon: '💧' }
+    ],
+    dangerSigns: [
+      { id: 'ds_breathing', label: 'Severe breathing difficulty, gasping, or stridor', severity: 'HIGH' },
+      { id: 'ds_chest', label: 'Crushing chest pain, pressure, or radiating pain to arm/jaw', severity: 'HIGH' },
+      { id: 'ds_consciousness', label: 'Altered consciousness, fainting, confusion, or unresponsiveness', severity: 'HIGH' },
+      { id: 'ds_bleeding', label: 'Severe active bleeding or uncontrolled hemorrhage', severity: 'HIGH' },
+      { id: 'ds_spo2', label: 'Low oxygen saturation (SpO₂ < 92%)', severity: 'HIGH' },
+      { id: 'ds_fever_stiff', label: 'Continuous high fever (> 103°F) with neck stiffness or seizure', severity: 'HIGH' }
+    ]
+  }
+};
 
-const DANGER_SIGNS_LIST = [
-  { id: 'ds_breathing', label: 'Severe breathing difficulty, gasping, or stridor', severity: 'HIGH' },
-  { id: 'ds_chest', label: 'Crushing chest pain, pressure, or radiating pain to arm/jaw', severity: 'HIGH' },
-  { id: 'ds_consciousness', label: 'Altered consciousness, fainting, confusion, or unresponsiveness', severity: 'HIGH' },
-  { id: 'ds_bleeding', label: 'Severe active bleeding or uncontrolled hemorrhage', severity: 'HIGH' },
-  { id: 'ds_spo2', label: 'Low oxygen saturation (SpO₂ < 94%)', severity: 'HIGH' },
-  { id: 'ds_fever_stiff', label: 'Continuous high fever (> 103°F) with neck stiffness or seizure', severity: 'HIGH' },
-  { id: 'ds_cyanosis', label: 'Cyanosis (blue lips/face) or cold clammy skin', severity: 'HIGH' },
-  { id: 'ds_dehydration', label: 'Severe dehydration (inability to drink/breastfeed, lethargy)', severity: 'HIGH' }
-];
-
-// ─── Deterministic Fallback ──────────────────────────────────────────────────
-function runDeterministicFallback({ symptoms, spo2, temp }) {
+// ─── Deterministic Protocol Fallback ─────────────────────────────────────────
+function runDeterministicFallback({ symptoms, spo2, temp, bp, pulse, dangerSigns = [] }) {
   const spo2Num = parseFloat(spo2);
   const tempNum = parseFloat(temp);
   const hasChestPain = symptoms.toLowerCase().includes('chest');
 
-  if ((spo2Num && spo2Num < 94) || hasChestPain) {
+  if (dangerSigns.length > 0 || (spo2Num && spo2Num < 92) || hasChestPain) {
     return {
       priority: 'HIGH',
-      priorityLabel: '🔴 RED — Immediate Emergency',
-      note: 'Clinical parameters indicate immediate hospital evaluation required.',
+      priorityLabel: '🔴 RED — Immediate Emergency Transfer',
+      note: 'Critical physiological danger markers detected. Immediate facility referral required.',
       recommendation: 'Emergency & Trauma',
       source: 'Protocol Rules Engine'
     };
   }
-  if ((tempNum && tempNum >= 101) || symptoms.toLowerCase().includes('breath')) {
+
+  if ((tempNum && tempNum >= 101) || symptoms.toLowerCase().includes('breath') || (spo2Num && spo2Num < 95)) {
     return {
       priority: 'ORANGE',
-      priorityLabel: '🟡 ORANGE — Urgent, Within 24 Hours',
+      priorityLabel: '🟡 ORANGE — Urgent Consultation (Within 24h)',
       note: 'Elevated physiological markers. Specialist consultation recommended within 24 hours.',
       recommendation: 'Specialist Consultation',
       source: 'Protocol Rules Engine'
     };
   }
+
   return {
     priority: 'GREEN',
-    priorityLabel: '🟢 GREEN — Routine, Within 7 Days',
-    note: 'Stable physiological indicators. Primary health center / routine follow-up appropriate.',
+    priorityLabel: '🟢 GREEN — Routine PHC Follow-up',
+    note: 'Stable vitals. Local advice and standard frontline follow-up appropriate.',
     recommendation: 'Primary Health Center',
     source: 'Protocol Rules Engine'
   };
 }
 
-async function runAITriage({ symptoms, bp, spo2, temp, pulse, dangerSigns = [], patientAge, patientGender, isDemoMode }) {
-  // If danger signs are actively flagged, prioritize emergency deterministically
+// ─── AI Triage Engine (Gemini / Groq / Rules) ────────────────────────────────
+async function runAITriage({
+  symptoms,
+  bp,
+  spo2,
+  temp,
+  pulse,
+  dangerSigns = [],
+  patientAge,
+  patientGender,
+  pathwayKey,
+  isDemoMode
+}) {
+  // If severe danger signs are present, bypass to high priority
   if (dangerSigns.length > 0) {
     return {
       priority: 'HIGH',
-      priorityLabel: '🔴 RED — Immediate Emergency',
-      note: `Critical danger signs identified (${dangerSigns.join(', ')}). Immediate hospital transfer recommended.`,
+      priorityLabel: '🔴 RED — Immediate Emergency Transfer',
+      note: `Critical danger signs flagged (${dangerSigns.join(', ')}). Immediate hospital transfer required.`,
       recommendation: 'Emergency & Trauma',
       source: 'Clinical Danger Screening Protocol'
     };
   }
 
-  // If in Demo Mode, bypass network backend
   if (isDemoMode) {
-    return runDeterministicFallback({ symptoms, bp, spo2, temp, pulse });
+    return runDeterministicFallback({ symptoms, spo2, temp, bp, pulse, dangerSigns });
   }
 
-  // 1. Attempt Backend Gemini Proxy Triage
+  // 1. Backend Gemini Proxy
   try {
     const response = await fetch('/api/triage', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         symptoms,
         bp,
@@ -103,89 +202,33 @@ async function runAITriage({ symptoms, bp, spo2, temp, pulse, dangerSigns = [], 
         pulse,
         dangerSigns,
         patientAge,
-        patientGender
+        patientGender,
+        pathway: pathwayKey
       })
     });
 
     if (response.ok) {
       const data = await response.json();
       const labels = {
-        RED: '🔴 RED — Immediate Emergency',
-        ORANGE: '🟡 ORANGE — Urgent, Within 24 Hours',
-        GREEN: '🟢 GREEN — Routine, Within 7 Days'
+        RED: '🔴 RED — Immediate Emergency Transfer',
+        ORANGE: '🟡 ORANGE — Urgent Consultation (Within 24h)',
+        GREEN: '🟢 GREEN — Routine PHC Follow-up'
       };
 
       return {
         priority: data.priority === 'RED' ? 'HIGH' : data.priority,
         priorityLabel: labels[data.priority] || labels.GREEN,
-        note: data.explanation || 'Stable vital parameters.',
+        note: data.explanation || 'Vital parameters recorded and assessed.',
         recommendation: data.priority === 'RED' ? 'Emergency & Trauma' : 'Specialist Consultation',
         source: 'Google Gemini 1.5 Triage Model'
       };
-    } else {
-      console.warn(`Backend triage API failed with status ${response.status}`);
     }
   } catch (err) {
-    console.warn('Backend Gemini triage failed:', err.message);
+    console.warn('Backend triage notice:', err.message);
   }
 
-  // 2. Fallback to client-side Groq Triage if Groq key exists
-  const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
-  if (GROQ_API_KEY) {
-    try {
-      const prompt = `
-You are an expert AI Triage assistant for a frontline rural health worker (ASHA) in India.
-Analyze the following patient encounter:
-Patient: ${patientAge || 'Adult'} yrs, ${patientGender || 'Beneficiary'}
-Symptoms: ${symptoms}
-Vitals: BP: ${bp || 'N/A'}, SpO2: ${spo2 || 'N/A'}%, Temp: ${temp || 'N/A'}F, Pulse: ${pulse || 'N/A'}bpm
-Danger Signs Flagged: ${dangerSigns.length > 0 ? dangerSigns.join(', ') : 'None'}
-
-Output EXACTLY AND ONLY a valid JSON object with the following schema:
-{
-  "priority": "RED" | "ORANGE" | "GREEN",
-  "note": "A clear, 2-sentence medical summary explaining the priority and recommendation."
-}
-`;
-
-      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${GROQ_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'llama3-8b-8192',
-          messages: [{ role: 'system', content: prompt }],
-          temperature: 0.1,
-          response_format: { type: "json_object" }
-        })
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        const parsed = JSON.parse(data.choices[0].message.content);
-        const labels = {
-          RED: '🔴 RED — Immediate Emergency',
-          ORANGE: '🟡 ORANGE — Urgent, Within 24 Hours',
-          GREEN: '🟢 GREEN — Routine, Within 7 Days'
-        };
-
-        return {
-          priority: parsed.priority === 'RED' ? 'HIGH' : parsed.priority,
-          priorityLabel: labels[parsed.priority] || labels.GREEN,
-          note: parsed.note,
-          recommendation: parsed.priority === 'RED' ? 'Emergency & Trauma' : 'Specialist Consultation',
-          source: 'Groq Llama-3 Triage Model (Client Fallback)'
-        };
-      }
-    } catch (err) {
-      console.warn('Client-side Groq fallback failed:', err.message);
-    }
-  }
-
-  // 3. Fallback to deterministic rules
-  return runDeterministicFallback({ symptoms, bp, spo2, temp, pulse });
+  // 2. Deterministic Rule fallback
+  return runDeterministicFallback({ symptoms, spo2, temp, bp, pulse, dangerSigns });
 }
 
 export default function EncounterWizard({
@@ -196,22 +239,39 @@ export default function EncounterWizard({
   isDemoMode = false,
   ashaProfile = null
 }) {
-  const [step, setStep] = useState(1); // 1: Complaints, 2: Vitals, 3: Danger Signs, 4: Triage
+  const patientAge = parseInt(patient.age_years || patient.age || 30, 10);
+  const patientGender = (patient.gender || '').toLowerCase();
+  const isFemale = patientGender === 'female' || patientGender === 'f';
+
+  // Automatically determine initial pathway based on demographics
+  const initialPathway = useMemo(() => {
+    if (patientAge <= 5) return 'PEDIATRIC';
+    if (isFemale && patientAge >= 12 && patientAge <= 50 && (patient.is_pregnant || patient.pregnancy_status === 'pregnant')) {
+      return 'MATERNAL';
+    }
+    if (patientAge >= 55) return 'GERIATRIC';
+    return 'ADULT';
+  }, [patientAge, isFemale, patient.is_pregnant, patient.pregnancy_status]);
+
+  const [activePathwayKey, setActivePathwayKey] = useState(initialPathway);
+  const activePathway = SCREENING_PATHWAYS[activePathwayKey] || SCREENING_PATHWAYS.ADULT;
+
+  const [step, setStep] = useState(1); // 1: Complaints, 2: Vitals & Safety, 3: Danger Signs, 4: Result
 
   // Step 1: Complaints & Symptoms
   const [selectedComplaints, setSelectedComplaints] = useState([]);
   const [symptomNotes, setSymptomNotes] = useState('');
 
-  // Step 2: Vitals & History
+  // Step 2: Vitals
   const [temp, setTemp] = useState('');
   const [bp, setBp] = useState('');
   const [pulse, setPulse] = useState('');
   const [spo2, setSpo2] = useState('');
-  const [respRate, setRespRate] = useState('');
+  const [rbs, setRbs] = useState('');
+  const [muac, setMuac] = useState('');
   const [weight, setWeight] = useState('');
-  const [selectedHistory, setSelectedHistory] = useState(
-    (patient?.vitals?.conditions) || []
-  );
+  const [vitalsAssessment, setVitalsAssessment] = useState({ canProceed: true, hasDangerous: false, errors: [], warnings: [] });
+  const [dangerAckConfirmed, setDangerAckConfirmed] = useState(false);
 
   // Step 3: Danger Signs
   const [dangerSigns, setDangerSigns] = useState([]);
@@ -227,6 +287,12 @@ export default function EncounterWizard({
   const patientId = patient.unified_id || patient.id;
   const patientName = patient.full_name || patient.name || 'Beneficiary';
 
+  // Real-time vitals validation assessment
+  const handleVitalsChange = (updater) => {
+    updater();
+    // Vitals assessment is triggered in handleProceedFromVitals
+  };
+
   const toggleComplaint = (id) => {
     setSelectedComplaints((prev) =>
       prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]
@@ -239,10 +305,33 @@ export default function EncounterWizard({
     );
   };
 
-  const toggleHistory = (item) => {
-    setSelectedHistory((prev) =>
-      prev.includes(item) ? prev.filter((h) => h !== item) : [...prev, item]
-    );
+  // Vitals Safety Check on Step 2 Next
+  const handleProceedFromVitals = (forceDangerousPass = false) => {
+    setError('');
+    const assessment = assessVitalsPayload({
+      bloodPressure: bp,
+      oxygenSaturation: spo2,
+      heartRate: pulse,
+      bloodGlucose: rbs,
+      temperature: temp
+    });
+
+    setVitalsAssessment(assessment);
+
+    // If impossible values entered -> block and show error
+    if (!assessment.canProceed) {
+      setError(assessment.errors[0] || 'Invalid vital measurement entered.');
+      return;
+    }
+
+    // If dangerous values detected and user hasn't explicitly clicked Continue -> show danger alert box
+    if (assessment.hasDangerous && !forceDangerousPass && !dangerAckConfirmed) {
+      // Stay on step 2 and show the High-Risk Danger Alert box
+      return;
+    }
+
+    // Advance to Step 3
+    setStep(3);
   };
 
   // Run Triage Analysis
@@ -251,21 +340,28 @@ export default function EncounterWizard({
     setError('');
     try {
       const compiledSymptoms = [
-        ...selectedComplaints.map((c) => COMMON_COMPLAINTS.find((x) => x.id === c)?.label || c),
+        ...selectedComplaints.map((c) => activePathway.complaints.find((x) => x.id === c)?.label || c),
         symptomNotes.trim()
       ].filter(Boolean).join(', ');
 
       const result = await runAITriage({
-        symptoms: compiledSymptoms || 'General checkup',
+        symptoms: compiledSymptoms || 'General health evaluation',
         bp,
         spo2,
         temp,
         pulse,
         dangerSigns,
-        patientAge: patient.age,
-        patientGender: patient.gender,
+        patientAge,
+        patientGender,
+        pathwayKey: activePathwayKey,
         isDemoMode
       });
+
+      // If dangerous vitals were confirmed, ensure priority is at least HIGH
+      if (vitalsAssessment.hasDangerous) {
+        result.priority = 'HIGH';
+        result.priorityLabel = '🔴 RED — Immediate Emergency Transfer';
+      }
 
       setTriageResult(result);
       setStep(4);
@@ -277,77 +373,88 @@ export default function EncounterWizard({
     }
   };
 
-  // Complete with Local Advice (No Referral)
+  // Save Local Advice & Home Care
   const handleSaveLocalAdvice = async () => {
     setIsSubmitting(true);
     try {
       const compiledSymptoms = [
-        ...selectedComplaints.map((c) => COMMON_COMPLAINTS.find((x) => x.id === c)?.label || c),
+        ...selectedComplaints.map((c) => activePathway.complaints.find((x) => x.id === c)?.label || c),
         symptomNotes.trim()
       ].filter(Boolean);
 
       let followUpDateStr = null;
       if (localFollowUpDays && localFollowUpDays !== 'none') {
         const d = new Date();
-        d.setDate(d.getDate() + parseInt(localFollowUpDays));
+        d.setDate(d.getDate() + parseInt(localFollowUpDays, 10));
         followUpDateStr = d.toISOString().slice(0, 10);
       }
 
       const encounter = await createEncounter({
         patient,
-        complaint: compiledSymptoms[0] || 'Health Checkup',
+        complaint: compiledSymptoms[0] || 'Routine Health Visit',
         symptoms: compiledSymptoms,
-        symptomNotes: `${symptomNotes}. Local Advice: ${localAdviceNotes}`,
-        vitals: { bp, pulse, spo2, temp, respRate, weight },
-        relevantHistory: selectedHistory,
+        symptomNotes: `${symptomNotes}. Advice: ${localAdviceNotes}`,
+        vitals: { temp, bp, pulse, spo2, rbs, weight, muac },
         dangerSigns,
-        priority: triageResult?.priority || 'LOW',
-        priorityLabel: triageResult?.priorityLabel || 'Routine',
-        aiNote: triageResult?.note || '',
-        actionType: 'LOCAL_ADVICE',
+        priority: triageResult?.priority || 'GREEN',
+        aiExplanation: triageResult?.note || 'Routine frontline consultation.',
+        outcome: 'ADVICE_GIVEN',
         followUpDate: followUpDateStr,
-        followUpReason: localAdviceNotes ? `Review: ${localAdviceNotes.slice(0, 50)}` : 'Follow-up health review',
-        referralData: null,
-        ashaWorkerId: ashaProfile?.id || null,
-        ashaWorkerName: ashaProfile?.name || ashaProfile?.worker_id || 'ASHA Worker',
+        ashaId: ashaProfile?.id,
         isDemoMode
       });
 
-      onEncounterCompleted(encounter);
+      if (onEncounterCompleted) onEncounterCompleted(encounter);
     } catch (err) {
-      console.error('Failed to save encounter:', err);
-      setError(`Error saving encounter: ${err.message}`);
+      console.error(err);
+      setError(`Failed to save encounter: ${err.message}`);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // Trigger Referral Flow
-  const handleTriggerReferral = () => {
-    const compiledSymptoms = [
-      ...selectedComplaints.map((c) => COMMON_COMPLAINTS.find((x) => x.id === c)?.label || c),
-      symptomNotes.trim()
-    ].filter(Boolean);
+  // Transfer to Referral Creation Flow
+  const handleCreateReferralFromEncounter = async () => {
+    setIsSubmitting(true);
+    try {
+      const compiledSymptoms = [
+        ...selectedComplaints.map((c) => activePathway.complaints.find((x) => x.id === c)?.label || c),
+        symptomNotes.trim()
+      ].filter(Boolean);
 
-    onRequestReferral({
-      patient,
-      complaint: compiledSymptoms[0] || 'Care Referral',
-      symptoms: compiledSymptoms.join(', '),
-      symptomNotes,
-      vitals: { bp, pulse, spo2, temp, respRate, weight },
-      relevantHistory: selectedHistory,
-      dangerSigns,
-      triageResult
-    });
+      const encounter = await createEncounter({
+        patient,
+        complaint: compiledSymptoms[0] || 'Care Referral',
+        symptoms: compiledSymptoms,
+        symptomNotes: `${symptomNotes}. Triage Note: ${triageResult?.note || ''}`,
+        vitals: { temp, bp, pulse, spo2, rbs, weight, muac },
+        dangerSigns,
+        priority: triageResult?.priority || 'HIGH',
+        aiExplanation: triageResult?.note || 'Immediate medical evaluation required.',
+        outcome: 'REFERRAL_CREATED',
+        ashaId: ashaProfile?.id,
+        isDemoMode
+      });
+
+      if (onRequestReferral) {
+        onRequestReferral(encounter);
+      }
+    } catch (err) {
+      console.error(err);
+      setError(`Failed to prepare referral: ${err.message}`);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">
-      {/* ── Active Patient Encounter Header ── */}
-      <div className="bg-[#008080] text-white rounded-3xl p-5 shadow-md flex flex-wrap items-center justify-between gap-3">
+    <div className="space-y-6 max-w-2xl mx-auto py-2">
+      
+      {/* ── TOP BENEFICIARY IDENTITY STRIP ── */}
+      <div className="bg-[#008080] text-white p-4 sm:p-5 rounded-3xl shadow-sm flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="w-11 h-11 bg-white/15 rounded-2xl flex items-center justify-center font-black text-xl shrink-0">
-            {patientName.charAt(0)}
+          <div className="w-12 h-12 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center text-xl font-black shrink-0">
+            {activePathway.icon}
           </div>
           <div>
             <div className="flex items-center gap-2 flex-wrap">
@@ -355,10 +462,12 @@ export default function EncounterWizard({
               <span className="font-mono text-xs bg-white/20 px-2 py-0.5 rounded font-bold">
                 {patientId}
               </span>
-              {patient.age && <span className="text-xs text-white/90">{patient.age} yrs</span>}
+              <span className="text-xs text-white/90 font-medium">
+                {patientAge} yrs · {patient.gender || 'Beneficiary'}
+              </span>
             </div>
             <p className="text-xs text-white/80 mt-0.5">
-              Active Encounter · Frontline Care Intake
+              Active Screening: <strong className="text-white">{activePathway.label}</strong> ({activePathway.marathi})
             </p>
           </div>
         </div>
@@ -366,19 +475,86 @@ export default function EncounterWizard({
         <button
           type="button"
           onClick={onCancel}
-          className="px-3.5 py-1.5 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-xl transition-colors"
+          className="px-3.5 py-1.5 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-xl transition-colors cursor-pointer"
         >
-          Cancel Encounter
+          Cancel
         </button>
       </div>
 
-      {/* ── Step Progress Indicator ── */}
+      {/* ── DEMOGRAPHIC PATHWAY SWITCHER (Demographically Filtered) ── */}
+      <div className="bg-white border-2 border-slate-200 rounded-2xl p-2.5 shadow-2xs">
+        <div className="flex items-center justify-between gap-1 overflow-x-auto">
+          {/* Pediatric Tab: Shown only for age <= 12 */}
+          {patientAge <= 12 && (
+            <button
+              type="button"
+              onClick={() => { setActivePathwayKey('PEDIATRIC'); setSelectedComplaints([]); }}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shrink-0 ${
+                activePathwayKey === 'PEDIATRIC'
+                  ? 'bg-[#008F83] text-white shadow-xs'
+                  : 'bg-slate-50 hover:bg-slate-100 text-slate-600'
+              }`}
+            >
+              <span>👶</span>
+              <span>Child Under 5 (बालक)</span>
+            </button>
+          )}
+
+          {/* Maternal ANC Tab: Strictly shown ONLY for Female 12-50 */}
+          {isFemale && patientAge >= 12 && patientAge <= 50 && (
+            <button
+              type="button"
+              onClick={() => { setActivePathwayKey('MATERNAL'); setSelectedComplaints([]); }}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shrink-0 ${
+                activePathwayKey === 'MATERNAL'
+                  ? 'bg-[#D97706] text-white shadow-xs'
+                  : 'bg-slate-50 hover:bg-slate-100 text-slate-600'
+              }`}
+            >
+              <span>🤰</span>
+              <span>Maternal ANC (गर्भारपण)</span>
+            </button>
+          )}
+
+          {/* Geriatric Tab: Shown for 50+ */}
+          {patientAge >= 50 && (
+            <button
+              type="button"
+              onClick={() => { setActivePathwayKey('GERIATRIC'); setSelectedComplaints([]); }}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shrink-0 ${
+                activePathwayKey === 'GERIATRIC'
+                  ? 'bg-[#800000] text-white shadow-xs'
+                  : 'bg-slate-50 hover:bg-slate-100 text-slate-600'
+              }`}
+            >
+              <span>👴</span>
+              <span>Geriatric / NCD (ज्येष्ठ नागरिक)</span>
+            </button>
+          )}
+
+          {/* Adult General Tab */}
+          <button
+            type="button"
+            onClick={() => { setActivePathwayKey('ADULT'); setSelectedComplaints([]); }}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shrink-0 ${
+              activePathwayKey === 'ADULT'
+                ? 'bg-[#008080] text-white shadow-xs'
+                : 'bg-slate-50 hover:bg-slate-100 text-slate-600'
+            }`}
+          >
+            <span>👤</span>
+            <span>General OPD (सामान्य)</span>
+          </button>
+        </div>
+      </div>
+
+      {/* ── STEP PROGRESS INDICATOR ── */}
       <div className="grid grid-cols-4 gap-2">
         {[
-          { num: 1, label: '1 Complaint' },
+          { num: 1, label: '1 Symptoms' },
           { num: 2, label: '2 Vitals' },
-          { num: 3, label: '3 Danger signs' },
-          { num: 4, label: '4 Result' },
+          { num: 3, label: '3 Danger Signs' },
+          { num: 4, label: '4 Triage Result' },
         ].map(({ num, label }) => {
           const isActive = step === num;
           const isDone = step > num;
@@ -410,39 +586,47 @@ export default function EncounterWizard({
         })}
       </div>
 
+      {/* Global Error Banner */}
       {error && (
-        <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-xs text-rose-700 font-medium flex items-center gap-2">
+        <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-xs text-rose-700 font-bold flex items-center gap-2 animate-in fade-in duration-150">
           <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
           <span>{error}</span>
         </div>
       )}
 
-      {/* ── STEP 1: Presenting Complaints & Symptoms ── */}
+      {/* ── STEP 1: PRESENTING COMPLAINTS & SYMPTOMS ── */}
       {step === 1 && (
         <div className="bg-white border-2 border-slate-200 rounded-3xl p-6 shadow-xs space-y-5 animate-in fade-in duration-150">
           <div>
-            <h2 className="text-base font-extrabold text-[#212121]">1. Presenting Complaints & Symptoms</h2>
-            <p className="text-xs text-slate-500 mt-0.5">Select common symptoms reported by the patient or enter specific details.</p>
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-black text-slate-900">
+                1. {activePathway.label} Symptoms (लक्षणे)
+              </h2>
+              <span className="text-[10px] font-bold text-slate-500">Step 1 of 4</span>
+            </div>
+            <p className="text-xs text-slate-500 mt-0.5 font-medium">
+              Select all presenting complaints reported by the patient or family.
+            </p>
           </div>
 
-          {/* Quick-select Symptom Chips */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-            {COMMON_COMPLAINTS.map(({ id, label, icon }) => {
+          {/* Quick-select Demographic Symptom Chips */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            {activePathway.complaints.map(({ id, label, icon }) => {
               const isSelected = selectedComplaints.includes(id);
               return (
                 <button
                   key={id}
                   type="button"
                   onClick={() => toggleComplaint(id)}
-                  className={`p-3 rounded-2xl text-left font-bold text-xs flex items-center gap-2.5 transition-all border-2 ${
+                  className={`p-3 rounded-2xl text-left font-bold text-xs flex items-center gap-2.5 transition-all border-2 cursor-pointer ${
                     isSelected
                       ? 'bg-[#FFF5EB] border-[#FF9933] text-[#b35900] shadow-xs'
                       : 'bg-slate-50 border-slate-200 hover:border-slate-300 text-slate-700'
                   }`}
                 >
                   <span className="text-lg">{icon}</span>
-                  <span className="truncate">{label}</span>
-                  {isSelected && <span className="ml-auto text-xs font-black">✓</span>}
+                  <span className="truncate flex-1">{label}</span>
+                  {isSelected && <span className="text-xs font-black text-[#b35900]">✓</span>}
                 </button>
               );
             })}
@@ -451,13 +635,13 @@ export default function EncounterWizard({
           {/* Detailed Symptom Notes */}
           <div>
             <label className="text-xs font-bold text-slate-700 uppercase tracking-wide block mb-1.5">
-              Specific Clinical Notes / Onset Duration
+              Specific Clinical Notes / Onset Duration (विशिष्ट नोंदी)
             </label>
             <textarea
               rows={3}
               value={symptomNotes}
               onChange={(e) => setSymptomNotes(e.target.value)}
-              placeholder="e.g. Cough with fever for 3 days, mild exertion breathlessness since morning..."
+              placeholder="e.g. Cough with fever for 3 days, breathing difficulty since morning..."
               className="w-full p-3.5 bg-slate-50 border-2 border-slate-200 focus:border-[#008080] focus:bg-white rounded-2xl text-xs font-medium outline-none transition-colors"
             />
           </div>
@@ -467,37 +651,82 @@ export default function EncounterWizard({
               type="button"
               onClick={() => {
                 if (selectedComplaints.length === 0 && !symptomNotes.trim()) {
-                  setError('Please select or describe at least one presenting complaint.');
+                  setError('Please select or describe at least one presenting symptom.');
                   return;
                 }
                 setError('');
                 setStep(2);
               }}
-              className="px-6 py-2.5 bg-[#008080] hover:bg-[#006666] text-white text-xs font-extrabold rounded-xl transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
+              className="px-6 py-2.5 bg-[#008080] hover:bg-[#006666] text-white text-xs font-black rounded-xl transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
             >
-              Continue to Vitals →
+              <span>Continue to Vitals →</span>
             </button>
           </div>
         </div>
       )}
 
-      {/* ── STEP 2: Vitals & Relevant History ── */}
+      {/* ── STEP 2: VITALS & PHYSIOLOGICAL SAFETY ENGINE ── */}
       {step === 2 && (
         <div className="bg-white border-2 border-slate-200 rounded-3xl p-6 shadow-xs space-y-5 animate-in fade-in duration-150">
           <div>
-            <h2 className="text-base font-extrabold text-[#212121]">2. Physiological Vitals & History</h2>
-            <p className="text-xs text-slate-500 mt-0.5">Record vital parameters measured during this checkup.</p>
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-black text-slate-900">
+                2. Physiological Vitals & Safety Validation (शारीरिक मोजमाप)
+              </h2>
+              <span className="text-[10px] font-bold text-slate-500">Step 2 of 4</span>
+            </div>
+            <p className="text-xs text-slate-500 mt-0.5 font-medium">
+              Record physiological readings. The safety engine verifies valid ranges in real-time.
+            </p>
           </div>
 
           {/* Vitals Input Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+            
+            {/* Blood Pressure */}
             <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-1.5">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-slate-700 uppercase tracking-wide flex items-center gap-1">
-                  <Thermometer className="w-3.5 h-3.5 text-[#FF9933]" />
-                  Temperature (°F)
+                <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                  <Heart className="w-3.5 h-3.5 text-rose-600" />
+                  <span>Blood Pressure (रक्तदाब)</span>
                 </label>
-                <span className="text-[10px] text-slate-400 font-medium">97.8 - 99.1 °F</span>
+                <span className="text-[10px] text-slate-400 font-mono">120/80</span>
+              </div>
+              <input
+                type="text"
+                placeholder="e.g. 120/80"
+                value={bp}
+                onChange={(e) => setBp(e.target.value)}
+                className="w-full px-3 py-2 bg-white border-2 border-slate-200 focus:border-[#008080] rounded-xl text-sm font-bold text-slate-900 outline-none"
+              />
+            </div>
+
+            {/* SpO2 */}
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                  <Wind className="w-3.5 h-3.5 text-sky-600" />
+                  <span>SpO₂ % (ऑक्सिजन)</span>
+                </label>
+                <span className="text-[10px] text-slate-400 font-mono">95–100%</span>
+              </div>
+              <input
+                type="number"
+                placeholder="e.g. 98"
+                value={spo2}
+                onChange={(e) => setSpo2(e.target.value)}
+                className="w-full px-3 py-2 bg-white border-2 border-slate-200 focus:border-[#008080] rounded-xl text-sm font-bold text-slate-900 outline-none"
+              />
+            </div>
+
+            {/* Temperature */}
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                  <Thermometer className="w-3.5 h-3.5 text-[#FF9933]" />
+                  <span>Temp °F (तापमान)</span>
+                </label>
+                <span className="text-[10px] text-slate-400 font-mono">98.6°F</span>
               </div>
               <input
                 type="number"
@@ -505,344 +734,350 @@ export default function EncounterWizard({
                 placeholder="e.g. 98.6"
                 value={temp}
                 onChange={(e) => setTemp(e.target.value)}
-                className="w-full px-3 py-2 bg-white border-2 border-slate-200 focus:border-[#008080] rounded-xl text-sm font-bold text-[#212121] outline-none"
+                className="w-full px-3 py-2 bg-white border-2 border-slate-200 focus:border-[#008080] rounded-xl text-sm font-bold text-slate-900 outline-none"
               />
             </div>
 
+            {/* Pulse */}
             <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-1.5">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-slate-700 uppercase tracking-wide flex items-center gap-1">
-                  <Heart className="w-3.5 h-3.5 text-rose-600" />
-                  Blood Pressure
-                </label>
-                <span className="text-[10px] text-slate-400 font-medium">120/80 mmHg</span>
-              </div>
-              <input
-                type="text"
-                placeholder="e.g. 120/80"
-                value={bp}
-                onChange={(e) => setBp(e.target.value)}
-                className="w-full px-3 py-2 bg-white border-2 border-slate-200 focus:border-[#008080] rounded-xl text-sm font-bold text-[#212121] outline-none"
-              />
-            </div>
-
-            <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-1.5">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-slate-700 uppercase tracking-wide flex items-center gap-1">
+                <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
                   <Activity className="w-3.5 h-3.5 text-rose-700" />
-                  Pulse (bpm)
+                  <span>Pulse bpm (नाडीचे ठोके)</span>
                 </label>
-                <span className="text-[10px] text-slate-400 font-medium">60 - 100 bpm</span>
+                <span className="text-[10px] text-slate-400 font-mono">60–100</span>
               </div>
               <input
                 type="number"
                 placeholder="e.g. 72"
                 value={pulse}
                 onChange={(e) => setPulse(e.target.value)}
-                className="w-full px-3 py-2 bg-white border-2 border-slate-200 focus:border-[#008080] rounded-xl text-sm font-bold text-[#212121] outline-none"
+                className="w-full px-3 py-2 bg-white border-2 border-slate-200 focus:border-[#008080] rounded-xl text-sm font-bold text-slate-900 outline-none"
               />
             </div>
 
+            {/* Blood Glucose (RBS) */}
             <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-1.5">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-slate-700 uppercase tracking-wide flex items-center gap-1">
-                  <Wind className="w-3.5 h-3.5 text-sky-600" />
-                  SpO₂ (%)
+                <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                  <Droplet className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Blood Sugar mg/dL (साखर)</span>
                 </label>
-                <span className="text-[10px] text-slate-400 font-medium">95 - 100%</span>
+                <span className="text-[10px] text-slate-400 font-mono">70–140</span>
               </div>
               <input
                 type="number"
-                min="50"
-                max="100"
-                placeholder="e.g. 98"
-                value={spo2}
-                onChange={(e) => setSpo2(e.target.value)}
-                className="w-full px-3 py-2 bg-white border-2 border-slate-200 focus:border-[#008080] rounded-xl text-sm font-bold text-[#212121] outline-none"
+                placeholder="e.g. 110"
+                value={rbs}
+                onChange={(e) => setRbs(e.target.value)}
+                className="w-full px-3 py-2 bg-white border-2 border-slate-200 focus:border-[#008080] rounded-xl text-sm font-bold text-slate-900 outline-none"
               />
             </div>
 
-            <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-1.5">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">
-                  Resp. Rate (/min)
-                </label>
-                <span className="text-[10px] text-slate-400 font-medium">12 - 20 /min</span>
+            {/* Pediatric MUAC or Adult Weight */}
+            {activePathwayKey === 'PEDIATRIC' ? (
+              <div className="p-3 bg-teal-50/50 border border-teal-200 rounded-2xl space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-teal-900 flex items-center gap-1">
+                    <Baby className="w-3.5 h-3.5 text-teal-700" />
+                    <span>MUAC cm (दंड घेर)</span>
+                  </label>
+                  <span className="text-[10px] text-teal-700 font-bold">&gt; 12.5 cm</span>
+                </div>
+                <input
+                  type="number"
+                  step="0.1"
+                  placeholder="e.g. 13.5"
+                  value={muac}
+                  onChange={(e) => setMuac(e.target.value)}
+                  className="w-full px-3 py-2 bg-white border-2 border-teal-300 focus:border-[#008080] rounded-xl text-sm font-bold text-slate-900 outline-none"
+                />
               </div>
-              <input
-                type="number"
-                placeholder="e.g. 18"
-                value={respRate}
-                onChange={(e) => setRespRate(e.target.value)}
-                className="w-full px-3 py-2 bg-white border-2 border-slate-200 focus:border-[#008080] rounded-xl text-sm font-bold text-[#212121] outline-none"
-              />
-            </div>
+            ) : (
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                    <UserCheck className="w-3.5 h-3.5 text-slate-600" />
+                    <span>Weight kg (वजन)</span>
+                  </label>
+                  <span className="text-[10px] text-slate-400 font-mono">kg</span>
+                </div>
+                <input
+                  type="number"
+                  step="0.1"
+                  placeholder="e.g. 58"
+                  value={weight}
+                  onChange={(e) => setWeight(e.target.value)}
+                  className="w-full px-3 py-2 bg-white border-2 border-slate-200 focus:border-[#008080] rounded-xl text-sm font-bold text-slate-900 outline-none"
+                />
+              </div>
+            )}
 
-            <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-1.5">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">
-                  Weight (kg)
-                </label>
-                <span className="text-[10px] text-slate-400 font-medium">Body mass</span>
-              </div>
-              <input
-                type="number"
-                step="0.5"
-                placeholder="e.g. 60"
-                value={weight}
-                onChange={(e) => setWeight(e.target.value)}
-                className="w-full px-3 py-2 bg-white border-2 border-slate-200 focus:border-[#008080] rounded-xl text-sm font-bold text-[#212121] outline-none"
-              />
-            </div>
           </div>
 
-          {/* Relevant Conditions Toggles */}
-          <div>
-            <label className="text-xs font-bold text-slate-700 uppercase tracking-wide block mb-1.5">
-              Confirmed Relevant History
-            </label>
-            <div className="flex flex-wrap gap-2">
-              {['Hypertension', 'Diabetes', 'Asthma', 'Heart Disease', 'Pregnancy', 'Tuberculosis'].map((cond) => {
-                const isSelected = selectedHistory.includes(cond);
-                return (
-                  <button
-                    key={cond}
-                    type="button"
-                    onClick={() => toggleHistory(cond)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${
-                      isSelected
-                        ? 'bg-[#008080] text-white border-[#008080] shadow-xs'
-                        : 'bg-slate-50 text-slate-700 border-slate-200'
-                    }`}
-                  >
-                    {isSelected && '✓ '}
-                    {cond}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+          {/* ── HIGH-RISK VITALS SAFETY ALERT BOX (Real Dangerous Readings) ── */}
+          {vitalsAssessment.hasDangerous && (
+            <div className="p-4 bg-amber-50 border-2 border-amber-300 rounded-2xl space-y-3 animate-in fade-in duration-200">
+              <div className="flex items-start gap-2.5">
+                <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="text-xs font-black text-amber-950 uppercase tracking-wide">
+                    ⚠️ High-Risk Physiological Reading Detected
+                  </h4>
+                  <ul className="mt-1 space-y-1 text-xs font-bold text-amber-900">
+                    {vitalsAssessment.warnings.map((w, idx) => (
+                      <li key={idx}>• {w}</li>
+                    ))}
+                  </ul>
+                  <p className="text-[11px] text-amber-800 mt-1.5 font-medium">
+                    This reading indicates acute clinical risk. If accurate, immediate priority referral is advised. If entered by mistake, click <strong>Recheck Reading</strong>.
+                  </p>
+                </div>
+              </div>
 
+              {/* Two Explicit Actions */}
+              <div className="flex flex-wrap items-center justify-end gap-2 pt-2 border-t border-amber-200">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDangerAckConfirmed(false);
+                    setVitalsAssessment({ canProceed: true, hasDangerous: false, errors: [], warnings: [] });
+                  }}
+                  className="px-4 py-2 bg-white hover:bg-slate-50 border border-amber-300 text-amber-900 text-xs font-black rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 text-amber-700" />
+                  <span>Recheck Reading (पुन्हा तपासा)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDangerAckConfirmed(true);
+                    handleProceedFromVitals(true);
+                  }}
+                  className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-black rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+                >
+                  <span>Continue to Referral → (रेफरल सुरू ठेवा)</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Navigation Buttons */}
           <div className="pt-2 flex items-center justify-between">
             <button
               type="button"
               onClick={() => setStep(1)}
-              className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl"
+              className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-900"
             >
               ← Back
             </button>
+
             <button
               type="button"
-              onClick={() => {
-                setError('');
-                setStep(3);
-              }}
-              className="px-6 py-2.5 bg-[#008080] hover:bg-[#006666] text-white text-xs font-extrabold rounded-xl transition-all shadow-md cursor-pointer"
+              onClick={() => handleProceedFromVitals(false)}
+              className="px-6 py-2.5 bg-[#008080] hover:bg-[#006666] text-white text-xs font-black rounded-xl transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
             >
-              Continue to Danger Signs Screening →
+              <span>Continue to Danger Signs →</span>
             </button>
           </div>
         </div>
       )}
 
-      {/* ── STEP 3: Danger Signs Screening ── */}
+      {/* ── STEP 3: DEMOGRAPHIC DANGER SIGNS ── */}
       {step === 3 && (
         <div className="bg-white border-2 border-slate-200 rounded-3xl p-6 shadow-xs space-y-5 animate-in fade-in duration-150">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-extrabold text-[#212121]">3. Red-Flag Danger Signs Screening</h2>
-              <p className="text-xs text-slate-500 mt-0.5">Check if ANY critical emergency danger signs are present.</p>
+          <div>
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-black text-slate-900">
+                3. Critical Danger Signs (धोक्याची लक्षणे)
+              </h2>
+              <span className="text-[10px] font-bold text-slate-500">Step 3 of 4</span>
             </div>
-            <span className="text-[11px] font-extrabold px-2.5 py-1 rounded-lg bg-rose-50 text-rose-700 border border-rose-200">
-              Emergency Protocol
-            </span>
+            <p className="text-xs text-slate-500 mt-0.5 font-medium">
+              Flag any red-flag emergency symptoms requiring immediate facility escalation.
+            </p>
           </div>
 
-          {/* Danger Signs Checklist */}
-          <div className="space-y-2.5">
-            {DANGER_SIGNS_LIST.map(({ id, label }) => {
+          {/* Danger Signs List */}
+          <div className="space-y-2">
+            {activePathway.dangerSigns.map(({ id, label }) => {
               const isChecked = dangerSigns.includes(label);
               return (
-                <div
+                <label
                   key={id}
-                  onClick={() => toggleDangerSign(label)}
-                  className={`p-3.5 rounded-2xl border-2 cursor-pointer transition-all flex items-center gap-3 ${
+                  className={`flex items-start gap-3 p-3.5 rounded-2xl border-2 cursor-pointer transition-all ${
                     isChecked
-                      ? 'bg-rose-50 border-rose-400 text-rose-900 shadow-xs'
-                      : 'bg-slate-50 border-slate-200 hover:border-slate-300 text-slate-700'
+                      ? 'bg-rose-50 border-rose-400 shadow-xs'
+                      : 'bg-slate-50 border-slate-200 hover:border-slate-300'
                   }`}
                 >
                   <input
                     type="checkbox"
                     checked={isChecked}
-                    onChange={() => {}} // Handled by div click
-                    className="w-4 h-4 accent-rose-600 rounded"
+                    onChange={() => toggleDangerSign(label)}
+                    className="mt-0.5 h-4 w-4 rounded text-rose-600 focus:ring-rose-500 border-slate-300 cursor-pointer"
                   />
-                  <span className="text-xs font-extrabold leading-snug">{label}</span>
-                </div>
+                  <div className="flex-1">
+                    <span className="text-xs font-bold text-slate-900">{label}</span>
+                  </div>
+                  <span className="text-[10px] font-black uppercase text-rose-700 bg-rose-100 px-2 py-0.5 rounded-full">
+                    RED FLAG
+                  </span>
+                </label>
               );
             })}
           </div>
-
-          {/* Emergency Alert Box if Danger Signs Checked */}
-          {dangerSigns.length > 0 && (
-            <div className="p-4 bg-rose-50 border-2 border-rose-400 rounded-2xl text-rose-900 space-y-1 animate-in zoom-in-95 duration-100">
-              <div className="flex items-center gap-2 font-black text-xs uppercase tracking-wider text-rose-700">
-                <ShieldAlert className="w-4 h-4 text-rose-600" />
-                Emergency Warning: {dangerSigns.length} Critical Danger Sign(s) Flagged
-              </div>
-              <p className="text-xs text-rose-800 font-medium">
-                National Health Mission protocol requires immediate escalation and specialist hospital referral for these symptoms.
-              </p>
-            </div>
-          )}
 
           <div className="pt-2 flex items-center justify-between">
             <button
               type="button"
               onClick={() => setStep(2)}
-              className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl"
+              className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-900"
             >
               ← Back
             </button>
+
             <button
               type="button"
               disabled={isAnalyzing}
               onClick={handleRunTriage}
-              className="px-6 py-3 bg-[#FF9933] hover:bg-[#e68a2e] text-slate-950 text-xs font-black rounded-xl transition-all shadow-md flex items-center gap-2 cursor-pointer"
+              className="px-6 py-2.5 bg-[#008080] hover:bg-[#006666] disabled:opacity-50 text-white text-xs font-black rounded-xl transition-all shadow-md flex items-center gap-2 cursor-pointer"
             >
-              {isAnalyzing ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin text-slate-950" />
-                  Running AI Triage Analysis…
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-4 h-4 text-slate-950" />
-                  Generate AI Triage Recommendation →
-                </>
-              )}
+              {isAnalyzing && <Loader2 className="w-4 h-4 animate-spin" />}
+              <span>{isAnalyzing ? 'Evaluating Triage...' : 'Generate AI Triage Result →'}</span>
             </button>
           </div>
         </div>
       )}
 
-      {/* ── STEP 4: Digital Triage Result & ASHA Decision Action ── */}
+      {/* ── STEP 4: TRIAGE RESULT & DECISION ── */}
       {step === 4 && triageResult && (
         <div className="bg-white border-2 border-slate-200 rounded-3xl p-6 shadow-xs space-y-6 animate-in fade-in duration-150">
           <div>
-            <h2 className="text-base font-extrabold text-[#212121]">4. Digital Triage Assessment & Decision</h2>
-            <p className="text-xs text-slate-500 mt-0.5">Review priority recommendation and select clinical care routing.</p>
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-black text-slate-900">
+                4. Clinical Assessment & Recommendation (निकाल)
+              </h2>
+              <span className="text-[10px] font-bold text-slate-500">Step 4 of 4</span>
+            </div>
+            <p className="text-xs text-slate-500 mt-0.5 font-medium">
+              Verified clinical outcome and next recommended action.
+            </p>
           </div>
 
-          {/* Priority Card */}
-          <div className={`p-5 rounded-3xl border-2 space-y-2.5 ${
-            triageResult.priority === 'HIGH'
-              ? 'bg-rose-50 border-rose-400 text-rose-950'
-              : triageResult.priority === 'ORANGE'
-              ? 'bg-amber-50 border-amber-400 text-amber-950'
-              : 'bg-emerald-50 border-emerald-400 text-emerald-950'
-          }`}>
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-extrabold uppercase tracking-wider">
-                Triage Priority Recommendation
+          {/* Triage Priority Banner */}
+          <div
+            className={`p-5 rounded-2xl border-2 space-y-2 ${
+              triageResult.priority === 'HIGH' || triageResult.priority === 'RED'
+                ? 'bg-rose-50 border-rose-300 text-rose-900'
+                : triageResult.priority === 'ORANGE'
+                ? 'bg-amber-50 border-amber-300 text-amber-900'
+                : 'bg-emerald-50 border-emerald-300 text-emerald-900'
+            }`}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-sm font-black uppercase tracking-wide">
+                {triageResult.priorityLabel}
               </span>
-              <span className="text-[11px] font-mono font-bold opacity-75">
+              <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-white/80 border">
                 {triageResult.source}
               </span>
             </div>
-
-            <div className="text-xl font-black flex items-center gap-2">
-              <span>{triageResult.priority === 'HIGH' ? '🔴 HIGH — Immediate Emergency' : triageResult.priority === 'ORANGE' ? '🟡 ORANGE — Urgent (Within 24h)' : '🟢 GREEN — Routine Care'}</span>
-            </div>
-
-            <p className="text-xs leading-relaxed font-medium">
-              {triageResult.note}
-            </p>
+            <p className="text-xs font-bold leading-relaxed">{triageResult.note}</p>
           </div>
 
-          {/* AI Decision Support Disclaimer */}
-          <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl flex items-start gap-2.5 text-xs text-slate-600">
-            <Info className="w-4 h-4 text-[#008080] shrink-0 mt-0.5" />
-            <p className="text-[11px] leading-relaxed text-slate-500">
-              <strong>Clinical Decision Support Notice:</strong> This AI priority recommendation assists frontline screening. The final clinical triage decision, hospital routing, and treatment advice remains the responsibility of the ASHA worker and qualified medical professionals.
-            </p>
-          </div>
-
-          {/* Local Care Advice input (if not referring immediately) */}
-          <div className="space-y-3">
-            <div>
-              <label className="text-xs font-bold text-slate-700 uppercase tracking-wide block mb-1">
-                ASHA Local Advice / Home Care Notes
-              </label>
-              <input
-                type="text"
-                value={localAdviceNotes}
-                onChange={(e) => setLocalAdviceNotes(e.target.value)}
-                placeholder="e.g. Advised hydration, ORS, paracetamol for mild fever, visit PHC if symptoms persist..."
-                className="w-full px-3.5 py-2.5 bg-slate-50 border-2 border-slate-200 focus:border-[#008080] focus:bg-white rounded-xl text-xs font-medium outline-none transition-colors"
-              />
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-bold text-slate-700 uppercase tracking-wide block mb-1">
-                  Schedule Frontline Follow-up
-                </label>
-                <select
-                  value={localFollowUpDays}
-                  onChange={(e) => setLocalFollowUpDays(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border-2 border-slate-200 focus:border-[#008080] rounded-xl text-xs font-bold outline-none"
-                >
-                  <option value="3">Within 3 Days (Check symptom resolution)</option>
-                  <option value="7">Within 7 Days (Standard checkup)</option>
-                  <option value="14">Within 14 Days (Chronic management)</option>
-                  <option value="none">No immediate follow-up needed</option>
-                </select>
+          {/* Action Choice: Local Advice vs Referral */}
+          {triageResult.priority === 'HIGH' || triageResult.priority === 'RED' ? (
+            <div className="space-y-3">
+              <div className="p-4 bg-rose-100/60 border border-rose-300 rounded-2xl text-xs text-rose-950 font-bold flex items-center gap-2.5">
+                <ShieldAlert className="w-5 h-5 text-rose-700 shrink-0" />
+                <span>
+                  High-risk parameters detected. Transfer to <strong>PHC / Hospital Specialist</strong> recommended immediately.
+                </span>
               </div>
 
-              {localFollowUpDays !== 'none' && (
-                <div>
-                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wide block mb-1">
-                    Target Follow-up Date
-                  </label>
-                  <div className="px-3.5 py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-700">
-                    {(() => {
-                      const d = new Date();
-                      d.setDate(d.getDate() + parseInt(localFollowUpDays || 7));
-                      return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
-                    })()}
-                  </div>
-                </div>
-              )}
+              <button
+                type="button"
+                disabled={isSubmitting}
+                onClick={handleCreateReferralFromEncounter}
+                className="w-full py-3.5 bg-rose-600 hover:bg-rose-700 text-white font-black text-xs uppercase tracking-wider rounded-2xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                {isSubmitting ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <>
+                    <Building2 className="w-4 h-4" />
+                    <span>Create Immediate Specialist Referral (रेफरल पाठवा) →</span>
+                  </>
+                )}
+              </button>
             </div>
-          </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
+                <h4 className="text-xs font-black uppercase text-slate-700 tracking-wide">
+                  Frontline Advice & Home Care Notes (मार्गदर्शन)
+                </h4>
+                <textarea
+                  rows={2}
+                  value={localAdviceNotes}
+                  onChange={(e) => setLocalAdviceNotes(e.target.value)}
+                  placeholder="e.g. Prescribed ORS + Paracetamol, instructed hydration, recheck in 3 days..."
+                  className="w-full p-3 bg-white border border-slate-200 focus:border-[#008080] rounded-xl text-xs font-medium outline-none"
+                />
 
-          {/* Decision Action Buttons */}
-          <div className="pt-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {/* Primary Action: Create Referral */}
+                <div className="flex items-center justify-between text-xs font-bold text-slate-700 pt-1">
+                  <span>Schedule Follow-up In:</span>
+                  <select
+                    value={localFollowUpDays}
+                    onChange={(e) => setLocalFollowUpDays(e.target.value)}
+                    className="p-1.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none"
+                  >
+                    <option value="3">3 Days (3 दिवस)</option>
+                    <option value="7">7 Days (7 दिवस)</option>
+                    <option value="14">14 Days (14 दिवस)</option>
+                    <option value="none">No follow-up needed</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                <button
+                  type="button"
+                  disabled={isSubmitting}
+                  onClick={handleSaveLocalAdvice}
+                  className="py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-wider rounded-2xl shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Complete & Record Advice</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={isSubmitting}
+                  onClick={handleCreateReferralFromEncounter}
+                  className="py-3 bg-[#008080] hover:bg-[#006666] text-white font-black text-xs uppercase tracking-wider rounded-2xl shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  <Building2 className="w-4 h-4" />
+                  <span>Send PHC Referral Instead →</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="pt-2 flex justify-start">
             <button
               type="button"
-              onClick={handleTriggerReferral}
-              className="p-4 bg-[#FF9933] hover:bg-[#e68a2e] text-slate-950 font-black text-xs rounded-2xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
+              onClick={() => setStep(3)}
+              className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-900"
             >
-              <Building2 className="w-4 h-4" />
-              <span>Create Specialist / Hospital Referral →</span>
-            </button>
-
-            {/* Secondary Action: Record Local Advice */}
-            <button
-              type="button"
-              disabled={isSubmitting}
-              onClick={handleSaveLocalAdvice}
-              className="p-4 bg-[#008080] hover:bg-[#006666] text-white font-black text-xs rounded-2xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <CheckCircle2 className="w-4 h-4" />
-              <span>{isSubmitting ? 'Saving Encounter…' : 'Record Local Advice & Complete'}</span>
+              ← Back to Danger Signs
             </button>
           </div>
         </div>
       )}
+
     </div>
   );
 }

@@ -240,6 +240,12 @@ export default function PatientContextView({
             </span>
           )}
 
+          {(patient.household_id || metadataVitals.household_id) && (
+            <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-lg bg-teal-50 text-teal-800 border border-teal-200">
+              🏠 Household: <strong>{patient.household_id || metadataVitals.household_id}</strong> ({patient.relation_to_head || metadataVitals.relation_to_head || 'Member'})
+            </span>
+          )}
+
           {conditions.map((cond, idx) => (
             <span
               key={idx}

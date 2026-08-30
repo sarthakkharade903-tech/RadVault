@@ -246,6 +246,50 @@ export function validateBloodGlucose(val) {
 }
 
 /**
+ * Validate Body Temperature (°F)
+ */
+export function validateTemperature(val) {
+  if (val === undefined || val === null || val === '') {
+    return { isValid: true, status: 'EMPTY', message: null };
+  }
+
+  const num = parseFloat(val);
+  if (isNaN(num)) {
+    return { isValid: false, status: 'IMPOSSIBLE', message: 'Temperature must be numeric.' };
+  }
+
+  if (num < VITALS_THRESHOLDS.TEMPERATURE.minPossible || num > VITALS_THRESHOLDS.TEMPERATURE.maxPossible) {
+    return {
+      isValid: false,
+      status: 'IMPOSSIBLE',
+      message: `Temperature (${num}°F) is outside human survival limits (85–112°F). Recheck thermometer.`
+    };
+  }
+
+  if (num >= VITALS_THRESHOLDS.TEMPERATURE.dangerousHigh) {
+    return {
+      isValid: true,
+      status: 'DANGEROUS',
+      isDangerous: true,
+      value: num,
+      message: `High Fever (${num}°F): High febrile risk. Cooling & urgent antipyretic evaluation needed.`
+    };
+  }
+
+  if (num <= VITALS_THRESHOLDS.TEMPERATURE.dangerousLow) {
+    return {
+      isValid: true,
+      status: 'DANGEROUS',
+      isDangerous: true,
+      value: num,
+      message: `Hypothermia (${num}°F): Keep patient warm immediately.`
+    };
+  }
+
+  return { isValid: true, status: 'NORMAL', isDangerous: false, value: num, message: null };
+}
+
+/**
  * Full Vitals Payload Assessment
  */
 export function assessVitalsPayload(vitals) {
@@ -254,8 +298,8 @@ export function assessVitalsPayload(vitals) {
   const errors = [];
   const warnings = [];
 
-  if (vitals.bloodPressure) {
-    const bpRes = validateBloodPressure(vitals.bloodPressure);
+  if (vitals.bloodPressure || vitals.bp) {
+    const bpRes = validateBloodPressure(vitals.bloodPressure || vitals.bp);
     if (!bpRes.isValid) errors.push(bpRes.message);
     else if (bpRes.isDangerous) warnings.push(bpRes.message);
   }
@@ -270,6 +314,12 @@ export function assessVitalsPayload(vitals) {
     const hrRes = validateHeartRate(vitals.heartRate || vitals.pulse);
     if (!hrRes.isValid) errors.push(hrRes.message);
     else if (hrRes.isDangerous) warnings.push(hrRes.message);
+  }
+
+  if (vitals.temperature || vitals.temp) {
+    const tempRes = validateTemperature(vitals.temperature || vitals.temp);
+    if (!tempRes.isValid) errors.push(tempRes.message);
+    else if (tempRes.isDangerous) warnings.push(tempRes.message);
   }
 
   if (vitals.bloodGlucose || vitals.rbs) {

@@ -7,6 +7,7 @@ export default function AshaPatientsView({
   encounters = [],
   onSelectPatient,
   onOpenRegister,
+  onOpenSurvey,
   initialVillageFilter = 'ALL'
 }) {
   const [searchQuery, setSearchQuery] = useState('');
@@ -77,14 +78,24 @@ export default function AshaPatientsView({
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => onOpenRegister(searchQuery)}
-          className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-[#FF9933] hover:bg-[#e68a2e] text-slate-950 font-black text-xs rounded-xl transition-all shadow-xs cursor-pointer shrink-0"
-        >
-          <UserPlus className="w-4 h-4" />
-          <span>+ Register New Patient</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onOpenSurvey}
+            className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 bg-teal-50 hover:bg-teal-100 text-[#006666] border border-[#008080]/30 font-black text-xs rounded-xl transition-all shadow-2xs cursor-pointer shrink-0"
+          >
+            <span>📋 Conduct Village Survey</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onOpenRegister(searchQuery)}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-[#FF9933] hover:bg-[#e68a2e] text-slate-950 font-black text-xs rounded-xl transition-all shadow-xs cursor-pointer shrink-0"
+          >
+            <UserPlus className="w-4 h-4" />
+            <span>+ Register Patient</span>
+          </button>
+        </div>
       </div>
 
       {/* ── Search & Filter Controls ── */}

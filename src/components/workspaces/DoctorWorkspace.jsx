@@ -215,7 +215,8 @@ export default function DoctorWorkspace({ onNavigateToPatientView: _onNavigateTo
       treatmentAdvice,
       prescriptions,
       investigations,
-      followUpDate
+      followUpDate,
+      consultationMode
     };
     localStorage.setItem(getDraftKey(activeCase.id), JSON.stringify(draftData));
     showToast('✓ Draft saved locally. Changes will persist across page refreshes.');
@@ -232,6 +233,7 @@ export default function DoctorWorkspace({ onNavigateToPatientView: _onNavigateTo
         setPrescriptions(parsed.prescriptions || []);
         setInvestigations(parsed.investigations || []);
         setFollowUpDate(parsed.followUpDate || '');
+        setConsultationMode(parsed.consultationMode || 'TELECONSULTATION');
       } catch (e) {
         console.warn('Unable to load consultation draft:', e);
       }
@@ -243,6 +245,7 @@ export default function DoctorWorkspace({ onNavigateToPatientView: _onNavigateTo
       setPrescriptions([]);
       setInvestigations([]);
       setFollowUpDate('');
+      setConsultationMode('TELECONSULTATION');
     }
   };
 
@@ -408,6 +411,12 @@ export default function DoctorWorkspace({ onNavigateToPatientView: _onNavigateTo
   const handleSignConsultation = async () => {
     if (!activeCase || !doctorProfile) return;
 
+    const modeTag = consultationMode === 'TELECONSULTATION' ? '[Teleconsultation Signed]' : '[Hospital Visit Required]';
+    const rxSummary = prescriptions.length > 0
+      ? `Rx: ${prescriptions.map(p => `${p.name} (${p.dose})`).join(', ')}`
+      : 'No Rx prescribed';
+    const formattedFollowUpReason = `${modeTag} Diagnosis: ${diagnosis || 'Consultation complete'}. Advice: ${treatmentAdvice || 'Review follow-up'}. ${rxSummary}`;
+
     if (isDemoMode) {
       // 1. Update in-memory referrals
       setReferrals(prev => prev.map(r => r.id === activeCase.id ? { ...r, status: 'Completed' } : r));
@@ -423,8 +432,8 @@ export default function DoctorWorkspace({ onNavigateToPatientView: _onNavigateTo
                 ...e,
                 followUpDate: followUpDate || e.followUpDate,
                 follow_up_date: followUpDate || e.follow_up_date,
-                followUpReason: `Diagnosis: ${diagnosis}. Advice: ${treatmentAdvice}`,
-                follow_up_reason: `Diagnosis: ${diagnosis}. Advice: ${treatmentAdvice}`,
+                followUpReason: formattedFollowUpReason,
+                follow_up_reason: formattedFollowUpReason,
                 followUpCompleted: false,
                 follow_up_completed: false
               };
@@ -439,7 +448,7 @@ export default function DoctorWorkspace({ onNavigateToPatientView: _onNavigateTo
 
       // Clean up local draft
       localStorage.removeItem(getDraftKey(activeCase.id));
-      showToast('✓ Consultation signed. ASHA follow-up updated.');
+      showToast(`✓ Consultation signed (${consultationMode === 'TELECONSULTATION' ? 'Teleconsultation' : 'In-Person'}). ASHA follow-up updated.`);
       handleCloseCase();
       return;
     }
@@ -451,7 +460,7 @@ export default function DoctorWorkspace({ onNavigateToPatientView: _onNavigateTo
         patient_id: activeCase.patient_id, // UUID type match
         doctor_id: doctorProfile.id,
         facility_id: doctorProfile.facility_id,
-        clinical_assessment: clinicalAssessment,
+        clinical_assessment: `[${consultationMode === 'TELECONSULTATION' ? 'REMOTE TELECONSULTATION' : 'IN-PERSON VISIT'}] ${clinicalAssessment}`,
         diagnosis: diagnosis,
         treatment_advice: treatmentAdvice,
         prescriptions: prescriptions.map(p => ({ name: p.name, dose: p.dose, freq: p.freq, duration: p.duration })),
@@ -485,7 +494,7 @@ export default function DoctorWorkspace({ onNavigateToPatientView: _onNavigateTo
           .from('encounters')
           .update({
             follow_up_date: followUpDate,
-            follow_up_reason: `Diagnosis: ${diagnosis}. Clinical advice: ${treatmentAdvice}`,
+            follow_up_reason: formattedFollowUpReason,
             follow_up_completed: false
           })
           .eq('referral_id', activeCase.id);
@@ -498,7 +507,7 @@ export default function DoctorWorkspace({ onNavigateToPatientView: _onNavigateTo
       // Clean up database state indicators
       setReferrals(prev => prev.map(r => r.id === activeCase.id ? { ...r, status: 'Completed' } : r));
       localStorage.removeItem(getDraftKey(activeCase.id));
-      showToast('✓ Consultation signed and synced to care registry.');
+      showToast(`✓ Consultation signed (${consultationMode === 'TELECONSULTATION' ? 'Teleconsultation' : 'In-Person'}). Synced to care registry.`);
       handleCloseCase();
 
     } catch (err) {
@@ -1022,6 +1031,58 @@ export default function DoctorWorkspace({ onNavigateToPatientView: _onNavigateTo
 
                 <div className="space-y-4">
                   
+                  {/* 0. Care Delivery Pathway Mode */}
+                  <div className="p-4 bg-slate-50 border-2 border-slate-200 rounded-2xl space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-black uppercase text-slate-700 tracking-wide block">
+                        Care Delivery Mode (सल्ला देण्याची पद्धत)
+                      </label>
+                      <span className="text-[10px] font-bold text-slate-500">Rural Distance Optimization</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <button
+                        type="button"
+                        onClick={() => setConsultationMode('TELECONSULTATION')}
+                        className={`p-3 rounded-xl border-2 text-left font-bold text-xs transition-all cursor-pointer ${
+                          consultationMode === 'TELECONSULTATION'
+                            ? 'bg-teal-50 border-[#008080] text-[#006666] shadow-xs'
+                            : 'bg-white border-slate-200 hover:border-slate-300 text-slate-700'
+                        }`}
+                      >
+                        <div className="flex items-start gap-2.5">
+                          <span className="text-xl">📡</span>
+                          <div>
+                            <div className="font-black text-slate-900">Remote Tele-Advice (टेलि-सल्ला)</div>
+                            <div className="text-[10px] text-slate-500 font-medium leading-tight mt-0.5">
+                              Manage locally at village/PHC. No travel required for patient.
+                            </div>
+                          </div>
+                        </div>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setConsultationMode('IN_PERSON')}
+                        className={`p-3 rounded-xl border-2 text-left font-bold text-xs transition-all cursor-pointer ${
+                          consultationMode === 'IN_PERSON'
+                            ? 'bg-rose-50 border-[#800000] text-[#800000] shadow-xs'
+                            : 'bg-white border-slate-200 hover:border-slate-300 text-slate-700'
+                        }`}
+                      >
+                        <div className="flex items-start gap-2.5">
+                          <span className="text-xl">🏥</span>
+                          <div>
+                            <div className="font-black text-slate-900">Hospital Visit Required (प्रत्यक्ष भेट)</div>
+                            <div className="text-[10px] text-slate-500 font-medium leading-tight mt-0.5">
+                              Physical exam, ICU, lab tests, or surgery needed.
+                            </div>
+                          </div>
+                        </div>
+                      </button>
+                    </div>
+                  </div>
+
                   {/* A. Clinical Assessment */}
                   <div className="space-y-1.5">
                     <label className="text-[11px] font-black uppercase text-slate-500 tracking-wide block">

@@ -148,13 +148,15 @@ export default function AshaFollowUpsView({
               : isToday
               ? 'border-amber-300 bg-amber-50/40'
               : 'border-slate-200 bg-white';
+            const isTeleconsult = (task.followUpReason || '').includes('[Teleconsultation Signed]');
+            const isInPerson = (task.followUpReason || '').includes('[Hospital Visit Required]');
 
             return (
               <div
                 key={task.id}
                 className={`p-4 sm:p-5 rounded-2xl border-2 transition-all shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${cardBorder}`}
               >
-                <div className="space-y-1.5 min-w-0">
+                <div className="space-y-2 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-black text-sm text-slate-900">{task.patientName}</span>
                     <span className="font-mono text-xs font-bold text-slate-500">{task.patientUnifiedId}</span>
@@ -176,15 +178,28 @@ export default function AshaFollowUpsView({
                         Due: {new Date(task.followUpDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
                       </span>
                     )}
+
+                    {isTeleconsult && (
+                      <span className="text-[10px] font-black px-2 py-0.5 rounded bg-teal-50 text-teal-800 border border-teal-200 flex items-center gap-1">
+                        📡 Remote Tele-Advice · Local Dispense
+                      </span>
+                    )}
+
+                    {isInPerson && (
+                      <span className="text-[10px] font-black px-2 py-0.5 rounded bg-rose-50 text-rose-800 border border-rose-200 flex items-center gap-1">
+                        🏥 Hospital Visit Required
+                      </span>
+                    )}
                   </div>
 
-                  <p className="text-xs text-slate-700 font-medium leading-relaxed">
-                    <strong>Task:</strong> {task.followUpReason || task.complaint || 'Follow-up health review'}
+                  <p className="text-xs text-slate-700 font-medium leading-relaxed bg-slate-50/70 p-2.5 rounded-xl border border-slate-100">
+                    <strong className="text-slate-900 font-bold block mb-0.5">Specialist Follow-up Protocol:</strong>
+                    {task.followUpReason || task.complaint || 'Follow-up health review'}
                   </p>
 
                   {task.hospital && (
                     <p className="text-[11px] text-slate-500">
-                      Linked Consultation: {task.hospital} ({task.department || 'Specialist'})
+                      Linked Specialist Facility: {task.hospital} ({task.department || 'Specialist'})
                     </p>
                   )}
                 </div>

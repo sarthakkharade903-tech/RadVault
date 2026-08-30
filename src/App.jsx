@@ -20,6 +20,7 @@ import PatientConditions from './components/PatientProfile/PatientConditions';
 import HealthTimeline from './components/HealthTimeline/HealthTimeline';
 import MedicalRecordsList from './components/MedicalRecords/MedicalRecordsList';
 import ReferralsDashboard from './components/Referrals/ReferralsDashboard';
+import GovernmentSchemes from './components/Patient/GovernmentSchemes';
 
 import AshaWorkspace from './components/workspaces/AshaWorkspace';
 import HospitalStaffWorkspace from './components/workspaces/HospitalStaffWorkspace';
@@ -42,6 +43,7 @@ import {
   Plus,
   ChevronLeft,
   Clock,
+  Landmark,
 } from 'lucide-react';
 
 // ─── Indian-Friendly Cultural Emergency Shield Icon ─────────────────────────
@@ -130,6 +132,11 @@ const PATIENT_NAV_ITEMS = [
     key: 'emergency',
     label: 'Emergency',
     CustomIcon: NavEmergencyIcon,
+  },
+  {
+    key: 'schemes',
+    label: 'Schemes',
+    Icon: Landmark,
   },
   {
     key: 'profile',
@@ -654,7 +661,12 @@ function App() {
                 />
               )}
 
-              {/* Tab 6: Member 2 - Patient Profile & Conditions (Sujay's Module) */}
+              {/* Tab 6: Public Benefits - Government Health Schemes */}
+              {activePatientTab === 'schemes' && (
+                <GovernmentSchemes onBack={() => setActivePatientTab('home')} />
+              )}
+
+              {/* Tab 7: Member 2 - Patient Profile & Conditions (Sujay's Module) */}
               {activePatientTab === 'profile' && (
                 <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
                   <div className="mb-2 flex items-center justify-between">
