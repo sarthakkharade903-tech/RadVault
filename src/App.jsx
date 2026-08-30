@@ -21,10 +21,11 @@ import HealthTimeline from './components/HealthTimeline/HealthTimeline';
 import MedicalRecordsList from './components/MedicalRecords/MedicalRecordsList';
 import ReferralsDashboard from './components/Referrals/ReferralsDashboard';
 
-// Role Workspace Placeholders & Guards
 import AshaWorkspace from './components/workspaces/AshaWorkspace';
 import HospitalStaffWorkspace from './components/workspaces/HospitalStaffWorkspace';
 import DoctorWorkspace from './components/workspaces/DoctorWorkspace';
+import LandingPage from './components/landing/LandingPage';
+import PortalSignIn from './components/auth/PortalSignIn';
 import RoleGuard from './components/common/RoleGuard';
 import NoRoleScreen from './components/common/NoRoleScreen';
 import LoadingSpinner from './components/common/LoadingSpinner';
@@ -155,6 +156,13 @@ function App() {
 
   const [activePatientTab, setActivePatientTab] = useState('home');
   const [showPortalPicker, setShowPortalPicker] = useState(false);
+  const [selectedPortal, setSelectedPortal] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const hash = window.location.hash.replace('#', '').toLowerCase();
+      if (['asha', 'hospital', 'doctor', 'patient'].includes(hash)) return hash;
+    }
+    return null;
+  });
   const [targetRecordId, setTargetRecordId] = useState(null);
 
   const [patientRecords, setPatientRecords] = useState([]);
@@ -236,24 +244,24 @@ function App() {
   useEffect(() => {
     const handleHashChange = async () => {
       const hash = window.location.hash.replace('#', '').toLowerCase();
-      if (hash === 'asha' || hash === 'hospital' || hash === 'doctor' || hash === 'patient') {
-        const mappedRole = hash === 'hospital' ? ROLES.HOSPITAL_STAFF : hash;
-        if (Object.values(ROLES).includes(mappedRole) && mappedRole !== role) {
-          await switchDemoRole(mappedRole);
-        }
+      if (['asha', 'hospital', 'doctor', 'patient'].includes(hash)) {
+        setSelectedPortal(hash);
+      } else if (!hash) {
+        setSelectedPortal(null);
       }
     };
 
     handleHashChange();
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
-  }, [role, switchDemoRole]);
+  }, []);
 
   // Update hash when demo role changes
   const handleRoleSelect = async (targetRole) => {
     setShowPortalPicker(false);
     const hashKey = targetRole === ROLES.HOSPITAL_STAFF ? 'hospital' : targetRole;
     window.location.hash = hashKey;
+    setSelectedPortal(hashKey);
     await switchDemoRole(targetRole);
   };
 
@@ -272,6 +280,38 @@ function App() {
       <div className="min-h-screen bg-[#F9F9F9] flex items-center justify-center">
         <LoadingSpinner message="Determining RadVault care session..." />
       </div>
+    );
+  }
+
+  // ── UNREGISTERED / UNAUTHENTICATED PORTAL ENTRY FLOW ──
+  if (!isAuthenticated) {
+    if (selectedPortal) {
+      return (
+        <PortalSignIn
+          portalKey={selectedPortal}
+          onBack={() => {
+            setSelectedPortal(null);
+            window.location.hash = '';
+          }}
+          onSwitchPortal={(key) => {
+            setSelectedPortal(key);
+            window.location.hash = key;
+          }}
+          onLoginSuccess={() => {
+            setSelectedPortal(null);
+            window.location.hash = '';
+          }}
+        />
+      );
+    }
+
+    return (
+      <LandingPage
+        onSelectPortal={(key) => {
+          setSelectedPortal(key);
+          window.location.hash = key;
+        }}
+      />
     );
   }
 
@@ -362,21 +402,23 @@ function App() {
               <span>Demo Data: <strong className={demoDataEnabled ? 'text-amber-950 font-black' : 'text-slate-800 font-black'}>{demoDataEnabled ? 'ON' : 'OFF'}</strong></span>
             </button>
 
-            {isAuthenticated && (
-              <button
-                onClick={logout}
-                className="px-2.5 py-1.5 text-xs font-bold text-slate-600 hover:text-slate-900 transition-colors"
-              >
-                Sign Out
-              </button>
-            )}
+            <button
+              onClick={async () => {
+                await logout();
+                setSelectedPortal(null);
+                window.location.hash = '';
+              }}
+              className="px-2.5 py-1.5 text-xs font-bold text-slate-600 hover:text-slate-900 transition-colors cursor-pointer"
+            >
+              Sign Out
+            </button>
             <button
               onClick={() => setShowPortalPicker(!showPortalPicker)}
-              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-[#212121] rounded-xl text-xs font-bold border border-slate-300 transition-colors flex items-center gap-1.5"
+              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-[#212121] rounded-xl text-xs font-bold border border-slate-300 transition-colors flex items-center gap-1.5 cursor-pointer"
               aria-label="Switch system portal view"
             >
               <span className="w-2 h-2 rounded-full bg-[#008080] animate-pulse" aria-hidden="true" />
-              {isDemoMode ? 'Demo Portals' : 'Workspaces'}
+              Workspaces
             </button>
           </div>
         </div>

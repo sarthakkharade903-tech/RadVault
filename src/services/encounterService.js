@@ -816,3 +816,23 @@ export function getAshaDashboardStats() {
     totalEncounters: encounters.length
   };
 }
+
+/**
+ * Fetch live follow-up tasks from Supabase consultations with follow_up_recommended_date
+ */
+export async function fetchLiveFollowUpTasks(ashaId = null) {
+  try {
+    const { data: consultations, error } = await supabase
+      .from('consultations')
+      .select('*, referrals(id, patient_name, patient_age, patient_gender, priority, clinical_reason)')
+      .not('follow_up_recommended_date', 'is', null)
+      .order('follow_up_recommended_date', { ascending: true });
+
+    if (error) throw error;
+    return consultations || [];
+  } catch (err) {
+    console.warn('[encounterService] Notice fetching live consultation follow-ups:', err.message);
+    return [];
+  }
+}
+
