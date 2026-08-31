@@ -170,6 +170,13 @@ function App() {
     }
     return null;
   });
+  const [isPatientDemoActive, setIsPatientDemoActive] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const hash = window.location.hash.replace('#', '').toLowerCase();
+      return hash === 'patient';
+    }
+    return false;
+  });
   const [targetRecordId, setTargetRecordId] = useState(null);
 
   const [patientRecords, setPatientRecords] = useState([]);
@@ -253,8 +260,15 @@ function App() {
       const hash = window.location.hash.replace('#', '').toLowerCase();
       if (['asha', 'hospital', 'doctor', 'patient'].includes(hash)) {
         setSelectedPortal(hash);
+        if (hash === 'patient') {
+          setIsPatientDemoActive(true);
+          await switchDemoRole(ROLES.PATIENT);
+        } else {
+          setIsPatientDemoActive(false);
+        }
       } else if (!hash) {
         setSelectedPortal(null);
+        setIsPatientDemoActive(false);
       }
     };
 
@@ -269,7 +283,19 @@ function App() {
     const hashKey = targetRole === ROLES.HOSPITAL_STAFF ? 'hospital' : targetRole;
     window.location.hash = hashKey;
     setSelectedPortal(hashKey);
+    if (targetRole === ROLES.PATIENT) {
+      setIsPatientDemoActive(true);
+    } else {
+      setIsPatientDemoActive(false);
+    }
     await switchDemoRole(targetRole);
+  };
+
+  const handleEnterPatientDemo = async () => {
+    setIsPatientDemoActive(true);
+    setSelectedPortal('patient');
+    window.location.hash = 'patient';
+    await switchDemoRole(ROLES.PATIENT);
   };
 
   const handleViewRecordFromTimeline = (recordId) => {
@@ -291,23 +317,31 @@ function App() {
   }
 
   // ── UNREGISTERED / UNAUTHENTICATED PORTAL ENTRY FLOW ──
-  if (!isAuthenticated) {
+  if (!isAuthenticated && !isPatientDemoActive) {
     if (selectedPortal) {
       return (
         <PortalSignIn
           portalKey={selectedPortal}
           onBack={() => {
             setSelectedPortal(null);
+            setIsPatientDemoActive(false);
             window.location.hash = '';
           }}
           onSwitchPortal={(key) => {
             setSelectedPortal(key);
             window.location.hash = key;
+            if (key === 'patient') {
+              setIsPatientDemoActive(true);
+            } else {
+              setIsPatientDemoActive(false);
+            }
           }}
           onLoginSuccess={() => {
             setSelectedPortal(null);
+            setIsPatientDemoActive(false);
             window.location.hash = '';
           }}
+          onEnterDemoPatient={handleEnterPatientDemo}
         />
       );
     }
@@ -317,6 +351,9 @@ function App() {
         onSelectPortal={(key) => {
           setSelectedPortal(key);
           window.location.hash = key;
+          if (key === 'patient') {
+            setIsPatientDemoActive(false);
+          }
         }}
       />
     );
@@ -412,12 +449,13 @@ function App() {
             <button
               onClick={async () => {
                 await logout();
+                setIsPatientDemoActive(false);
                 setSelectedPortal(null);
                 window.location.hash = '';
               }}
               className="px-2.5 py-1.5 text-xs font-bold text-slate-600 hover:text-slate-900 transition-colors cursor-pointer"
             >
-              Sign Out
+              {isPatientDemoActive ? 'Exit Demo' : 'Sign Out'}
             </button>
             <button
               onClick={() => setShowPortalPicker(!showPortalPicker)}

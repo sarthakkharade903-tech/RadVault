@@ -366,11 +366,53 @@ function EmergencyCard({ onNavigate, patient }) {
             </span>
           </div>
         </div>
+
+        {/* 24x7 Emergency Helplines Strip */}
+        <div className="pt-2 border-t border-rose-200/80 mb-3">
+          <span className="text-[10px] font-black uppercase text-rose-900 tracking-wider block mb-1.5 flex items-center gap-1">
+            <Phone className="w-3 h-3 text-rose-600" />
+            24x7 National Helplines (Emergency Dial)
+          </span>
+          <div className="grid grid-cols-4 gap-1.5 text-center">
+            <a
+              href="tel:108"
+              className="p-1.5 bg-white rounded-lg border border-rose-200 hover:border-rose-400 hover:bg-rose-50 transition-colors block"
+              title="Call 108 Ambulance"
+            >
+              <span className="font-black text-xs text-rose-700 block">108</span>
+              <span className="text-[8px] font-bold text-slate-500 block leading-tight">Ambulance</span>
+            </a>
+            <a
+              href="tel:104"
+              className="p-1.5 bg-white rounded-lg border border-rose-200 hover:border-amber-400 hover:bg-amber-50 transition-colors block"
+              title="Call 104 Medical Helpline"
+            >
+              <span className="font-black text-xs text-amber-800 block">104</span>
+              <span className="text-[8px] font-bold text-slate-500 block leading-tight">Medical</span>
+            </a>
+            <a
+              href="tel:181"
+              className="p-1.5 bg-white rounded-lg border border-rose-200 hover:border-teal-400 hover:bg-teal-50 transition-colors block"
+              title="Call 181 Women & Maternal Helpline"
+            >
+              <span className="font-black text-xs text-teal-800 block">181</span>
+              <span className="text-[8px] font-bold text-slate-500 block leading-tight">Women/ANC</span>
+            </a>
+            <a
+              href="tel:1098"
+              className="p-1.5 bg-white rounded-lg border border-rose-200 hover:border-blue-400 hover:bg-blue-50 transition-colors block"
+              title="Call 1098 Childline"
+            >
+              <span className="font-black text-xs text-blue-700 block">1098</span>
+              <span className="text-[8px] font-bold text-slate-500 block leading-tight">Childline</span>
+            </a>
+          </div>
+        </div>
       </div>
 
       <button
         onClick={() => onNavigate && onNavigate('emergency')}
-        className="w-full py-2.5 bg-[#FF9933] hover:bg-[#e68a2e] active:bg-[#cc7a29] text-slate-950 font-bold rounded-xl text-sm transition-colors shadow-sm flex items-center justify-center gap-2"
+        className="w-full py-2.5 bg-[#FF9933] hover:bg-[#e68a2e] active:bg-[#cc7a29] text-slate-950 font-bold rounded-xl text-sm transition-colors shadow-sm flex items-center justify-center gap-2 cursor-pointer"
       >
         <EmergencyShieldIcon className="w-4 h-4" />
         Open Emergency ID

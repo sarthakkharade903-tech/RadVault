@@ -335,6 +335,9 @@ export default function AshaWorkspace({ onNavigateToPatientView }) {
           <AshaCommunityView
             patients={scopedPatients}
             encounters={recentEncounters}
+            referrals={trackedReferrals}
+            followups={followUpTasks}
+            ashaProfile={ashaProfile}
             onSelectVillage={(vName) => {
               setVillageFilterForPatients(vName);
               setActiveTab('patients');

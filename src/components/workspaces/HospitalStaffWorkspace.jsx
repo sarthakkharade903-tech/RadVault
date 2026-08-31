@@ -571,6 +571,11 @@ export default function HospitalStaffWorkspace({ onNavigateToPatientView }) {
                         <span className={`text-[10px] font-black px-2 py-0.5 rounded border ${priorityClass}`}>
                           {ref.priority_label || ref.priority}
                         </span>
+                        {(ref.symptoms?.includes('ASHA ACCOMPANYING') || ref.clinical_summary?.includes('ASHA ACCOMPANYING')) && (
+                          <span className="text-[10px] font-black px-2 py-0.5 rounded bg-rose-100 text-rose-800 border border-rose-200 flex items-center gap-1">
+                            🤰 ASHA Escort
+                          </span>
+                        )}
                       </div>
 
                       <span className={`text-[11px] font-black px-2.5 py-0.5 rounded border ${statusPillColor}`}>

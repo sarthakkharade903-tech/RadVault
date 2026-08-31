@@ -21,7 +21,7 @@ const ROLE_DEFAULT_CREDENTIALS = {
   [ROLES.PATIENT]: ''
 };
 
-export default function PortalSignIn({ portalKey, onBack, onLoginSuccess, onSwitchPortal }) {
+export default function PortalSignIn({ portalKey, onBack, onLoginSuccess, onSwitchPortal, onEnterDemoPatient }) {
   const { login, logout } = useAuth();
   
   const portalConfig = PORTAL_ITEMS.find((p) => p.key === portalKey) || PORTAL_ITEMS[0];
@@ -260,6 +260,26 @@ export default function PortalSignIn({ portalKey, onBack, onLoginSuccess, onSwit
                 >
                   {ROLE_DEFAULT_CREDENTIALS[expectedRole]}
                 </button>
+              </div>
+            )}
+
+            {/* Direct Demo Access for Patient Portal (SIH Prototype Mode) */}
+            {expectedRole === ROLES.PATIENT && (
+              <div className="pt-3 border-t border-slate-100 space-y-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onEnterDemoPatient) {
+                      onEnterDemoPatient();
+                    }
+                  }}
+                  className="w-full py-3 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-extrabold text-xs rounded-xl shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer uppercase tracking-wider"
+                >
+                  <span>👤 Continue as Demo Patient (Prototype View) →</span>
+                </button>
+                <p className="text-[10px] text-center text-slate-400 font-semibold">
+                  Explore longitudinal vault, ABHA sandbox & health schemes without email login.
+                </p>
               </div>
             )}
           </div>

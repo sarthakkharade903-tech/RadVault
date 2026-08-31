@@ -4,23 +4,15 @@ import {
   Stethoscope,
   X,
   Loader2,
-  Send
+  Send,
+  Navigation,
+  ShieldCheck,
+  AlertCircle
 } from 'lucide-react';
-import { HOSPITALS, DEPARTMENTS } from '../../data/mockReferrals';
+import { DEPARTMENTS } from '../../data/mockReferrals';
 import { createEncounter } from '../../services/encounterService';
 import { supabase } from '../../services/supabase';
-
-function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) {
-  const R = 6371;
-  const dLat = (lat2 - lat1) * (Math.PI / 180);
-  const dLon = (lon2 - lon1) * (Math.PI / 180);
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
-    Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-}
+import { getCurrentLocation, getOfflineGovHospitals } from '../../services/locationService';
 
 export default function ReferralCreationModal({
   isOpen,
@@ -32,21 +24,25 @@ export default function ReferralCreationModal({
 }) {
   const [hospitals, setHospitals] = useState([]);
   const [fetchingHospitals, setFetchingHospitals] = useState(false);
+  const [isOfflineDirectory, setIsOfflineDirectory] = useState(false);
   const [hospital, setHospital] = useState('');
   const [selectedFacilityId, setSelectedFacilityId] = useState('');
-  const [department, setDepartment] = useState('Cardiology');
-  const [doctorAssigned, setDoctorAssigned] = useState('On-Duty Specialist');
+  const [department, setDepartment] = useState('General Medicine');
+  const [doctorAssigned] = useState('On-Duty Specialist');
   const [urgencyNotes, setUrgencyNotes] = useState('');
   const [followUpDays, setFollowUpDays] = useState('3');
+  const [ashaAccompanying, setAshaAccompanying] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
 
-  // 1. Fetch verified facilities from Supabase
+  // 1. Fetch facilities: Online first, with Offline Government Directory + GPS Distance fallback
   useEffect(() => {
     if (!isOpen) return;
 
     const fetchFacilities = async () => {
       setFetchingHospitals(true);
+      setIsOfflineDirectory(false);
+
       try {
         const { data: dbFacilities, error: dbErr } = await supabase
           .from('facilities')
@@ -55,28 +51,33 @@ export default function ReferralCreationModal({
 
         if (!dbErr && dbFacilities && dbFacilities.length > 0) {
           setHospitals(dbFacilities);
-          // Default to Shrirampur PHC or first facility
           const defaultFac = dbFacilities.find(f => f.name.includes('Shrirampur')) || dbFacilities[0];
           setHospital(defaultFac.name);
           setSelectedFacilityId(defaultFac.id);
         } else {
-          const fallback = [
-            { id: 'f1111111-1111-1111-1111-111111111111', name: 'Shrirampur Primary Health Centre', district: 'Ahmednagar' },
-            { id: 'f2222222-2222-2222-2222-222222222222', name: 'Pune Sassoon General Hospital', district: 'Pune' }
-          ];
-          setHospitals(fallback);
-          setHospital(fallback[0].name);
-          setSelectedFacilityId(fallback[0].id);
+          throw new Error('Using offline government facility directory');
         }
       } catch (err) {
-        console.warn('Facility load fallback:', err);
-        const fallback = [
-          { id: 'f1111111-1111-1111-1111-111111111111', name: 'Shrirampur Primary Health Centre', district: 'Ahmednagar' },
-          { id: 'f2222222-2222-2222-2222-222222222222', name: 'Pune Sassoon General Hospital', district: 'Pune' }
-        ];
-        setHospitals(fallback);
-        setHospital(fallback[0].name);
-        setSelectedFacilityId(fallback[0].id);
+        console.warn('Online facility lookup unavailable, activating offline government directory:', err?.message || err);
+        setIsOfflineDirectory(true);
+
+        // Calculate GPS distance from offline bundled dataset
+        const userLoc = await getCurrentLocation();
+        const offlineList = getOfflineGovHospitals(userLoc.lat, userLoc.lon);
+
+        const mapped = offlineList.map(h => ({
+          id: h.id,
+          name: h.name,
+          district: h.district,
+          type: h.type,
+          distanceKm: h.distanceKm
+        }));
+
+        setHospitals(mapped);
+        if (mapped.length > 0) {
+          setHospital(mapped[0].name);
+          setSelectedFacilityId(mapped[0].id);
+        }
       } finally {
         setFetchingHospitals(false);
       }
@@ -116,11 +117,13 @@ export default function ReferralCreationModal({
       const followUpDate = new Date();
       followUpDate.setDate(followUpDate.getDate() + parseInt(followUpDays || 3));
 
+      const escortNote = ashaAccompanying ? ' [ASHA ACCOMPANYING PATIENT / ESCORTED REFERRAL]' : '';
+
       const newEncounter = await createEncounter({
         patient,
         complaint: complaint || 'Specialist Referral',
         symptoms: typeof symptoms === 'string' ? [symptoms] : symptoms,
-        symptomNotes: `${symptomNotes || ''}. Referral Reason: ${urgencyNotes}`,
+        symptomNotes: `${symptomNotes || ''}. Referral Reason: ${urgencyNotes}${escortNote}`,
         vitals,
         relevantHistory,
         dangerSigns,
@@ -133,6 +136,7 @@ export default function ReferralCreationModal({
           facilityId: selectedFacilityId,
           department,
           doctor: doctorAssigned,
+          ashaAccompanying: ashaAccompanying ? true : false,
           followUpDate: followUpDate.toISOString().slice(0, 10)
         },
         ashaWorkerId: ashaProfile?.id || null,
@@ -153,6 +157,7 @@ export default function ReferralCreationModal({
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-start justify-center p-4 sm:p-6 overflow-y-auto">
       <div className="bg-white border-2 border-slate-200 rounded-3xl w-full max-w-xl shadow-2xl overflow-hidden my-8 animate-in fade-in zoom-in-95 duration-150">
+        
         {/* Header */}
         <div className="px-6 py-5 bg-[#008080] text-white flex items-center justify-between">
           <div className="flex items-center gap-2.5">
@@ -166,7 +171,7 @@ export default function ReferralCreationModal({
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors text-white"
+            className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors text-white cursor-pointer"
             aria-label="Close referral creation"
           >
             <X className="w-4 h-4" />
@@ -188,7 +193,7 @@ export default function ReferralCreationModal({
               <span className="font-mono text-slate-400 ml-2">ID: {patient.unified_id || patient.id}</span>
             </div>
             <span className={`px-2 py-0.5 rounded-md font-extrabold text-[10px] ${
-              triageResult?.priority === 'HIGH'
+              triageResult?.priority === 'HIGH' || triageResult?.priority === 'RED'
                 ? 'bg-rose-100 text-rose-800'
                 : triageResult?.priority === 'ORANGE'
                 ? 'bg-amber-100 text-amber-900'
@@ -200,17 +205,26 @@ export default function ReferralCreationModal({
 
           {/* Destination Hospital / Facility */}
           <div>
-            <label className="text-xs font-bold text-slate-700 uppercase tracking-wide block mb-1 flex items-center justify-between">
-              <span className="flex items-center gap-1">
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-bold text-slate-700 uppercase tracking-wide flex items-center gap-1">
                 <Building2 className="w-3.5 h-3.5 text-[#008080]" />
                 Destination Hospital / Facility *
-              </span>
-              {fetchingHospitals && (
+              </label>
+              {isOfflineDirectory ? (
+                <span className="text-[10px] font-bold text-amber-800 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded flex items-center gap-1">
+                  <Navigation className="w-3 h-3 text-amber-700" /> Offline Directory (GPS Ranked)
+                </span>
+              ) : fetchingHospitals ? (
                 <span className="text-[10px] text-slate-400 font-normal flex items-center gap-1">
                   <Loader2 className="w-3 h-3 animate-spin" /> Loading facilities...
                 </span>
+              ) : (
+                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">
+                  Live Facilities
+                </span>
               )}
-            </label>
+            </div>
+
             <select
               value={selectedFacilityId}
               onChange={(e) => {
@@ -223,10 +237,17 @@ export default function ReferralCreationModal({
             >
               {hospitals.map((h) => (
                 <option key={h.id} value={h.id}>
-                  {h.name} {h.district ? `(${h.district})` : ''}
+                  {h.name} {h.distanceKm ? `· ${h.distanceKm} km (${h.type || h.district})` : h.district ? `(${h.district})` : ''}
                 </option>
               ))}
             </select>
+
+            {isOfflineDirectory && (
+              <p className="text-[10px] text-slate-500 font-medium mt-1 flex items-center gap-1">
+                <AlertCircle className="w-3 h-3 text-amber-600 shrink-0" />
+                <span>Using offline government facility directory (Satara/Pune district dataset) with GPS distance sorting.</span>
+              </p>
+            )}
           </div>
 
           {/* Specialty Department */}
@@ -246,6 +267,29 @@ export default function ReferralCreationModal({
                 </option>
               ))}
             </select>
+          </div>
+
+          {/* ASHA Escort / Maternal Support Flag (Feature 5) */}
+          <div className={`p-3.5 rounded-2xl border transition-all ${
+            ashaAccompanying ? 'bg-rose-50/90 border-rose-300' : 'bg-slate-50 border-slate-200'
+          }`}>
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={ashaAccompanying}
+                onChange={(e) => setAshaAccompanying(e.target.checked)}
+                className="mt-0.5 w-4 h-4 text-[#008080] rounded border-slate-300 focus:ring-[#008080] cursor-pointer"
+              />
+              <div className="text-xs">
+                <span className="font-extrabold text-slate-900 flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-rose-600" />
+                  ASHA Accompanying Patient
+                </span>
+                <span className="text-[11px] text-slate-600 block mt-0.5 font-medium leading-relaxed">
+                  Flag for hospital intake reception. May support maternal referral coordination & institutional delivery handover.
+                </span>
+              </div>
+            </label>
           </div>
 
           {/* Referral Urgency / Instructions */}
@@ -299,7 +343,7 @@ export default function ReferralCreationModal({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100"
+              className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
             >
               Cancel
             </button>
