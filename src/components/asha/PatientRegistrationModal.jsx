@@ -3,6 +3,7 @@ import { UserPlus, X, AlertCircle, AlertTriangle, UserCheck } from 'lucide-react
 import { supabase } from '../../services/supabase';
 import { checkDuplicateBeneficiary } from '../../services/encounterService';
 import { useAuth } from '../../context/AuthContext';
+import { validateAge, validateIndianMobileNumber } from '../../utils/vitalsValidator';
 
 const BLOOD_GROUPS = ['O+', 'A+', 'B+', 'AB+', 'O-', 'A-', 'B-', 'AB-'];
 
@@ -30,6 +31,11 @@ export default function PatientRegistrationModal({
   const [error, setError] = useState('');
   const [ignoreDuplicateWarning, setIgnoreDuplicateWarning] = useState(false);
 
+  // Live real-time validators
+  const ageValidation = useMemo(() => (age ? validateAge(age) : { valid: true, severity: 'empty' }), [age]);
+  const phoneValidation = useMemo(() => (phone ? validateIndianMobileNumber(phone, true) : { valid: true, severity: 'empty' }), [phone]);
+  const emergencyPhoneValidation = useMemo(() => (emergencyPhone ? validateIndianMobileNumber(emergencyPhone, true) : { valid: true, severity: 'empty' }), [emergencyPhone]);
+
   // Set default village dynamically based on ASHA assignments
   useEffect(() => {
     if (ashaVillages && ashaVillages.length > 0) {
@@ -53,12 +59,26 @@ export default function PatientRegistrationModal({
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!fullName.trim()) {
-      setError('Please enter patient full name.');
+    if (!fullName.trim() || fullName.trim().length < 2) {
+      setError('Please enter a valid patient full name (at least 2 characters).');
       return;
     }
-    if (!age || isNaN(age) || parseInt(age) < 0 || parseInt(age) > 125) {
-      setError('Please enter a valid patient age.');
+
+    const ageRes = validateAge(age);
+    if (!ageRes.valid) {
+      setError(ageRes.message || 'Please enter a valid patient age between 0 and 125.');
+      return;
+    }
+
+    const phoneRes = validateIndianMobileNumber(phone, true);
+    if (!phoneRes.valid) {
+      setError(phoneRes.message || 'Enter a valid 10-digit Indian mobile number.');
+      return;
+    }
+
+    const emerPhoneRes = validateIndianMobileNumber(emergencyPhone, true);
+    if (!emerPhoneRes.valid) {
+      setError(`Emergency phone: ${emerPhoneRes.message}`);
       return;
     }
 
@@ -229,8 +249,13 @@ export default function PatientRegistrationModal({
                 value={age}
                 onChange={(e) => setAge(e.target.value)}
                 placeholder="e.g. 52"
-                className="w-full px-3.5 py-2.5 bg-slate-50 border-2 border-slate-200 focus:border-[#008080] focus:bg-white rounded-xl text-xs font-bold outline-none"
+                className={`w-full px-3.5 py-2.5 bg-slate-50 border-2 rounded-xl text-xs font-bold outline-none ${
+                  age && !ageValidation.valid ? 'border-rose-400 bg-rose-50/40' : 'border-slate-200 focus:border-[#008080] focus:bg-white'
+                }`}
               />
+              {age && !ageValidation.valid && (
+                <span className="text-[10px] font-bold text-rose-600 block mt-0.5">{ageValidation.message}</span>
+              )}
             </div>
 
             <div>
@@ -268,15 +293,23 @@ export default function PatientRegistrationModal({
 
             <div>
               <label className="text-xs font-bold text-slate-700 uppercase tracking-wide block mb-1">
-                Mobile Number
+                Mobile Number (10 Digits)
               </label>
               <input
                 type="tel"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder="e.g. 9876543210"
-                className="w-full px-3.5 py-2.5 bg-slate-50 border-2 border-slate-200 focus:border-[#008080] focus:bg-white rounded-xl text-xs font-bold outline-none"
+                className={`w-full px-3.5 py-2.5 bg-slate-50 border-2 rounded-xl text-xs font-bold outline-none ${
+                  phone && !phoneValidation.valid ? 'border-rose-400 bg-rose-50/40' : 'border-slate-200 focus:border-[#008080] focus:bg-white'
+                }`}
               />
+              {phone && !phoneValidation.valid && (
+                <span className="text-[10px] font-bold text-rose-600 block mt-0.5">{phoneValidation.message}</span>
+              )}
+              {phone && phoneValidation.valid && (
+                <span className="text-[10px] font-bold text-emerald-600 block mt-0.5">✓ {phoneValidation.formatted}</span>
+              )}
             </div>
           </div>
 
@@ -324,8 +357,16 @@ export default function PatientRegistrationModal({
                 value={emergencyPhone}
                 onChange={(e) => setEmergencyPhone(e.target.value)}
                 placeholder="e.g. 9876500000"
-                className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 focus:border-[#008080] rounded-xl text-xs outline-none"
+                className={`w-full px-3.5 py-2 bg-slate-50 border rounded-xl text-xs outline-none ${
+                  emergencyPhone && !emergencyPhoneValidation.valid ? 'border-rose-400 bg-rose-50/40' : 'border-slate-200 focus:border-[#008080]'
+                }`}
               />
+              {emergencyPhone && !emergencyPhoneValidation.valid && (
+                <span className="text-[10px] font-bold text-rose-600 block mt-0.5">{emergencyPhoneValidation.message}</span>
+              )}
+              {emergencyPhone && emergencyPhoneValidation.valid && (
+                <span className="text-[10px] font-bold text-emerald-600 block mt-0.5">✓ {emergencyPhoneValidation.formatted}</span>
+              )}
             </div>
           </div>
 

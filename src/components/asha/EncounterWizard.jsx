@@ -19,7 +19,16 @@ import {
   ArrowRight
 } from 'lucide-react';
 import { createEncounter } from '../../services/encounterService';
-import { assessVitalsPayload } from '../../utils/vitalsValidator';
+import {
+  validateBloodPressure,
+  validatePulse,
+  validateRespiratoryRate,
+  validateSpO2,
+  validateTemperature,
+  validateBloodGlucose,
+  validateWeight,
+  assessVitalsPayload
+} from '../../utils/vitalsValidator';
 
 // ─── DEMOGRAPHIC SCREENING PATHWAYS ──────────────────────────────────────────
 export const SCREENING_PATHWAYS = {
@@ -264,14 +273,42 @@ export default function EncounterWizard({
 
   // Step 2: Vitals
   const [temp, setTemp] = useState('');
-  const [bp, setBp] = useState('');
+  const [bpSystolic, setBpSystolic] = useState('');
+  const [bpDiastolic, setBpDiastolic] = useState('');
   const [pulse, setPulse] = useState('');
   const [spo2, setSpo2] = useState('');
+  const [respRate, setRespRate] = useState('');
   const [rbs, setRbs] = useState('');
   const [muac, setMuac] = useState('');
   const [weight, setWeight] = useState('');
   const [vitalsAssessment, setVitalsAssessment] = useState({ canProceed: true, hasDangerous: false, errors: [], warnings: [] });
   const [dangerAckConfirmed, setDangerAckConfirmed] = useState(false);
+
+  // Derived BP string for backend persistence and triage
+  const bp = (bpSystolic && bpDiastolic) ? `${bpSystolic}/${bpDiastolic}` : (bpSystolic ? `${bpSystolic}` : '');
+
+  const isPregnant = activePathwayKey === 'MATERNAL' || Boolean(patient.is_pregnant) || Boolean(patient?.vitals?.isPregnant);
+
+  // Live real-time validators
+  const bpValidation = useMemo(() => validateBloodPressure(bpSystolic, bpDiastolic, { isPregnant, age: patientAge }), [bpSystolic, bpDiastolic, isPregnant, patientAge]);
+  const pulseValidation = useMemo(() => validatePulse(pulse, patientAge), [pulse, patientAge]);
+  const spo2Validation = useMemo(() => validateSpO2(spo2), [spo2]);
+  const respValidation = useMemo(() => validateRespiratoryRate(respRate, patientAge), [respRate, patientAge]);
+  const tempValidation = useMemo(() => validateTemperature(temp), [temp]);
+  const rbsValidation = useMemo(() => validateBloodGlucose(rbs), [rbs]);
+  const weightValidation = useMemo(() => validateWeight(weight), [weight]);
+
+  const hasInvalidField = useMemo(() => {
+    return (
+      (!bpValidation.valid && bpValidation.severity === 'invalid') ||
+      (!pulseValidation.valid && pulseValidation.severity === 'invalid') ||
+      (!spo2Validation.valid && spo2Validation.severity === 'invalid') ||
+      (!respValidation.valid && respValidation.severity === 'invalid') ||
+      (!tempValidation.valid && tempValidation.severity === 'invalid') ||
+      (!rbsValidation.valid && rbsValidation.severity === 'invalid') ||
+      (!weightValidation.valid && weightValidation.severity === 'invalid')
+    );
+  }, [bpValidation, pulseValidation, spo2Validation, respValidation, tempValidation, rbsValidation, weightValidation]);
 
   // Step 3: Danger Signs
   const [dangerSigns, setDangerSigns] = useState([]);
@@ -286,12 +323,6 @@ export default function EncounterWizard({
 
   const patientId = patient.unified_id || patient.id;
   const patientName = patient.full_name || patient.name || 'Beneficiary';
-
-  // Real-time vitals validation assessment
-  const handleVitalsChange = (updater) => {
-    updater();
-    // Vitals assessment is triggered in handleProceedFromVitals
-  };
 
   const toggleComplaint = (id) => {
     setSelectedComplaints((prev) =>
@@ -308,13 +339,31 @@ export default function EncounterWizard({
   // Vitals Safety Check on Step 2 Next
   const handleProceedFromVitals = (forceDangerousPass = false) => {
     setError('');
+
+    // Block if any field has physiologically impossible value
+    if (hasInvalidField) {
+      const firstError =
+        (!bpValidation.valid && bpValidation.message) ||
+        (!pulseValidation.valid && pulseValidation.message) ||
+        (!spo2Validation.valid && spo2Validation.message) ||
+        (!respValidation.valid && respValidation.message) ||
+        (!tempValidation.valid && tempValidation.message) ||
+        (!rbsValidation.valid && rbsValidation.message) ||
+        (!weightValidation.valid && weightValidation.message) ||
+        'Physiologically impossible measurement detected. Please correct before proceeding.';
+      setError(firstError);
+      return;
+    }
+
     const assessment = assessVitalsPayload({
       bloodPressure: bp,
       oxygenSaturation: spo2,
       heartRate: pulse,
+      respiratoryRate: respRate,
       bloodGlucose: rbs,
-      temperature: temp
-    });
+      temperature: temp,
+      weight
+    }, { age: patientAge, isPregnant });
 
     setVitalsAssessment(assessment);
 
@@ -683,26 +732,79 @@ export default function EncounterWizard({
           {/* Vitals Input Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
             
-            {/* Blood Pressure */}
-            <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-1.5">
+            {/* Blood Pressure - Separate Systolic & Diastolic */}
+            <div className={`p-3 bg-slate-50 border rounded-2xl space-y-1.5 transition-all ${
+              !bpValidation.valid && bpValidation.severity === 'invalid'
+                ? 'border-rose-400 bg-rose-50/40'
+                : bpValidation.severity === 'critical' || bpValidation.severity === 'warning'
+                ? 'border-amber-300 bg-amber-50/30'
+                : bpValidation.valid && bpSystolic && bpDiastolic
+                ? 'border-emerald-300 bg-emerald-50/20'
+                : 'border-slate-200'
+            }`}>
               <div className="flex items-center justify-between">
                 <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
                   <Heart className="w-3.5 h-3.5 text-rose-600" />
-                  <span>Blood Pressure (रक्तदाब)</span>
+                  <span>Blood Pressure (mmHg)</span>
                 </label>
-                <span className="text-[10px] text-slate-400 font-mono">120/80</span>
+                <span className="text-[10px] text-slate-400 font-mono">Sys / Dia</span>
               </div>
-              <input
-                type="text"
-                placeholder="e.g. 120/80"
-                value={bp}
-                onChange={(e) => setBp(e.target.value)}
-                className="w-full px-3 py-2 bg-white border-2 border-slate-200 focus:border-[#008080] rounded-xl text-sm font-bold text-slate-900 outline-none"
-              />
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <input
+                    type="number"
+                    placeholder="Systolic (120)"
+                    value={bpSystolic}
+                    onChange={(e) => setBpSystolic(e.target.value)}
+                    className="w-full px-2.5 py-2 bg-white border-2 border-slate-200 focus:border-[#008080] rounded-xl text-sm font-bold text-slate-900 outline-none"
+                  />
+                  <span className="text-[9px] text-slate-400 font-bold block mt-0.5 text-center">Systolic</span>
+                </div>
+                <div>
+                  <input
+                    type="number"
+                    placeholder="Diastolic (80)"
+                    value={bpDiastolic}
+                    onChange={(e) => setBpDiastolic(e.target.value)}
+                    className="w-full px-2.5 py-2 bg-white border-2 border-slate-200 focus:border-[#008080] rounded-xl text-sm font-bold text-slate-900 outline-none"
+                  />
+                  <span className="text-[9px] text-slate-400 font-bold block mt-0.5 text-center">Diastolic</span>
+                </div>
+              </div>
+              {/* BP Validation Badge */}
+              {bpValidation && bpValidation.severity !== 'empty' && (
+                <div className="pt-1">
+                  {!bpValidation.valid ? (
+                    <span className="text-[10px] font-bold text-rose-700 bg-rose-100/80 px-2 py-0.5 rounded-md border border-rose-200 block">
+                      ✕ {bpValidation.message}
+                    </span>
+                  ) : bpValidation.severity === 'critical' ? (
+                    <span className="text-[10px] font-bold text-rose-800 bg-rose-100 px-2 py-0.5 rounded-md border border-rose-300 block animate-pulse">
+                      ⚠️ {bpValidation.category} ({bpSystolic}/{bpDiastolic} mmHg)
+                    </span>
+                  ) : bpValidation.severity === 'warning' ? (
+                    <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-md border border-amber-200 block">
+                      ⚠️ {bpValidation.category} ({bpSystolic}/{bpDiastolic} mmHg)
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 block">
+                      ✓ {bpValidation.category} ({bpSystolic}/{bpDiastolic} mmHg)
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* SpO2 */}
-            <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-1.5">
+            <div className={`p-3 bg-slate-50 border rounded-2xl space-y-1.5 transition-all ${
+              !spo2Validation.valid && spo2Validation.severity === 'invalid'
+                ? 'border-rose-400 bg-rose-50/40'
+                : spo2Validation.severity === 'critical' || spo2Validation.severity === 'warning'
+                ? 'border-amber-300 bg-amber-50/30'
+                : spo2Validation.valid && spo2
+                ? 'border-emerald-300 bg-emerald-50/20'
+                : 'border-slate-200'
+            }`}>
               <div className="flex items-center justify-between">
                 <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
                   <Wind className="w-3.5 h-3.5 text-sky-600" />
@@ -712,40 +814,100 @@ export default function EncounterWizard({
               </div>
               <input
                 type="number"
+                min="40"
+                max="100"
                 placeholder="e.g. 98"
                 value={spo2}
                 onChange={(e) => setSpo2(e.target.value)}
                 className="w-full px-3 py-2 bg-white border-2 border-slate-200 focus:border-[#008080] rounded-xl text-sm font-bold text-slate-900 outline-none"
               />
+              {spo2Validation && spo2Validation.severity !== 'empty' && (
+                <div className="pt-0.5">
+                  {!spo2Validation.valid ? (
+                    <span className="text-[10px] font-bold text-rose-700 bg-rose-100/80 px-2 py-0.5 rounded-md border border-rose-200 block">
+                      ✕ {spo2Validation.message}
+                    </span>
+                  ) : spo2Validation.severity === 'critical' ? (
+                    <span className="text-[10px] font-bold text-rose-800 bg-rose-100 px-2 py-0.5 rounded-md border border-rose-300 block animate-pulse">
+                      ⚠️ Critical Hypoxia ({spo2}%)
+                    </span>
+                  ) : spo2Validation.severity === 'warning' ? (
+                    <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-md border border-amber-200 block">
+                      ⚠️ Low Oxygen ({spo2}%)
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 block">
+                      ✓ Optimal Oxygen ({spo2}%)
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Temperature */}
-            <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-1.5">
+            <div className={`p-3 bg-slate-50 border rounded-2xl space-y-1.5 transition-all ${
+              !tempValidation.valid && tempValidation.severity === 'invalid'
+                ? 'border-rose-400 bg-rose-50/40'
+                : tempValidation.severity === 'critical' || tempValidation.severity === 'warning'
+                ? 'border-amber-300 bg-amber-50/30'
+                : tempValidation.valid && temp
+                ? 'border-emerald-300 bg-emerald-50/20'
+                : 'border-slate-200'
+            }`}>
               <div className="flex items-center justify-between">
                 <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
                   <Thermometer className="w-3.5 h-3.5 text-[#FF9933]" />
-                  <span>Temp °F (तापमान)</span>
+                  <span>Temp °C / °F (तापमान)</span>
                 </label>
-                <span className="text-[10px] text-slate-400 font-mono">98.6°F</span>
+                <span className="text-[10px] text-slate-400 font-mono">37°C / 98.6°F</span>
               </div>
               <input
                 type="number"
                 step="0.1"
-                placeholder="e.g. 98.6"
+                placeholder="e.g. 37.0 or 98.6"
                 value={temp}
                 onChange={(e) => setTemp(e.target.value)}
                 className="w-full px-3 py-2 bg-white border-2 border-slate-200 focus:border-[#008080] rounded-xl text-sm font-bold text-slate-900 outline-none"
               />
+              {tempValidation && tempValidation.severity !== 'empty' && (
+                <div className="pt-0.5">
+                  {!tempValidation.valid ? (
+                    <span className="text-[10px] font-bold text-rose-700 bg-rose-100/80 px-2 py-0.5 rounded-md border border-rose-200 block">
+                      ✕ {tempValidation.message}
+                    </span>
+                  ) : tempValidation.severity === 'critical' ? (
+                    <span className="text-[10px] font-bold text-rose-800 bg-rose-100 px-2 py-0.5 rounded-md border border-rose-300 block animate-pulse">
+                      ⚠️ {tempValidation.category} ({tempValidation.value}{tempValidation.unit})
+                    </span>
+                  ) : tempValidation.severity === 'warning' ? (
+                    <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-md border border-amber-200 block">
+                      ⚠️ {tempValidation.category} ({tempValidation.value}{tempValidation.unit})
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 block">
+                      ✓ Normal Temp ({tempValidation.value}{tempValidation.unit})
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
 
-            {/* Pulse */}
-            <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-1.5">
+            {/* Pulse / Heart Rate */}
+            <div className={`p-3 bg-slate-50 border rounded-2xl space-y-1.5 transition-all ${
+              !pulseValidation.valid && pulseValidation.severity === 'invalid'
+                ? 'border-rose-400 bg-rose-50/40'
+                : pulseValidation.severity === 'critical' || pulseValidation.severity === 'warning'
+                ? 'border-amber-300 bg-amber-50/30'
+                : pulseValidation.valid && pulse
+                ? 'border-emerald-300 bg-emerald-50/20'
+                : 'border-slate-200'
+            }`}>
               <div className="flex items-center justify-between">
                 <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
                   <Activity className="w-3.5 h-3.5 text-rose-700" />
                   <span>Pulse bpm (नाडीचे ठोके)</span>
                 </label>
-                <span className="text-[10px] text-slate-400 font-mono">60–100</span>
+                <span className="text-[10px] text-slate-400 font-mono">60–100 bpm</span>
               </div>
               <input
                 type="number"
@@ -754,10 +916,86 @@ export default function EncounterWizard({
                 onChange={(e) => setPulse(e.target.value)}
                 className="w-full px-3 py-2 bg-white border-2 border-slate-200 focus:border-[#008080] rounded-xl text-sm font-bold text-slate-900 outline-none"
               />
+              {pulseValidation && pulseValidation.severity !== 'empty' && (
+                <div className="pt-0.5">
+                  {!pulseValidation.valid ? (
+                    <span className="text-[10px] font-bold text-rose-700 bg-rose-100/80 px-2 py-0.5 rounded-md border border-rose-200 block">
+                      ✕ {pulseValidation.message}
+                    </span>
+                  ) : pulseValidation.severity === 'critical' ? (
+                    <span className="text-[10px] font-bold text-rose-800 bg-rose-100 px-2 py-0.5 rounded-md border border-rose-300 block animate-pulse">
+                      ⚠️ {pulseValidation.category} ({pulse} bpm)
+                    </span>
+                  ) : pulseValidation.severity === 'warning' ? (
+                    <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-md border border-amber-200 block">
+                      ⚠️ {pulseValidation.category} ({pulse} bpm)
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 block">
+                      ✓ Normal Rate ({pulse} bpm)
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Respiratory Rate (Breaths/min) */}
+            <div className={`p-3 bg-slate-50 border rounded-2xl space-y-1.5 transition-all ${
+              !respValidation.valid && respValidation.severity === 'invalid'
+                ? 'border-rose-400 bg-rose-50/40'
+                : respValidation.severity === 'critical' || respValidation.severity === 'warning'
+                ? 'border-amber-300 bg-amber-50/30'
+                : respValidation.valid && respRate
+                ? 'border-emerald-300 bg-emerald-50/20'
+                : 'border-slate-200'
+            }`}>
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                  <Wind className="w-3.5 h-3.5 text-teal-600" />
+                  <span>Respiration /min (श्वास गती)</span>
+                </label>
+                <span className="text-[10px] text-slate-400 font-mono">10–20 /min</span>
+              </div>
+              <input
+                type="number"
+                placeholder="e.g. 16"
+                value={respRate}
+                onChange={(e) => setRespRate(e.target.value)}
+                className="w-full px-3 py-2 bg-white border-2 border-slate-200 focus:border-[#008080] rounded-xl text-sm font-bold text-slate-900 outline-none"
+              />
+              {respValidation && respValidation.severity !== 'empty' && (
+                <div className="pt-0.5">
+                  {!respValidation.valid ? (
+                    <span className="text-[10px] font-bold text-rose-700 bg-rose-100/80 px-2 py-0.5 rounded-md border border-rose-200 block">
+                      ✕ {respValidation.message}
+                    </span>
+                  ) : respValidation.severity === 'critical' ? (
+                    <span className="text-[10px] font-bold text-rose-800 bg-rose-100 px-2 py-0.5 rounded-md border border-rose-300 block animate-pulse">
+                      ⚠️ {respValidation.category} ({respRate}/min)
+                    </span>
+                  ) : respValidation.severity === 'warning' ? (
+                    <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-md border border-amber-200 block">
+                      ⚠️ {respValidation.category} ({respRate}/min)
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 block">
+                      ✓ Normal ({respRate} breaths/min)
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Blood Glucose (RBS) */}
-            <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-1.5">
+            <div className={`p-3 bg-slate-50 border rounded-2xl space-y-1.5 transition-all ${
+              !rbsValidation.valid && rbsValidation.severity === 'invalid'
+                ? 'border-rose-400 bg-rose-50/40'
+                : rbsValidation.severity === 'critical' || rbsValidation.severity === 'warning'
+                ? 'border-amber-300 bg-amber-50/30'
+                : rbsValidation.valid && rbs
+                ? 'border-emerald-300 bg-emerald-50/20'
+                : 'border-slate-200'
+            }`}>
               <div className="flex items-center justify-between">
                 <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
                   <Droplet className="w-3.5 h-3.5 text-amber-600" />
@@ -772,6 +1010,27 @@ export default function EncounterWizard({
                 onChange={(e) => setRbs(e.target.value)}
                 className="w-full px-3 py-2 bg-white border-2 border-slate-200 focus:border-[#008080] rounded-xl text-sm font-bold text-slate-900 outline-none"
               />
+              {rbsValidation && rbsValidation.severity !== 'empty' && (
+                <div className="pt-0.5">
+                  {!rbsValidation.valid ? (
+                    <span className="text-[10px] font-bold text-rose-700 bg-rose-100/80 px-2 py-0.5 rounded-md border border-rose-200 block">
+                      ✕ {rbsValidation.message}
+                    </span>
+                  ) : rbsValidation.severity === 'critical' ? (
+                    <span className="text-[10px] font-bold text-rose-800 bg-rose-100 px-2 py-0.5 rounded-md border border-rose-300 block animate-pulse">
+                      ⚠️ {rbsValidation.category} ({rbs} mg/dL)
+                    </span>
+                  ) : rbsValidation.severity === 'warning' ? (
+                    <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-md border border-amber-200 block">
+                      ⚠️ {rbsValidation.category} ({rbs} mg/dL)
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 block">
+                      ✓ Normal Glucose ({rbs} mg/dL)
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Pediatric MUAC or Adult Weight */}
@@ -794,13 +1053,17 @@ export default function EncounterWizard({
                 />
               </div>
             ) : (
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-1.5">
+              <div className={`p-3 bg-slate-50 border rounded-2xl space-y-1.5 transition-all ${
+                !weightValidation.valid && weightValidation.severity === 'invalid'
+                  ? 'border-rose-400 bg-rose-50/40'
+                  : 'border-slate-200'
+              }`}>
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
                     <UserCheck className="w-3.5 h-3.5 text-slate-600" />
                     <span>Weight kg (वजन)</span>
                   </label>
-                  <span className="text-[10px] text-slate-400 font-mono">kg</span>
+                  <span className="text-[10px] text-slate-400 font-mono">0.5–350 kg</span>
                 </div>
                 <input
                   type="number"
@@ -810,6 +1073,19 @@ export default function EncounterWizard({
                   onChange={(e) => setWeight(e.target.value)}
                   className="w-full px-3 py-2 bg-white border-2 border-slate-200 focus:border-[#008080] rounded-xl text-sm font-bold text-slate-900 outline-none"
                 />
+                {weightValidation && weightValidation.severity !== 'empty' && (
+                  <div className="pt-0.5">
+                    {!weightValidation.valid ? (
+                      <span className="text-[10px] font-bold text-rose-700 bg-rose-100/80 px-2 py-0.5 rounded-md border border-rose-200 block">
+                        ✕ {weightValidation.message}
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 block">
+                        ✓ {weight} kg
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 

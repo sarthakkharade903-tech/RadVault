@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { DEPARTMENTS } from '../../data/mockReferrals';
 import { supabase } from '../../services/supabase';
+import { assessVitalsPayload } from '../../utils/vitalsValidator';
 
 // ─── Haversine Distance Formula ───────────────────────────────────────────────
 function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) {
@@ -189,6 +190,13 @@ export default function TriageForm({ onSubmit, onCancel }) {
       setError('Please describe the patient symptoms before running AI triage.');
       return;
     }
+
+    const vitalsCheck = assessVitalsPayload({ bp, spo2, temp, pulse });
+    if (!vitalsCheck.canProceed) {
+      setError(vitalsCheck.errors[0] || 'Physiologically impossible vitals measurement entered.');
+      return;
+    }
+
     setError('');
     setIsAnalyzing(true);
     setAiResult(null);
@@ -210,6 +218,12 @@ export default function TriageForm({ onSubmit, onCancel }) {
     if (!hospital) { setError('Please select a destination hospital.'); return; }
     if (!department) { setError('Please select a department.'); return; }
     if (!aiResult) { setError('Please run the AI triage analysis before submitting.'); return; }
+
+    const vitalsCheck = assessVitalsPayload({ bp, spo2, temp, pulse });
+    if (!vitalsCheck.canProceed) {
+      setError(vitalsCheck.errors[0] || 'Physiologically impossible vitals measurement entered.');
+      return;
+    }
     setError('');
 
     // Fetch patient or fallback to first patient in database

@@ -17,6 +17,7 @@ import {
 import { parseSurveyCsv, downloadSampleSurveyCsv } from '../../utils/surveyCsvParser';
 import { batchRegisterPatients } from '../../services/patientService';
 import { useAuth } from '../../context/AuthContext';
+import { validateAge, validateIndianMobileNumber } from '../../utils/vitalsValidator';
 
 const RELATIONS = [
   'Head',
@@ -148,30 +149,49 @@ export default function VillageSurveyModal({
   const handleSaveManualHousehold = async () => {
     setErrorMessage('');
 
-    // Validation
-    const invalidMember = members.find(m => !m.fullName.trim() || !m.age || isNaN(parseInt(m.age, 10)));
-    if (invalidMember) {
-      setErrorMessage('Please fill in the Full Name and a valid Age for all family members.');
-      return;
+    // Strict demographic validation
+    for (let i = 0; i < members.length; i++) {
+      const m = members[i];
+      if (!m.fullName.trim() || m.fullName.trim().length < 2) {
+        setErrorMessage(`Member ${i + 1}: Please enter a valid full name (min 2 characters).`);
+        return;
+      }
+
+      const ageRes = validateAge(m.age);
+      if (!ageRes.valid) {
+        setErrorMessage(`Member ${i + 1} (${m.fullName}): ${ageRes.message}`);
+        return;
+      }
+
+      if (m.phone && m.phone.trim()) {
+        const phoneRes = validateIndianMobileNumber(m.phone, true);
+        if (!phoneRes.valid) {
+          setErrorMessage(`Member ${i + 1} (${m.fullName}): ${phoneRes.message}`);
+          return;
+        }
+      }
     }
 
     const matchedVillage = assignedVillages.find(v => v.id === selectedVillageId) || defaultVillage;
 
-    const beneficiariesPayload = members.map(m => ({
-      fullName: m.fullName.trim(),
-      age: parseInt(m.age, 10),
-      gender: m.gender,
-      village: matchedVillage.name,
-      villageId: matchedVillage.id || null,
-      areaId: matchedVillage.area_id || null,
-      householdId: householdId.trim().toUpperCase(),
-      relationToHead: m.relationToHead,
-      phone: m.phone ? m.phone.replace(/[^0-9]/g, '').slice(-10) : null,
-      bloodGroup: m.bloodGroup || null,
-      knownConditions: m.conditions,
-      isPregnant: m.isPregnant,
-      pregnancyNotes: m.isPregnant ? `ANC: ${m.pregnancyWeeks || 'Active pregnancy'}` : null
-    }));
+    const beneficiariesPayload = members.map(m => {
+      const phoneRes = m.phone ? validateIndianMobileNumber(m.phone, true) : null;
+      return {
+        fullName: m.fullName.trim(),
+        age: parseInt(m.age, 10),
+        gender: m.gender,
+        village: matchedVillage.name,
+        villageId: matchedVillage.id || null,
+        areaId: matchedVillage.area_id || null,
+        householdId: householdId.trim().toUpperCase(),
+        relationToHead: m.relationToHead,
+        phone: phoneRes?.valid ? phoneRes.normalized : (m.phone ? m.phone.replace(/[^0-9]/g, '').slice(-10) : null),
+        bloodGroup: m.bloodGroup || null,
+        knownConditions: m.conditions,
+        isPregnant: m.isPregnant,
+        pregnancyNotes: m.isPregnant ? `ANC: ${m.pregnancyWeeks || 'Active pregnancy'}` : null
+      };
+    });
 
     setIsSubmitting(true);
     try {

@@ -9,7 +9,6 @@ import {
   FileCheck,
   ArrowLeft,
   Loader2,
-  Sparkles,
   Info
 } from 'lucide-react';
 

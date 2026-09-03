@@ -19,8 +19,8 @@ import PatientVitals from './components/PatientProfile/PatientVitals';
 import PatientConditions from './components/PatientProfile/PatientConditions';
 import HealthTimeline from './components/HealthTimeline/HealthTimeline';
 import MedicalRecordsList from './components/MedicalRecords/MedicalRecordsList';
-import ReferralsDashboard from './components/Referrals/ReferralsDashboard';
 import GovernmentSchemes from './components/Patient/GovernmentSchemes';
+import CareHub from './components/Patient/CareHub';
 
 import AshaWorkspace from './components/workspaces/AshaWorkspace';
 import HospitalStaffWorkspace from './components/workspaces/HospitalStaffWorkspace';
@@ -38,12 +38,12 @@ import {
   Home,
   UserCircle2,
   BookOpen,
-  Handshake,
   Shield,
   Plus,
   ChevronLeft,
   Clock,
   Landmark,
+  Stethoscope,
 } from 'lucide-react';
 
 // ─── Indian-Friendly Cultural Emergency Shield Icon ─────────────────────────
@@ -124,14 +124,9 @@ const PATIENT_NAV_ITEMS = [
     Icon: Clock,
   },
   {
-    key: 'referrals',
-    label: 'Referrals',
-    Icon: Handshake,
-  },
-  {
-    key: 'emergency',
-    label: 'Emergency',
-    CustomIcon: NavEmergencyIcon,
+    key: 'care',
+    label: 'Care Hub',
+    Icon: Stethoscope,
   },
   {
     key: 'schemes',
@@ -653,6 +648,7 @@ function App() {
                     records={patientRecords}
                     initialSelectedRecordId={targetRecordId}
                     patient={patientProfile || mockPatient}
+                    onRecordUploaded={(newRec) => setPatientRecords(prev => [newRec, ...prev])}
                   />
                 </div>
               )}
@@ -667,7 +663,7 @@ function App() {
                     </div>
                     <button
                       onClick={() => setActivePatientTab('home')}
-                      className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-[#212121] font-bold rounded-lg text-xs transition-colors flex items-center gap-1"
+                      className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-[#212121] font-bold rounded-lg text-xs transition-colors flex items-center gap-1 cursor-pointer"
                     >
                       <ChevronLeft className="w-4 h-4" /> Back to Home
                     </button>
@@ -678,13 +674,15 @@ function App() {
                   />
                 </div>
               )}
-
-              {/* Tab 4: Member 3 - Specialist Referrals (ASHA Triage Module) */}
-              {activePatientTab === 'referrals' && (
-                <ReferralsDashboard onBack={() => setActivePatientTab('home')} />
+              {/* Tab 5: Care Hub (Emergency Helplines & Healthcare Services) */}
+              {activePatientTab === 'care' && (
+                <CareHub
+                  patient={patientProfile || mockPatient}
+                  onNavigate={setActivePatientTab}
+                />
               )}
 
-              {/* Tab 5: Member 3 - Emergency Break-Glass ID */}
+              {/* Tab 6: Member 3 - Emergency Break-Glass ID */}
               {activePatientTab === 'emergency' && (
                 <PlaceholderScreen
                   icon={NavEmergencyIcon}
@@ -699,7 +697,7 @@ function App() {
                 />
               )}
 
-              {/* Tab 6: Public Benefits - Government Health Schemes */}
+              {/* Tab 7: Public Benefits - Government Health Schemes */}
               {activePatientTab === 'schemes' && (
                 <GovernmentSchemes onBack={() => setActivePatientTab('home')} />
               )}

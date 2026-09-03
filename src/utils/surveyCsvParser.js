@@ -5,6 +5,8 @@
  * groups by Household ID, and matches against existing registered beneficiaries.
  */
 
+import { validateAge, validateIndianMobileNumber } from './vitalsValidator';
+
 export const SAMPLE_SURVEY_CSV = `Name,Age,Gender,Village,Household_ID,Relation_to_Head,Mobile,Blood_Group,Known_Conditions,Pregnancy_Status,ABHA_ID
 Ramesh Deshmukh,58,Male,Shrirampur Ward 4,HH-MH-401,Head,9823101122,B+,Hypertension,No,
 Sunita Ramesh Deshmukh,52,Female,Shrirampur Ward 4,HH-MH-401,Spouse,9823101122,O+,Diabetes,No,
@@ -139,10 +141,11 @@ export function parseSurveyCsv(csvText, assignedVillages = [], existingPatients 
     }
 
     // 2. Validate Age
-    const parsedAge = parseInt(rawAge, 10);
-    if (isNaN(parsedAge) || parsedAge < 0 || parsedAge > 125) {
-      errors.push('Valid age between 0 and 125 is required.');
+    const ageRes = validateAge(rawAge);
+    if (!ageRes.valid) {
+      errors.push(ageRes.message || 'Valid age between 0 and 125 is required.');
     }
+    const parsedAge = ageRes.valid ? ageRes.age : NaN;
 
     // 3. Normalize Gender
     let normalizedGender = 'Other';
@@ -151,7 +154,18 @@ export function parseSurveyCsv(csvText, assignedVillages = [], existingPatients 
     else if (gLower.startsWith('f') || gLower.startsWith('w')) normalizedGender = 'Female';
     else if (gLower) normalizedGender = 'Other';
 
-    // 4. Resolve Village Object
+    // 4. Validate Phone
+    let cleanPhone = null;
+    if (rawMobile && rawMobile.trim()) {
+      const phoneRes = validateIndianMobileNumber(rawMobile, true);
+      if (!phoneRes.valid) {
+        errors.push(phoneRes.message);
+      } else {
+        cleanPhone = phoneRes.normalized;
+      }
+    }
+
+    // 5. Resolve Village Object
     let matchedVillageObj = assignedVillages.find(v => 
       v.name.toLowerCase().trim() === rawVillage.toLowerCase().trim() ||
       v.name.toLowerCase().includes(rawVillage.toLowerCase().trim())
@@ -160,7 +174,7 @@ export function parseSurveyCsv(csvText, assignedVillages = [], existingPatients 
       matchedVillageObj = assignedVillages[0];
     }
 
-    // 5. Conditions & Pregnancy Parse
+    // 6. Conditions & Pregnancy Parse
     const conditionsList = rawConditions
       ? rawConditions.split(/[,;&]/).map(c => c.trim()).filter(Boolean)
       : [];
@@ -179,7 +193,7 @@ export function parseSurveyCsv(csvText, assignedVillages = [], existingPatients 
       areaId: matchedVillageObj?.area_id || null,
       householdId: rawHhId ? rawHhId.trim().toUpperCase() : `HH-${Math.floor(100 + Math.random() * 900)}`,
       relationToHead: rawRelation.trim() || 'Member',
-      phone: rawMobile.replace(/[^0-9]/g, '').slice(-10),
+      phone: cleanPhone,
       bloodGroup: rawBloodGroup.toUpperCase().trim() || null,
       knownConditions: conditionsList,
       isPregnant,
