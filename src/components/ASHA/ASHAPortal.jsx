@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Home, Users, Send, AlertTriangle, BarChart2, ChevronLeft, UserCircle2, Menu, X, Pill } from "lucide-react";
+import { Home, Users, Send, AlertTriangle, BarChart2, ChevronLeft, UserCircle2, Menu, X, Pill, HeartPulse } from "lucide-react";
 import ASHAHome from "./ASHAHome";
 import MyVillage from "./MyVillage";
 import AddFamilyForm from "./AddFamilyForm";
@@ -78,13 +78,13 @@ export default function ASHAPortal({ onBack }) {
           {/* Logo & Brand Header */}
           <div className="flex items-center justify-between mb-8">
             <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-[#008F83] text-white flex items-center justify-center font-black text-base shadow-xs">
-                R
+              <div className="w-10 h-10 rounded-2xl bg-[#EAF7F3] border border-[#CDEEE4] text-[#007A70] flex items-center justify-center font-black shadow-inner">
+                <HeartPulse className="w-5 h-5 text-[#007A70]" />
               </div>
               <div>
-                <div className="font-black text-base leading-tight text-slate-900">RadVault</div>
-                <div className="text-[10px] font-extrabold text-[#008F83] uppercase tracking-wider">
-                  ASHA Care
+                <div className="font-black text-base leading-tight text-[#132B3E]">RadVault</div>
+                <div className="text-[10px] font-extrabold text-[#007A70] uppercase tracking-wider">
+                  ASHA CARE
                 </div>
               </div>
             </div>
@@ -97,7 +97,7 @@ export default function ASHAPortal({ onBack }) {
           </div>
 
           {/* Primary Navigation Menu */}
-          <nav className="flex-1 space-y-1">
+          <nav className="flex-1 space-y-1.5">
             {NAV.map(({ key, label, Icon }) => {
               const active = screen === key;
               return (
@@ -108,10 +108,10 @@ export default function ASHAPortal({ onBack }) {
                     setScreen(key);
                     setIsSidebarOpen(false);
                   }}
-                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-bold text-xs transition-all ${
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-bold text-xs transition-all cursor-pointer ${
                     active
-                      ? 'bg-[#008F83] text-white shadow-xs'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-[#008F83]'
+                      ? 'bg-[#007A70] text-white shadow-xs'
+                      : 'text-slate-600 hover:bg-[#EAF7F3]/70 hover:text-[#007A70]'
                   }`}
                 >
                   <Icon className={`w-4 h-4 ${active ? 'text-white' : 'text-slate-400'}`} strokeWidth={active ? 2.5 : 2} />
@@ -124,8 +124,8 @@ export default function ASHAPortal({ onBack }) {
           {/* Sidebar Footer */}
           <div className="mt-auto pt-4 border-t border-slate-100 space-y-3">
              <div className="flex items-center gap-3 px-2 mb-2">
-                <div className="w-8 h-8 rounded-full bg-[#E8F7F3] border border-[#008F83]/20 flex items-center justify-center text-sm font-bold text-[#008F83] shrink-0">
-                  <UserCircle2 className="w-5 h-5" />
+                <div className="w-9 h-9 rounded-full bg-[#EAF7F3] border border-[#CDEEE4] flex items-center justify-center text-sm font-bold text-[#007A70] shrink-0 shadow-inner">
+                  👩‍⚕️
                 </div>
                 <div className="min-w-0">
                   <div className="text-xs font-black text-slate-900 truncate">Priya Deshmukh</div>
@@ -134,7 +134,7 @@ export default function ASHAPortal({ onBack }) {
               </div>
             <button
               onClick={onBack}
-              className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-[#64748B] hover:bg-slate-50 transition-colors border border-slate-200"
+              className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-2xl text-xs font-bold text-slate-600 hover:bg-slate-50 transition-colors border border-slate-200 cursor-pointer"
             >
               <ChevronLeft className="w-4 h-4" /> Exit to Portals
             </button>
