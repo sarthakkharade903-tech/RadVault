@@ -70,6 +70,7 @@ export default function ASHAVisitLogger({ patient, onBack, onSaved }) {
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
   const timerIntervalRef = useRef(null);
+  const initialNotesRef = useRef("");
   const recognitionRef = useRef(null);
 
   useEffect(() => {
@@ -100,6 +101,7 @@ export default function ASHAVisitLogger({ patient, onBack, onSaved }) {
   const startRecording = async () => {
     setMicError("");
     try {
+      initialNotesRef.current = f.notes || "";
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       audioChunksRef.current = [];
 
@@ -114,8 +116,8 @@ export default function ASHAVisitLogger({ patient, onBack, onSaved }) {
 
       mediaRecorder.onstop = () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
-        const url = URL.createObjectURL(audioBlob);
-        setAudioBlobUrl(url);
+        const audioUrl = URL.createObjectURL(audioBlob);
+        setAudioBlobUrl(audioUrl);
         // Stop stream tracks
         stream.getTracks().forEach(track => track.stop());
       };
@@ -139,14 +141,16 @@ export default function ASHAVisitLogger({ patient, onBack, onSaved }) {
         recognition.lang = audioLang;
 
         recognition.onresult = (event) => {
-          let liveTranscript = "";
+          let fullSpeech = "";
           for (let i = 0; i < event.results.length; i++) {
-            liveTranscript += event.results[i][0].transcript + " ";
+            fullSpeech += event.results[i][0].transcript + " ";
           }
-          if (liveTranscript.trim()) {
+          const cleanedSpeech = fullSpeech.replace(/\s+/g, ' ').trim();
+          if (cleanedSpeech) {
+            const base = initialNotesRef.current ? initialNotesRef.current.trim() : "";
             setF(prev => ({
               ...prev,
-              notes: prev.notes ? `${prev.notes} ${liveTranscript.trim()}` : liveTranscript.trim()
+              notes: base ? `${base} ${cleanedSpeech}` : cleanedSpeech
             }));
           }
         };

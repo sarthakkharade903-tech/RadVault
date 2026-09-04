@@ -1,42 +1,76 @@
-﻿// locationService.js
+// locationService.js
 // Offline-First Government Healthcare Routing Engine
 
 import { govHospitals } from '../data/govHospitals';
 
 export async function fetchGovHospitals(lat, lon) {
   try {
-    // In a real app, this might query a local SQLite DB or Supabase if online.
-    // For this resilient architecture, we use the local bundled dataset.
-    
-    // Artificial slight delay to simulate processing/fetching
-    await new Promise(resolve => setTimeout(resolve, 800));
-    
-    const results = govHospitals.map(h => {
-      const R = 6371; // km
-      const dLat = (h.lat - lat) * Math.PI / 180;
-      const dLon = (h.lon - lon) * Math.PI / 180;
-      const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat * Math.PI / 180) * Math.cos(h.lat * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-      const dist = R * c;
-      
-      return { 
-        name: h.name, 
-        dist: dist.toFixed(1), 
+    // Default to Shirwal Village (ASHA Sector 4) if coordinates not provided
+    let targetLat = lat ?? 18.1340;
+    let targetLon = lon ?? 73.9820;
+
+    const R = 6371; // Earth radius in km
+
+    const calculateDistance = (hLat, hLon, uLat, uLon) => {
+      const dLat = (hLat - uLat) * Math.PI / 180;
+      const dLon = (hLon - uLon) * Math.PI / 180;
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(uLat * Math.PI / 180) * Math.cos(hLat * Math.PI / 180) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c;
+    };
+
+    // Calculate with provided coords
+    let results = govHospitals.map(h => {
+      const dist = calculateDistance(h.lat, h.lon, targetLat, targetLon);
+      const typeLabel =
+        h.type === 'DH' ? 'District Civil Hospital' :
+        h.type === 'CHC' ? 'Rural Hospital / CHC' :
+        h.type === 'PHC' ? 'Primary Health Centre (PHC)' :
+        'Ayushman Arogya Mandir (SC)';
+
+      return {
+        id: h.id,
+        name: h.name,
+        dist: dist.toFixed(1),
+        rawDist: dist,
         type: h.type,
-        rawDist: dist
+        typeLabel,
+        isGovernment: true
       };
     })
-    .filter(h => h.rawDist <= 50) // Only within 50km
-    .sort((a,b) => a.rawDist - b.rawDist);
-    
-    // Add fallback if they are entirely outside Pune just for the demo to not break
+    .filter(h => h.rawDist <= 50) // Strictly within 50 km radius
+    .sort((a, b) => a.rawDist - b.rawDist);
+
+    // If GPS placed the user outside Maharashtra/50km (e.g. testing environment),
+    // recalculate relative to ASHA Field Sector 4 (Shirwal) so the real government list is never empty
     if (results.length === 0) {
-      return [
-        { name: "Primary Health Centre - Wagholi", type: "PHC", dist: "10.0" },
-        { name: "District Civil Hospital (Aundh)", type: "DH", dist: "15.0" }
-      ];
+      targetLat = 18.1340;
+      targetLon = 73.9820;
+      results = govHospitals.map(h => {
+        const dist = calculateDistance(h.lat, h.lon, targetLat, targetLon);
+        const typeLabel =
+          h.type === 'DH' ? 'District Civil Hospital' :
+          h.type === 'CHC' ? 'Rural Hospital / CHC' :
+          h.type === 'PHC' ? 'Primary Health Centre (PHC)' :
+          'Ayushman Arogya Mandir (SC)';
+
+        return {
+          id: h.id,
+          name: h.name,
+          dist: dist.toFixed(1),
+          rawDist: dist,
+          type: h.type,
+          typeLabel,
+          isGovernment: true
+        };
+      })
+      .filter(h => h.rawDist <= 50)
+      .sort((a, b) => a.rawDist - b.rawDist);
     }
-    
+
     return results;
   } catch (err) {
     console.error("fetchGovHospitals error:", err);
@@ -49,11 +83,15 @@ export function getCurrentLocation() {
     if ('geolocation' in navigator) {
       navigator.geolocation.getCurrentPosition(
         (p) => resolve({ lat: p.coords.latitude, lon: p.coords.longitude }),
-        (err) => reject(err),
-        { timeout: 10000, enableHighAccuracy: true }
+        (err) => {
+          console.warn("Geolocation permission or timeout, falling back to local sector coords:", err);
+          // Fallback to Sector 4 Shirwal coordinates
+          resolve({ lat: 18.1340, lon: 73.9820, isFallback: true });
+        },
+        { timeout: 7000, enableHighAccuracy: true }
       );
     } else {
-      reject(new Error("Geolocation not supported"));
+      resolve({ lat: 18.1340, lon: 73.9820, isFallback: true });
     }
   });
 }
