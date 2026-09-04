@@ -186,9 +186,6 @@ export default function ASHAHome({
                   <h1 className="text-base sm:text-lg font-black text-[#16324F] leading-tight">
                     RadVault · {t.dashboardTitle}
                   </h1>
-                  <span className="hidden sm:inline-block text-[10px] font-black px-2 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded">
-                    NHM Govt.
-                  </span>
                 </div>
                 <p className="text-[11px] font-bold text-slate-500">
                   {today} • {t.villageName}
@@ -574,23 +571,6 @@ export default function ASHAHome({
 
         </main>
       </div>
-
-      {/* ── FOOTER OFFICIAL TRUST STRIP (MATCHING eSanjeevani REFERENCE) ── */}
-      <footer className="mt-12 bg-white border-t border-slate-200/80 py-4 px-4 sm:px-8">
-        <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-center sm:justify-between gap-4 text-[10px] text-slate-500 font-bold uppercase tracking-wider">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span>National Health Mission · Ministry of Health &amp; Family Welfare · Govt. of India</span>
-          </div>
-          <div className="flex items-center gap-4 text-slate-400">
-            <span>Ayushman Bharat (ABDM)</span>
-            <span>•</span>
-            <span>C-DAC Partner</span>
-            <span>•</span>
-            <span>eSanjeevani Bridge</span>
-          </div>
-        </div>
-      </footer>
 
     </div>
   );
