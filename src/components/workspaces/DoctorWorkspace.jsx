@@ -9,14 +9,28 @@ import {
   Trash2,
   Save,
   CheckCircle,
+  CheckCircle2,
   RefreshCw,
   ChevronLeft,
   Stethoscope,
   Building2,
-  Activity
+  Activity,
+  Video,
+  PhoneCall,
+  PhoneOff,
+  Pill,
+  Clock,
+  User,
+  Sparkles
 } from 'lucide-react';
 import { supabase, ensureRoleAuth } from '../../services/supabase';
 import { getPatientTimeline } from '../../services/patientService';
+import {
+  getWaitingTeleconsultSessions,
+  doctorAcceptTeleconsult,
+  doctorCompleteTeleconsult
+} from '../../services/ashaService';
+
 
 
 const DEMO_DOCTOR_PROFILE = {
@@ -125,6 +139,35 @@ export default function DoctorWorkspace({
     setTimeout(() => setSuccessMsg(''), 4000);
   };
 
+  // ─── Live Teleconsultation Desk State ───
+  const [teleQueue, setTeleQueue] = useState([]);
+  const [activeTeleSession, setActiveTeleSession] = useState(null);
+  const [showTeleModal, setShowTeleModal] = useState(false);
+  const [teleCallTimer, setTeleCallTimer] = useState(0);
+  const [teleDiagnosis, setTeleDiagnosis] = useState('Acute Viral Febrile Illness');
+  const [teleMedicines, setTeleMedicines] = useState([
+    { name: 'Tab. Paracetamol 500mg', dosage: '1 tablet thrice daily after food (3 days)' },
+    { name: 'Sachet ORS (Oral Rehydration)', dosage: '1 packet in 1 litre boiled cool water (daily)' },
+    { name: 'Tab. Cetirizine 10mg', dosage: '1 tablet at bedtime if nasal congestion persists' }
+  ]);
+  const [teleAdvice, setTeleAdvice] = useState('Adequate oral hydration. Rest for 3 days. Return to PHC if fever persists.');
+  const [teleSaving, setTeleSaving] = useState(false);
+  const [isDoctorMuted, setIsDoctorMuted] = useState(false);
+  const [isDoctorVideoOff, setIsDoctorVideoOff] = useState(false);
+  const [quickMedName, setQuickMedName] = useState('');
+  const [quickMedDosage, setQuickMedDosage] = useState('');
+
+  // Call timer for active consultation
+  useEffect(() => {
+    let t = null;
+    if (showTeleModal) {
+      t = setInterval(() => setTeleCallTimer(prev => prev + 1), 1000);
+    } else {
+      setTeleCallTimer(0);
+    }
+    return () => clearInterval(t);
+  }, [showTeleModal]);
+
   const getDraftKey = (refId) => `radvault_doctor_draft_${refId}`;
 
   const loadDoctorDbData = useCallback(async (isSilent = false) => {
@@ -222,8 +265,18 @@ export default function DoctorWorkspace({
     }
   }, [isDemoMode, demoDataEnabled]);
 
+  const loadTeleQueue = useCallback(async () => {
+    try {
+      const { data } = await getWaitingTeleconsultSessions();
+      setTeleQueue(data || []);
+    } catch (err) {
+      console.warn('[DoctorWorkspace] Failed to fetch teleconsult queue:', err);
+    }
+  }, []);
+
   useEffect(() => {
     loadDoctorDbData(false);
+    loadTeleQueue();
 
     const channel = supabase.channel('doctor_referrals_live')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'referrals' }, () => {
@@ -231,15 +284,61 @@ export default function DoctorWorkspace({
       })
       .subscribe();
 
+    const teleChannel = supabase.channel('doctor_tele_live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'teleconsult_sessions' }, () => {
+        loadTeleQueue();
+      })
+      .subscribe();
+
     const interval = setInterval(() => {
       loadDoctorDbData(true);
-    }, 30000);
+      loadTeleQueue();
+    }, 15000);
 
     return () => {
       supabase.removeChannel(channel);
+      supabase.removeChannel(teleChannel);
       clearInterval(interval);
     };
-  }, [loadDoctorDbData]);
+  }, [loadDoctorDbData, loadTeleQueue]);
+
+  const handleStartTeleconsult = async (session) => {
+    try {
+      const docName = doctorProfile?.name || 'Dr. Arvind Kulkarni (Medical Officer)';
+      await doctorAcceptTeleconsult(session.id, docName);
+      setActiveTeleSession({ ...session, doctor_name: docName });
+      setTeleDiagnosis(session.chief_complaint?.includes('Fever') ? 'Acute Viral Febrile Illness' : 'General OPD Health Review');
+      setShowTeleModal(true);
+      showToast(`✓ Connected to ${session.patient_name} in Virtual OPD Room.`);
+      loadTeleQueue();
+    } catch (err) {
+      setError(`Failed to connect teleconsult: ${err.message}`);
+    }
+  };
+
+  const handleCompleteTeleconsult = async () => {
+    if (!activeTeleSession) return;
+    setTeleSaving(true);
+    try {
+      await doctorCompleteTeleconsult(activeTeleSession.id, {
+        diagnosis: teleDiagnosis || 'Viral Illness and Upper Respiratory Review',
+        rx_medicines: teleMedicines,
+        doctor_advice: teleAdvice,
+        session_duration_sec: teleCallTimer,
+        care_request_id: activeTeleSession.care_request_id
+      });
+      setTeleSaving(false);
+      setShowTeleModal(false);
+      setActiveTeleSession(null);
+      showToast('✓ Teleconsultation signed and official e-Prescription (Rx) dispatched to patient in real time.');
+      loadTeleQueue();
+      loadDoctorDbData(true);
+    } catch (err) {
+      setTeleSaving(false);
+      setError(`Failed to complete teleconsultation: ${err.message}`);
+    }
+  };
+
 
   const handleSaveDraft = () => {
     if (!activeCase) return;
@@ -608,10 +707,46 @@ export default function DoctorWorkspace({
               </div>
             )}
 
+            {/* Live Incoming Teleconsult Alert Banner */}
+            {teleQueue.length > 0 && (
+              <div className="p-4 bg-teal-50 border-2 border-[#008F83] rounded-3xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-md animate-pulse">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-[#008F83] text-white flex items-center justify-center font-black shrink-0 shadow-sm">
+                    <Video className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[10px] font-black bg-[#008F83] text-white px-2 py-0.5 rounded-full uppercase tracking-wider animate-bounce">
+                        ● LIVE VIRTUAL CALL INCOMING
+                      </span>
+                      <span className="text-sm font-black text-slate-900">
+                        {teleQueue[0].patient_name}
+                      </span>
+                      <span className="text-[10px] font-mono font-bold bg-white text-slate-700 px-2 py-0.5 rounded border border-slate-200">
+                        {teleQueue[0].token || 'eS-SHIR-248'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-600 font-semibold mt-1">
+                      Reported Concern: <span className="font-bold text-slate-900">{teleQueue[0].chief_complaint || 'General Checkup'}</span> · Live Vitals Linked
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleStartTeleconsult(teleQueue[0])}
+                  className="px-5 py-2.5 bg-[#008F83] hover:bg-[#007A70] text-white font-black text-xs rounded-xl flex items-center justify-center gap-2 shadow-md transition-all cursor-pointer shrink-0"
+                >
+                  <PhoneCall className="w-4 h-4" />
+                  <span>Connect Video Call</span>
+                </button>
+              </div>
+            )}
+
             <div className="flex items-center gap-2 border-b border-slate-200 pb-1 text-xs">
               {[
                 { key: 'home', label: 'Home Overview' },
-                { key: 'cases', label: `Assigned Queue (${counts.waiting})` }
+                { key: 'cases', label: `Assigned Queue (${counts.waiting})` },
+                { key: 'teleconsult', label: `📹 Virtual Tele-OPD (${teleQueue.length})` }
               ].map(tab => (
                 <button
                   key={tab.key}
@@ -879,6 +1014,85 @@ export default function DoctorWorkspace({
                   </div>
                 )}
 
+              </div>
+            )}
+
+            {activeTab === 'teleconsult' && (
+              <div className="space-y-4 animate-in fade-in duration-150">
+                <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                      <Video className="w-4 h-4 text-[#008F83]" />
+                      <span>Virtual Tele-OPD Queue (eSanjeevani Network)</span>
+                    </h3>
+                    <p className="text-xs text-slate-500 font-semibold mt-0.5">
+                      Remote patients connected from villages awaiting on-duty doctor video consultation
+                    </p>
+                  </div>
+                  <button
+                    onClick={loadTeleQueue}
+                    className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer self-start sm:self-auto"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Refresh Queue</span>
+                  </button>
+                </div>
+
+                {teleQueue.length > 0 ? (
+                  <div className="space-y-3">
+                    {teleQueue.map(item => (
+                      <div
+                        key={item.id}
+                        className="bg-white border-2 border-[#008F83]/30 rounded-3xl p-5 shadow-xs hover:border-[#008F83] transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                      >
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-red-100 text-red-800 border border-red-200 flex items-center gap-1 animate-pulse">
+                              <span className="w-1.5 h-1.5 rounded-full bg-red-600" />
+                              {item.session_status === 'IN_CALL' ? 'In Active Call' : 'In Virtual Waiting Room'}
+                            </span>
+                            <span className="font-mono text-[11px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded">
+                              {item.token || 'eS-SHIR-248'}
+                            </span>
+                          </div>
+
+                          <h4 className="text-base font-black text-slate-900">{item.patient_name}</h4>
+                          
+                          <p className="text-xs text-slate-600 font-semibold">
+                            Reported Concern: <span className="font-bold text-slate-800">{item.chief_complaint || 'General Checkup'}</span>
+                          </p>
+
+                          {item.vitals_snapshot && (
+                            <div className="flex items-center gap-3 text-[11px] font-bold text-slate-500 pt-1">
+                              <span>BP: <b className="text-slate-800">{item.vitals_snapshot.bp_systolic ? `${item.vitals_snapshot.bp_systolic}/${item.vitals_snapshot.bp_diastolic || 80}` : '120/80'}</b></span>
+                              <span>·</span>
+                              <span>SpO2: <b className="text-slate-800">{item.vitals_snapshot.spo2_pct || 98}%</b></span>
+                              <span>·</span>
+                              <span>Pulse: <b className="text-slate-800">{item.vitals_snapshot.pulse_bpm || 76} bpm</b></span>
+                            </div>
+                          )}
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => handleStartTeleconsult(item)}
+                          className="px-5 py-3 bg-[#008F83] hover:bg-[#007A70] text-white font-black text-xs rounded-2xl flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer shrink-0"
+                        >
+                          <PhoneCall className="w-4 h-4" />
+                          <span>{item.session_status === 'IN_CALL' ? 'Re-Join Call' : 'Connect Video Call'}</span>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-12 bg-white rounded-3xl border border-slate-200 shadow-2xs space-y-2">
+                    <Video className="w-8 h-8 text-slate-300 mx-auto" />
+                    <p className="text-sm font-bold text-slate-800">No patients waiting in Virtual OPD</p>
+                    <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                      When a patient initiates a teleconsultation from their Care Hub, they will appear here live in real-time.
+                    </p>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1367,6 +1581,223 @@ export default function DoctorWorkspace({
                 Sign & Finalize
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── LIVE DOCTOR TELECONSULTATION CONSOLE ── */}
+      {showTeleModal && activeTeleSession && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[92vh] flex flex-col border border-slate-200 shadow-2xl overflow-hidden">
+            
+            {/* Header */}
+            <div className="bg-gradient-to-r from-[#16324F] to-[#008F83] px-6 py-3.5 text-white flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center">
+                  <Video className="w-4 h-4 text-teal-200" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-black flex items-center gap-1.5">
+                    Live Tele-OPD Consultation Desk
+                    <span className="text-[9px] bg-red-500 text-white font-black px-1.5 py-0.2 rounded-full animate-pulse">
+                      ● IN CALL
+                    </span>
+                  </h3>
+                  <p className="text-[10px] text-teal-100">
+                    Patient: {activeTeleSession.patient_name} · Token: {activeTeleSession.token || 'eS-SHIR-248'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <div className="bg-black/40 px-2.5 py-1 rounded-full text-[11px] font-mono font-bold flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>{Math.floor(teleCallTimer / 60)}:{(teleCallTimer % 60).toString().padStart(2, '0')}</span>
+                </div>
+                <button
+                  onClick={() => setShowTeleModal(false)}
+                  className="p-1.5 text-white/80 hover:text-white rounded-lg cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="p-5 overflow-y-auto space-y-4 text-xs font-sans text-slate-800 flex-1">
+              {/* Video Screen Simulation */}
+              <div className="relative w-full h-44 bg-slate-900 rounded-2xl overflow-hidden flex items-center justify-center shadow-inner">
+                <div className="text-center text-white space-y-1">
+                  <div className="w-14 h-14 rounded-full bg-slate-800 border-2 border-teal-400 mx-auto flex items-center justify-center text-2xl shadow-lg">
+                    👤
+                  </div>
+                  <p className="font-extrabold text-xs text-white">{activeTeleSession.patient_name}</p>
+                  <p className="text-[10px] text-teal-300">Connected from Village Home (Mobile)</p>
+                  <div className="flex items-center justify-center gap-1">
+                    <span className="w-1.5 h-2.5 bg-teal-400 rounded-full animate-pulse" />
+                    <span className="w-1.5 h-4 bg-teal-400 rounded-full animate-pulse delay-75" />
+                    <span className="w-1.5 h-3 bg-teal-400 rounded-full animate-pulse delay-150" />
+                  </div>
+                </div>
+
+                <div className="absolute top-2 right-2 w-16 h-20 bg-slate-800 border border-white/20 rounded-lg overflow-hidden flex flex-col items-center justify-center text-white shadow-md">
+                  <span className="text-lg">{isDoctorVideoOff ? "🚫" : "👨‍⚕️"}</span>
+                  <span className="text-[8px] font-bold mt-0.5 text-slate-300">You (Doctor)</span>
+                </div>
+
+                <div className="absolute bottom-2 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsDoctorMuted(!isDoctorMuted)}
+                    className={`p-2 rounded-xl transition-colors cursor-pointer ${
+                      isDoctorMuted ? 'bg-red-500 text-white' : 'bg-white/20 hover:bg-white/30 text-white'
+                    }`}
+                  >
+                    {isDoctorMuted ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsDoctorVideoOff(!isDoctorVideoOff)}
+                    className={`p-2 rounded-xl transition-colors cursor-pointer ${
+                      isDoctorVideoOff ? 'bg-red-500 text-white' : 'bg-white/20 hover:bg-white/30 text-white'
+                    }`}
+                  >
+                    {isDoctorVideoOff ? <VideoOff className="w-3.5 h-3.5" /> : <Video className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Vitals Snapshot & Reported Symptoms */}
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Patient Vitals & Complaint</span>
+                  <span className="text-[10px] font-black bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded">ABHA Linked</span>
+                </div>
+                <div className="grid grid-cols-4 gap-2 text-center text-xs">
+                  <div className="bg-white p-2 rounded-xl border border-slate-200">
+                    <p className="text-[9px] text-slate-400 font-bold">BP</p>
+                    <p className="font-black text-slate-800">{activeTeleSession.vitals_snapshot?.bp_systolic ? `${activeTeleSession.vitals_snapshot.bp_systolic}/${activeTeleSession.vitals_snapshot.bp_diastolic || 80}` : '120/80'}</p>
+                  </div>
+                  <div className="bg-white p-2 rounded-xl border border-slate-200">
+                    <p className="text-[9px] text-slate-400 font-bold">Pulse</p>
+                    <p className="font-black text-slate-800">{activeTeleSession.vitals_snapshot?.pulse_bpm || 76} bpm</p>
+                  </div>
+                  <div className="bg-white p-2 rounded-xl border border-slate-200">
+                    <p className="text-[9px] text-slate-400 font-bold">SpO2</p>
+                    <p className="font-black text-slate-800">{activeTeleSession.vitals_snapshot?.spo2_pct || 98}%</p>
+                  </div>
+                  <div className="bg-white p-2 rounded-xl border border-slate-200">
+                    <p className="text-[9px] text-slate-400 font-bold">Temp</p>
+                    <p className="font-black text-slate-800">98.6°F</p>
+                  </div>
+                </div>
+                <div className="p-2.5 bg-amber-50/80 border border-amber-200 rounded-xl text-xs font-medium text-amber-950">
+                  <span className="font-bold text-amber-900">Reported Concern: </span>
+                  {activeTeleSession.chief_complaint || 'General medical review requested'}
+                </div>
+              </div>
+
+              {/* Diagnosis Input */}
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block">
+                  Clinical Diagnosis (Written to Patient Health Record)
+                </label>
+                <input
+                  type="text"
+                  value={teleDiagnosis}
+                  onChange={e => setTeleDiagnosis(e.target.value)}
+                  placeholder="e.g. Acute Viral Febrile Illness"
+                  className="w-full p-2.5 border border-slate-200 rounded-xl font-bold text-xs focus:outline-none focus:border-[#008F83]"
+                />
+              </div>
+
+              {/* Fast Prescribe Presets */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider">
+                    Prescribe Medicines (1-Click Fast Rural Formulations)
+                  </label>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    { name: 'Tab. Paracetamol 500mg', dosage: '1 tablet thrice daily after food (3 days)' },
+                    { name: 'Sachet ORS (Oral Rehydration)', dosage: '1 packet in 1 litre boiled cool water (daily)' },
+                    { name: 'Tab. Cetirizine 10mg', dosage: '1 tablet at bedtime' },
+                    { name: 'Cap. Amoxicillin 500mg', dosage: '1 capsule thrice daily (5 days)' },
+                    { name: 'Tab. Pantoprazole 40mg', dosage: '1 tablet empty stomach in morning' }
+                  ].map((med, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => {
+                        if (!teleMedicines.some(m => m.name === med.name)) {
+                          setTeleMedicines(prev => [...prev, med]);
+                        }
+                      }}
+                      className="px-2.5 py-1 bg-slate-100 hover:bg-[#E8F7F3] hover:text-[#008F83] border border-slate-200 rounded-lg text-[11px] font-bold text-slate-700 transition-colors cursor-pointer"
+                    >
+                      + {med.name.split(' ')[1] || med.name}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Prescribed list */}
+                <div className="space-y-1.5 pt-1">
+                  {teleMedicines.map((m, idx) => (
+                    <div key={idx} className="flex items-center justify-between p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                      <div>
+                        <span className="font-extrabold text-slate-900">{m.name}</span>
+                        <span className="text-slate-500 text-[11px] ml-2">{m.dosage}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setTeleMedicines(prev => prev.filter((_, i) => i !== idx))}
+                        className="text-rose-500 hover:text-rose-700 p-1 cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Advice */}
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block">
+                  Doctor's Instructions & Follow-up
+                </label>
+                <textarea
+                  rows={2}
+                  value={teleAdvice}
+                  onChange={e => setTeleAdvice(e.target.value)}
+                  placeholder="Clinical advice..."
+                  className="w-full p-2.5 border border-slate-200 rounded-xl font-medium text-xs focus:outline-none focus:border-[#008F83]"
+                />
+              </div>
+
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => setShowTeleModal(false)}
+                className="px-4 py-2.5 bg-white border border-slate-200 rounded-xl font-bold text-xs text-slate-700 cursor-pointer"
+              >
+                Close Window
+              </button>
+
+              <button
+                type="button"
+                disabled={teleSaving}
+                onClick={handleCompleteTeleconsult}
+                className="px-6 py-2.5 bg-[#008F83] hover:bg-[#007A70] text-white font-black text-xs rounded-xl shadow-md flex items-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                {teleSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                <span>Sign & Issue e-Prescription (Rx)</span>
+              </button>
+            </div>
+
           </div>
         </div>
       )}

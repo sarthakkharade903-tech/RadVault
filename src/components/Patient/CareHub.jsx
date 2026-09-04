@@ -5,9 +5,17 @@ import {
   Stethoscope, Plus, X, AlertTriangle, Send, Clock, CheckCircle2, CheckCheck, 
   Calendar, Building2, HeartPulse, Baby, User, Loader2, MapPin,
   Phone, Video, VideoOff, Mic, MicOff, PhoneOff, PhoneCall, Shield,
-  Sparkles, Check, ArrowRight, Download, FileText, Activity
+  Sparkles, Check, ArrowRight, Download, FileText, Activity, Ticket
 } from "lucide-react";
-import { getCareRequests, createCareRequest, getLatestVitals, saveTeleconsultSession, getTeleconsultSessions } from "../../services/ashaService";
+import {
+  getCareRequests,
+  createCareRequest,
+  getLatestVitals,
+  saveTeleconsultSession,
+  getTeleconsultSessions,
+  createWaitingTeleconsult
+} from "../../services/ashaService";
+
 
 
 // ─── Translations for Care Hub ──────────────────────────────
@@ -181,6 +189,53 @@ function ReferralCard({ req, lang, onViewRx }) {
           </p>
         )}
 
+        {/* Confirmed Token & Arrival Slot Pass */}
+        {req.status === 'ACCEPTED' && (
+          <div className="mt-3 p-3 bg-gradient-to-r from-[#E8F7F3] to-emerald-50 border border-[#008F83]/40 rounded-2xl space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Ticket className="w-4 h-4 text-[#008F83]" />
+                <span className="text-[10px] font-black uppercase text-[#008F83] tracking-wider">
+                  Verified Digital OPD Pass
+                </span>
+              </div>
+              <span className="text-[11px] font-black bg-[#008F83] text-white px-2.5 py-0.5 rounded-md font-mono shadow-2xs">
+                {req.asha_notes?.match(/TOKEN:\s*([^|]+)/i)?.[1]?.trim() || req.reason?.match(/Token:\s*([^\]|]+)/i)?.[1]?.trim() || 'TOKEN ASSIGNED'}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 text-xs pt-1 border-t border-[#008F83]/20">
+              <div>
+                <span className="text-[9px] text-slate-500 font-bold uppercase block">Staggered Arrival Window</span>
+                <span className="font-black text-slate-900">
+                  {req.asha_notes?.match(/SLOT:\s*([^|]+)/i)?.[1]?.trim() || req.slot_preference || '10:30 AM – 11:00 AM'}
+                </span>
+              </div>
+              <div>
+                <span className="text-[9px] text-slate-500 font-bold uppercase block">Reporting Counter</span>
+                <span className="font-black text-slate-900">
+                  {req.asha_notes?.match(/ROOM:\s*([^|]+)/i)?.[1]?.trim() || req.doctor_assigned || 'Counter 2 · General OPD'}
+                </span>
+              </div>
+            </div>
+
+            {req.asha_notes?.match(/INSTRUCTION:\s*([^|]+)/i)?.[1]?.trim() && (
+              <p className="text-[11px] text-emerald-950 font-semibold bg-white/90 p-2 rounded-xl border border-emerald-200/60">
+                💡 {req.asha_notes.match(/INSTRUCTION:\s*([^|]+)/i)[1].trim()}
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* If still waiting for staff token assignment */}
+        {req.status === 'SUBMITTED' && (
+          <div className="mt-2.5 p-2.5 bg-amber-50/90 border border-amber-200 rounded-xl flex items-center gap-2 text-xs font-semibold text-amber-900">
+            <Clock className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>Awaiting PHC reception staff to assign your official queue token & staggered arrival time.</span>
+          </div>
+        )}
+
+
 
         <div className="flex items-center justify-between mt-2 pt-1 text-[11px] text-slate-500 font-semibold flex-wrap gap-2">
           <span>{req.created_by ? `Origin: ${req.created_by}` : "Self-scheduled"}</span>
@@ -239,6 +294,10 @@ function TeleconsultModal({ member, onClose, onCompleted }) {
   const [isVideoOff, setIsVideoOff] = useState(false);
   const [rxSummary, setRxSummary] = useState(null);
   const [savingRx, setSavingRx] = useState(false);
+  const [teleSessionId, setTeleSessionId] = useState(null);
+  const [teleToken, setTeleToken] = useState('eS-SHIR-248');
+  const [assignedDoctor, setAssignedDoctor] = useState('Dr. Arvind Kulkarni (Medical Officer)');
+  const [waitingSubmitting, setWaitingSubmitting] = useState(false);
 
   // Real vitals from Supabase vitals_history
   const [liveVitals, setLiveVitals] = useState(null);
@@ -266,7 +325,41 @@ function TeleconsultModal({ member, onClose, onCompleted }) {
   const temp = vitalVal('temperature_c', null);
   const tempF = temp ? ((temp * 9/5) + 32).toFixed(1) : null;
 
+  // Realtime subscription: patient waiting room listens for Doctor connect or e-Prescription
+  useEffect(() => {
+    if (!teleSessionId) return;
 
+    const channel = supabase.channel(`teleconsult_stream_${teleSessionId}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'teleconsult_sessions', filter: `id=eq.${teleSessionId}` },
+        payload => {
+          const updated = payload.new;
+          if (updated.session_status === 'IN_CALL') {
+            setAssignedDoctor(updated.doctor_name || 'Dr. Arvind Kulkarni (Medical Officer)');
+            setStep('call');
+          } else if (updated.session_status === 'COMPLETED') {
+            setRxSummary({
+              doctorName: updated.doctor_name || 'Dr. Arvind Kulkarni',
+              facility: updated.facility || 'Primary Health Centre - Shirwal',
+              date: new Date(updated.created_at || Date.now()).toLocaleDateString('en-IN'),
+              diagnosis: updated.diagnosis || 'Acute Viral Febrile Illness with mild inflammation',
+              medicines: updated.rx_medicines || [
+                { name: "Tab. Paracetamol 500mg", dosage: "1 tablet thrice daily after food (3 days)" },
+                { name: "Sachet ORS (Oral Rehydration)", dosage: "1 packet in 1 litre boiled cool water (daily)" }
+              ],
+              advice: updated.doctor_advice || 'Take adequate rest and monitor temperature.'
+            });
+            setStep('rx');
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [teleSessionId]);
 
   // Call timer
   useEffect(() => {
@@ -279,19 +372,49 @@ function TeleconsultModal({ member, onClose, onCompleted }) {
     return () => clearInterval(interval);
   }, [step]);
 
-  // Waiting room auto-advance simulation
+  // Waiting room queue tracker
   useEffect(() => {
     let timer = null;
     if (step === "waiting") {
       timer = setTimeout(() => {
         setQueuePos(1);
-      }, 3000);
+      }, 4000);
     }
     return () => clearTimeout(timer);
   }, [step]);
 
-  const handleStartWaiting = () => {
-    setStep("waiting");
+  const handleStartWaiting = async () => {
+    setWaitingSubmitting(true);
+    const token = `eS-SHIR-${Math.floor(100 + Math.random() * 900)}`;
+    setTeleToken(token);
+
+    const vitalsSnapshot = {
+      bp_systolic: bpSys,
+      bp_diastolic: bpDia,
+      spo2_pct: spo2,
+      pulse_bpm: pulse,
+      temperature_c: temp,
+    };
+
+    try {
+      const { session } = await createWaitingTeleconsult({
+        patient_id: member?.id,
+        patient_name: member?.name || "Village Patient",
+        chief_complaint: symptom + (customNotes ? ` (${customNotes})` : ''),
+        additional_notes: customNotes || null,
+        vitals_snapshot: vitalsSnapshot,
+        token
+      });
+
+      if (session?.id) {
+        setTeleSessionId(session.id);
+      }
+    } catch (e) {
+      console.warn("[CareHub] createWaitingTeleconsult notice:", e);
+    } finally {
+      setWaitingSubmitting(false);
+      setStep("waiting");
+    }
   };
 
   const handleAcceptDoctorCall = () => {
@@ -514,14 +637,23 @@ function TeleconsultModal({ member, onClose, onCompleted }) {
               </div>
 
               <div>
-                <span className="text-[10px] font-black bg-slate-100 text-slate-700 px-3 py-1 rounded-full uppercase tracking-wider">
-                  Token: eS-SHIR-248
-                </span>
+                <div className="flex items-center justify-center gap-2">
+                  <span className="text-[10px] font-black bg-slate-100 text-slate-700 px-3 py-1 rounded-full uppercase tracking-wider font-mono">
+                    Token: {teleToken}
+                  </span>
+                  <span className="text-[10px] font-black bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
+                    Doctor Portal Synced
+                  </span>
+                </div>
                 <h4 className="font-black text-slate-900 text-lg mt-2">
-                  {queuePos === 1 ? "You are next in queue!" : "Doctor is consulting with previous patient"}
+                  {queuePos === 1 ? "You are next in queue!" : "Waiting for Medical Officer"}
                 </h4>
                 <p className="text-xs text-slate-500 mt-1">
-                  Queue Position: <b className="text-slate-800">#{queuePos}</b> · Estimated wait: <b className="text-[#008F83]">{queuePos === 1 ? "~1 min" : "~3 mins"}</b>
+                  Queue Position: <b className="text-slate-800">#{queuePos}</b> · Assigned Facility: <b className="text-[#008F83]">PHC Shirwal Tele-OPD</b>
+                </p>
+                <p className="text-[11px] text-slate-400 mt-1 max-w-sm mx-auto">
+                  Your request is live on the on-duty doctor's dashboard. When the doctor answers, this screen will connect automatically.
                 </p>
               </div>
 
@@ -538,16 +670,19 @@ function TeleconsultModal({ member, onClose, onCompleted }) {
                 </div>
               </div>
 
-              {/* Ready to Connect Button */}
-              <div className="pt-2">
+              {/* Ready to Connect Button / Solo Test Simulator */}
+              <div className="pt-2 space-y-2 max-w-sm mx-auto">
                 <button
                   type="button"
                   onClick={handleAcceptDoctorCall}
-                  className="px-6 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl shadow-md flex items-center justify-center gap-2 mx-auto cursor-pointer animate-bounce"
+                  className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl shadow-md flex items-center justify-center gap-2 cursor-pointer transition-all"
                 >
                   <PhoneCall className="w-4 h-4" />
-                  <span>Doctor is Ready · Connect Now</span>
+                  <span>Connect Call Now (Manual / Solo Demo)</span>
                 </button>
+                <p className="text-[10px] text-slate-400 font-medium">
+                  If running in two tabs, click "Connect Video Call" in the Doctor Portal to see the auto-connect pipeline in action.
+                </p>
               </div>
             </div>
           )}
@@ -560,11 +695,11 @@ function TeleconsultModal({ member, onClose, onCompleted }) {
                 {/* Doctor Avatar & Video Frame */}
                 <div className="text-center text-white space-y-2">
                   <div className="w-20 h-20 rounded-full bg-slate-800 border-2 border-teal-400 mx-auto flex items-center justify-center text-3xl shadow-lg">
-                    👩‍⚕️
+                    👨‍⚕️
                   </div>
                   <div>
-                    <p className="font-extrabold text-sm text-white">Dr. Priya Sharma</p>
-                    <p className="text-[10px] text-teal-300">Shirwal PHC Tele-OPD</p>
+                    <p className="font-extrabold text-sm text-white">{assignedDoctor || 'Dr. Arvind Kulkarni (Medical Officer)'}</p>
+                    <p className="text-[10px] text-teal-300">Shirwal PHC Tele-OPD · Live Consultation</p>
                   </div>
                   {/* Live audio indicator */}
                   <div className="flex items-center justify-center gap-1">
