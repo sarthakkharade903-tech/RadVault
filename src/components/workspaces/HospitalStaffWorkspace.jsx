@@ -17,9 +17,13 @@ import {
   UserCheck,
   CheckCircle2,
   ExternalLink,
-  Sparkles
+  Sparkles,
+  Ticket,
+  Clock
 } from 'lucide-react';
 import { supabase, ensureRoleAuth } from '../../services/supabase';
+import { assignStaffTokenAndSlot } from '../../services/ashaService';
+
 
 // Canonical Referral Status constants
 const REFERRAL_STATUS = {
@@ -106,6 +110,52 @@ const INITIAL_DEMO_REFERRALS = [
     vitals: { bp: '118/76', pulse: '76', spo2: '99', temp: '99.8', respRate: '16', weight: '62' },
     danger_signs: [],
     created_at: new Date().toISOString()
+  },
+  {
+    id: 'REF-DEMO-004',
+    patient_id: 'pat-demo-4',
+    patient_unified_id: 'MH-P-55210',
+    patient_name: 'Anand Bhosle',
+    patient_phone: '9822114455',
+    patient_age: 42,
+    patient_gender: 'Male',
+    patient_blood_group: 'AB+',
+    created_by: 'Direct Patient (Self-Booking)',
+    source: 'PATIENT_DIRECT',
+    destination_hospital: 'Pune Sassoon General Hospital',
+    destination_department: 'General Medicine',
+    doctor_assigned: null,
+    priority: 'GREEN',
+    priority_label: 'Routine / Direct OPD',
+    status: REFERRAL_STATUS.PENDING,
+    symptoms: 'Self-scheduled morning consultation for mild recurring joint pain.',
+    ai_note: 'Routine outpatient consultation request from patient portal.',
+    vitals: { bp: '122/80', pulse: '74', spo2: '99', temp: '98.4', respRate: '16', weight: '70' },
+    danger_signs: [],
+    created_at: new Date().toISOString()
+  },
+  {
+    id: 'REF-DEMO-005',
+    patient_id: 'pat-demo-5',
+    patient_unified_id: 'MH-P-88319',
+    patient_name: 'Kavita Jadhav',
+    patient_phone: '9423001122',
+    patient_age: 29,
+    patient_gender: 'Female',
+    patient_blood_group: 'B+',
+    created_by: 'Virtual Teleconsultation (eSanjeevani)',
+    source: 'TELECONSULT',
+    destination_hospital: 'Pune Sassoon General Hospital',
+    destination_department: 'Pediatrics',
+    doctor_assigned: 'Dr. Meera Nambiar',
+    priority: 'ORANGE',
+    priority_label: 'Teleconsult / Virtual Queue',
+    status: REFERRAL_STATUS.ACCEPTED,
+    symptoms: 'Virtual teleconsultation requested for 3-year-old child with persistent seasonal cough and fever.',
+    ai_note: 'Virtual OPD session pending. Video room active.',
+    vitals: { bp: '110/70', pulse: '88', spo2: '97', temp: '100.2', respRate: '22', weight: '14' },
+    danger_signs: [],
+    created_at: new Date().toISOString()
   }
 ];
 
@@ -121,6 +171,7 @@ export default function HospitalStaffWorkspace({
   // Navigation Tabs: 'home' | 'queue' | 'referrals'
   const [activeTab, setActiveTab] = useState('home');
   const [queueFilter, setQueueFilter] = useState('ALL'); // 'ALL' | 'Pending' | 'Accepted_Arrived' | 'Completed'
+  const [sourceFilter, setSourceFilter] = useState('ALL'); // 'ALL' | 'ASHA' | 'PATIENT_DIRECT' | 'TELECONSULT'
   const [searchQuery, setSearchQuery] = useState('');
 
   // Operational State
@@ -132,9 +183,102 @@ export default function HospitalStaffWorkspace({
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
 
+  // Referral Origin & Pipeline Helper
+  const getReferralOrigin = useCallback((ref) => {
+    const text = `${ref.source || ''} ${ref.created_by || ''} ${ref.symptoms || ''}`.toLowerCase();
+    if (text.includes('teleconsult')) {
+      return { key: 'TELECONSULT', label: 'Virtual Teleconsult', icon: '📹', badge: 'bg-[#E8F7F3] text-[#008F83] border-[#008F83]/30' };
+    }
+    if (text.includes('patient') || text.includes('self-booking') || text.includes('self-scheduled') || text.includes('direct opd')) {
+      return { key: 'PATIENT_DIRECT', label: 'Direct Patient Booking', icon: '👤', badge: 'bg-slate-100 text-slate-700 border-slate-200' };
+    }
+    return { key: 'ASHA', label: 'ASHA Field Referral', icon: '🚨', badge: 'bg-red-50 text-red-700 border-red-200' };
+  }, []);
+
   // Selected Referral Context / Modals
   const [selectedReferral, setSelectedReferral] = useState(null);
   const [showDoctorRouteModal, setShowDoctorRouteModal] = useState(null); // holds referral object
+
+  // ─── Token & Arrival Slot Allocation Modal State ───
+  const [showTokenModal, setShowTokenModal] = useState(null); // referral object to schedule
+  const [assignTokenNum, setAssignTokenNum] = useState('SHIR-OPD-014');
+  const [assignSlot, setAssignSlot] = useState('10:30 AM – 11:00 AM');
+  const [assignRoom, setAssignRoom] = useState('Counter 2 · General OPD');
+  const [assignDoctor, setAssignDoctor] = useState('Dr. Arvind Kulkarni');
+  const [assignInstruction, setAssignInstruction] = useState('Report directly to Counter 2 with this token for priority triage.');
+  const [assigningLoading, setAssigningLoading] = useState(false);
+
+  const handleOpenTokenModal = (ref) => {
+    const randomToken = `SHIR-OPD-0${Math.floor(10 + Math.random() * 89)}`;
+    const existingToken =
+      ref.slot_preference?.match(/Token\s*#?([A-Z0-9-]+)/i)?.[1]?.trim() ||
+      ref.ai_note?.match(/TOKEN:\s*([^|]+)/i)?.[1]?.trim() ||
+      ref.asha_notes?.match(/TOKEN:\s*([^|]+)/i)?.[1]?.trim() ||
+      randomToken;
+    const existingSlot =
+      (ref.slot_preference?.includes('·') ? ref.slot_preference.split('·')[1]?.trim() : null) ||
+      ref.ai_note?.match(/SLOT:\s*([^|]+)/i)?.[1]?.trim() ||
+      ref.asha_notes?.match(/SLOT:\s*([^|]+)/i)?.[1]?.trim() ||
+      '10:30 AM – 11:00 AM';
+
+    setAssignTokenNum(existingToken);
+    setAssignSlot(existingSlot);
+    setAssignRoom('Counter 2 · General OPD');
+    setAssignDoctor('Dr. Arvind Kulkarni (Medical Officer)');
+    setAssignInstruction('Report directly to Counter 2 with this token for priority triage.');
+    setShowTokenModal(ref);
+  };
+
+  const handleConfirmTokenAssignment = async () => {
+    if (!showTokenModal) return;
+    setAssigningLoading(true);
+    try {
+      if (!isDemoMode) {
+        await assignStaffTokenAndSlot({
+          careRequestId: showTokenModal.id,
+          referralId: showTokenModal.id,
+          patientId: showTokenModal.patient_id,
+          tokenNumber: assignTokenNum,
+          arrivalSlot: assignSlot,
+          room: assignRoom,
+          doctorAssigned: assignDoctor,
+          instructions: assignInstruction
+        });
+      }
+
+      const assignedNote = `TOKEN:${assignTokenNum} | SLOT:${assignSlot} | ROOM:${assignRoom} | INSTRUCTION:${assignInstruction}`;
+      const slotPref = `Token #${assignTokenNum} · ${assignSlot}`;
+
+      setReferrals(prev => prev.map(r => (r.id === showTokenModal.id || (r.patient_id && r.patient_id === showTokenModal.patient_id)) ? {
+        ...r,
+        status: 'Accepted',
+        doctor_assigned: `${assignDoctor} (${assignRoom})`,
+        ai_note: assignedNote,
+        asha_notes: assignedNote,
+        slot_preference: slotPref
+      } : r));
+
+      if (selectedReferral && (selectedReferral.id === showTokenModal.id || (selectedReferral.patient_id && selectedReferral.patient_id === showTokenModal.patient_id))) {
+        setSelectedReferral(prev => ({
+          ...prev,
+          status: 'Accepted',
+          doctor_assigned: `${assignDoctor} (${assignRoom})`,
+          ai_note: assignedNote,
+          asha_notes: assignedNote,
+          slot_preference: slotPref
+        }));
+      }
+
+      showToast(`✓ Official Token #${assignTokenNum} & slot ${assignSlot} assigned to ${showTokenModal.patient_name}.`);
+      setShowTokenModal(null);
+      loadSupabaseData(true);
+    } catch (err) {
+      setError(`Failed to assign token: ${err.message}`);
+    } finally {
+      setAssigningLoading(false);
+    }
+  };
+
 
   // Fetch real data from Supabase
   const loadSupabaseData = useCallback(async (isSilent = false) => {
@@ -220,21 +364,95 @@ export default function HospitalStaffWorkspace({
         .select('*')
         .eq('facility_id', resolvedFacilityId);
 
-      if (docErr) throw docErr;
-      setDoctors(doctorsData || []);
+      if (docErr) console.warn('[HospitalStaff] doctors query warning:', docErr.message);
 
-      // 4. Fetch Scoped Referrals
-      const { data: refData, error: refErr } = await supabase
-        .from('referrals')
-        .select('*')
-        .or(`destination_facility_id.eq.${resolvedFacilityId},destination_hospital.ilike.%${(resolvedFacilityName || 'Shrirampur').split(' ')[0]}%`)
-        .order('created_at', { ascending: false });
+      const fallbackDoctors = [
+        { id: 'doc-kulkarni', name: 'Dr. Arvind Kulkarni', specialty: 'General Medicine & OPD', room: 'OPD Room 2' },
+        { id: 'doc-sharma', name: 'Dr. Priya Sharma', specialty: 'Maternal & Child Health', room: 'ANC Room 4' },
+        { id: 'doc-shinde', name: 'Dr. Rajesh Shinde', specialty: 'Chest & TB DOTS Specialist', room: 'Chest Clinic Room 1' }
+      ];
 
-      if (refErr) throw refErr;
+      setDoctors((doctorsData && doctorsData.length > 0) ? doctorsData : fallbackDoctors);
+
+
+      // 4. Fetch Referrals & Care Requests
+      let rawRefs = [];
+      try {
+        const { data: refData } = await supabase
+          .from('referrals')
+          .select('*')
+          .or(`destination_facility_id.eq.${resolvedFacilityId},destination_hospital.ilike.%${(resolvedFacilityName || 'Shrirampur').split(' ')[0]}%`)
+          .order('created_at', { ascending: false });
+
+        if (refData && refData.length > 0) {
+          rawRefs = refData;
+        }
+      } catch (rErr) {
+        console.warn('[HospitalStaff] referrals fetch warning:', rErr.message);
+      }
+
+      // Also fetch from care_requests (which stores ASHA referrals, patient OPD bookings, etc.)
+      let careRefs = [];
+      try {
+        const { data: careData } = await supabase
+          .from('care_requests')
+          .select('*')
+          .neq('source', 'TELECONSULT')
+          .order('created_at', { ascending: false });
+
+        if (careData && careData.length > 0) {
+          careRefs = careData.map(c => {
+            const isHigh = c.priority === 'URGENT' || c.priority === 'HIGH' || c.priority === 'RED';
+            const isMedium = c.priority === 'MEDIUM' || c.priority === 'ORANGE';
+            const mappedPriority = isHigh ? 'HIGH' : isMedium ? 'ORANGE' : 'GREEN';
+            const priorityLabel = isHigh ? '🔴 Emergency / Immediate Attention' : isMedium ? '🟡 Urgent / Within 24 Hours' : '🟢 Routine / Local Care';
+
+            const hasToken = !!(c.asha_notes?.includes('TOKEN:') || c.slot_preference?.toLowerCase().includes('token'));
+            let mappedStatus = (c.status === 'COMPLETED') ? 'Completed'
+              : (c.status === 'ACCEPTED' || hasToken) ? 'Accepted'
+              : c.status === 'Arrived' ? 'Arrived'
+              : c.status === 'Assigned' ? 'Assigned'
+              : 'Pending';
+
+            return {
+              id: c.id,
+              patient_id: c.patient_id,
+              patient_name: c.patient_name || 'Patient',
+              created_by: c.created_by || (c.source === 'PATIENT_DIRECT' ? 'Direct Patient Booking' : 'ASHA Field Referral'),
+              source: c.source || 'ASHA',
+              destination_hospital: c.facility || resolvedFacilityName,
+              destination_department: c.department || 'General Medicine & OPD',
+              doctor_assigned: c.doctor_assigned || null,
+              priority: mappedPriority,
+              priority_label: priorityLabel,
+              status: mappedStatus,
+              symptoms: c.reason,
+              ai_note: c.asha_notes,
+              asha_notes: c.asha_notes,
+              slot_preference: c.slot_preference,
+              created_at: c.created_at,
+              isCareRequest: true
+            };
+          });
+        }
+      } catch (cErr) {
+        console.warn('[HospitalStaff] care_requests fetch notice:', cErr.message);
+      }
+
+      // Combine both sources (deduplicating by id)
+      const existingRefIds = new Set(rawRefs.map(r => r.id));
+      const combinedRefs = [
+        ...rawRefs,
+        ...careRefs.filter(c => !existingRefIds.has(c.id))
+      ];
+
+      // Fallback to demo if completely empty and demoDataEnabled
+      if (combinedRefs.length === 0 && demoDataEnabled) {
+        combinedRefs.push(...INITIAL_DEMO_REFERRALS);
+      }
 
       // 5. Enrich referrals with patients' human-readable unified_id (MH-P-xxxxx)
-      const rawRefs = refData || [];
-      const patientIds = Array.from(new Set(rawRefs.map(r => r.patient_id).filter(Boolean)));
+      const patientIds = Array.from(new Set(combinedRefs.map(r => r.patient_id).filter(Boolean)));
       
       let patientsMap = {};
       if (patientIds.length > 0) {
@@ -254,10 +472,11 @@ export default function HospitalStaffWorkspace({
         }
       }
 
-      const enrichedRefs = rawRefs.map(r => {
+      const enrichedRefs = combinedRefs.map(r => {
         const linkedPatient = patientsMap[r.patient_id];
         return {
           ...r,
+          patient_name: r.patient_name || linkedPatient?.full_name || 'Patient',
           patient_unified_id: linkedPatient?.unified_id || (r.patient_id && !r.patient_id.includes('-') ? r.patient_id : null),
           patient_phone: linkedPatient?.phone_number || r.vitals?.phone || null,
           patient_age: linkedPatient?.age || null,
@@ -283,18 +502,25 @@ export default function HospitalStaffWorkspace({
     loadSupabaseData(false);
 
     if (!isDemoMode) {
-      const channel = supabase.channel('staff_referrals_live')
+      const channel1 = supabase.channel('staff_referrals_live')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'referrals' }, () => {
+          loadSupabaseData(true);
+        })
+        .subscribe();
+
+      const channel2 = supabase.channel('staff_care_requests_live')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'care_requests' }, () => {
           loadSupabaseData(true);
         })
         .subscribe();
 
       const interval = setInterval(() => {
         loadSupabaseData(true);
-      }, 30000);
+      }, 4000);
 
       return () => {
-        supabase.removeChannel(channel);
+        supabase.removeChannel(channel1);
+        supabase.removeChannel(channel2);
         clearInterval(interval);
       };
     }
@@ -323,16 +549,20 @@ export default function HospitalStaffWorkspace({
     }
 
     try {
-      const { error: err } = await supabase
+      await supabase
         .from('referrals')
         .update({ status: 'Accepted' })
         .eq('id', refId);
 
-      if (err) throw err;
+      await supabase
+        .from('care_requests')
+        .update({ status: 'ACCEPTED', updated_at: new Date().toISOString() })
+        .eq('id', refId);
       
       setReferrals(prev => prev.map(r => r.id === refId ? { ...r, status: 'Accepted' } : r));
       setSelectedReferral(prev => (prev && prev.id === refId ? { ...prev, status: 'Accepted' } : prev));
       showToast('✓ Referral accepted successfully.');
+      loadSupabaseData(true);
     } catch (err) {
       setError(`Failed to accept referral: ${err.message}`);
     }
@@ -348,16 +578,20 @@ export default function HospitalStaffWorkspace({
     }
 
     try {
-      const { error: err } = await supabase
+      await supabase
         .from('referrals')
         .update({ status: 'Arrived' })
         .eq('id', refId);
 
-      if (err) throw err;
+      await supabase
+        .from('care_requests')
+        .update({ status: 'ACCEPTED', updated_at: new Date().toISOString() })
+        .eq('id', refId);
 
       setReferrals(prev => prev.map(r => r.id === refId ? { ...r, status: 'Arrived' } : r));
       setSelectedReferral(prev => (prev && prev.id === refId ? { ...prev, status: 'Arrived' } : prev));
       showToast('✓ Patient marked as arrived.');
+      loadSupabaseData(true);
     } catch (err) {
       setError(`Failed to mark arrival: ${err.message}`);
     }
@@ -374,21 +608,45 @@ export default function HospitalStaffWorkspace({
     }
 
     try {
-      const { error: err } = await supabase
+      // 1. Update referrals
+      await supabase
         .from('referrals')
         .update({ doctor_assigned: doctorName, status: 'Assigned' })
         .eq('id', refId);
 
-      if (err) throw err;
+      // 2. Also update care_requests so patient & doctor see it
+      if (refId) {
+        await supabase
+          .from('care_requests')
+          .update({
+            doctor_assigned: doctorName,
+            status: 'ACCEPTED',
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', refId);
+      }
+      if (showDoctorRouteModal?.patient_id) {
+        await supabase
+          .from('care_requests')
+          .update({
+            doctor_assigned: doctorName,
+            status: 'ACCEPTED',
+            updated_at: new Date().toISOString()
+          })
+          .eq('patient_id', showDoctorRouteModal.patient_id);
+      }
 
       setReferrals(prev => prev.map(r => r.id === refId ? { ...r, doctor_assigned: doctorName, status: 'Assigned' } : r));
       setSelectedReferral(prev => (prev && prev.id === refId ? { ...prev, doctor_assigned: doctorName, status: 'Assigned' } : prev));
       setShowDoctorRouteModal(null);
       showToast(`✓ Scoped referral updated with assigned specialist: ${doctorName}`);
+      loadSupabaseData(true);
     } catch (err) {
       setError(`Failed to assign specialist: ${err.message}`);
     }
   };
+
+
 
   // Memos for metrics
   const counts = useMemo(() => {
@@ -398,10 +656,23 @@ export default function HospitalStaffWorkspace({
     return { pending, waiting, completed };
   }, [referrals]);
 
+  // Memos for intake source segregation (ASHA vs Direct Patient vs Teleconsult)
+  const sourceCounts = useMemo(() => {
+    const asha = referrals.filter(r => getReferralOrigin(r).key === 'ASHA').length;
+    const direct = referrals.filter(r => getReferralOrigin(r).key === 'PATIENT_DIRECT').length;
+    const tele = referrals.filter(r => getReferralOrigin(r).key === 'TELECONSULT').length;
+    return { asha, direct, tele, total: referrals.length };
+  }, [referrals, getReferralOrigin]);
+
   // Scoped referrals based on active tab and filters
   const filteredReferrals = useMemo(() => {
     let list = [...referrals];
     
+    // Applying source segregation filter (ASHA vs Direct Patient vs Teleconsult)
+    if (sourceFilter !== 'ALL') {
+      list = list.filter(r => getReferralOrigin(r).key === sourceFilter);
+    }
+
     // Applying tab filters
     if (activeTab === 'queue') {
       if (queueFilter === 'Pending') {
@@ -420,12 +691,13 @@ export default function HospitalStaffWorkspace({
         (r.patient_name || '').toLowerCase().includes(q) ||
         (r.patient_id || '').toLowerCase().includes(q) ||
         (r.destination_department || '').toLowerCase().includes(q) ||
-        (r.symptoms || '').toLowerCase().includes(q)
+        (r.symptoms || '').toLowerCase().includes(q) ||
+        (r.created_by || '').toLowerCase().includes(q)
       );
     }
     
     return list;
-  }, [referrals, activeTab, queueFilter, searchQuery]);
+  }, [referrals, activeTab, queueFilter, sourceFilter, searchQuery, getReferralOrigin]);
 
   if (loading) {
     return (
@@ -614,6 +886,12 @@ export default function HospitalStaffWorkspace({
                             <span className={`text-[9px] font-black px-1.5 py-0.2 rounded ${priorityBg}`}>
                               {ref.priority}
                             </span>
+                            {(ref.slot_preference?.includes('Token') || ref.ai_note?.includes('TOKEN:')) && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-black text-[#008F83] bg-[#E8F7F3] border border-[#008F83]/30 px-2 py-0.5 rounded-md font-mono shadow-2xs">
+                                <Ticket className="w-3 h-3" />
+                                {ref.slot_preference || `Token #${ref.ai_note?.match(/TOKEN:\s*([^|]+)/i)?.[1]?.trim()}`}
+                              </span>
+                            )}
                             {ref.patient_phone && (
                               <a 
                                 href={`tel:${ref.patient_phone}`} 
@@ -642,17 +920,29 @@ export default function HospitalStaffWorkspace({
                             <span>Clinical Case</span>
                           </button>
                           
+                          {ref.status !== 'Completed' && ref.status !== 'COMPLETED' && (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenTokenModal(ref)}
+                              className="px-3.5 py-1.5 bg-[#FF9933] hover:bg-[#e68a2e] text-slate-950 font-black text-[11px] rounded-lg transition-colors cursor-pointer flex items-center gap-1 shadow-2xs"
+                              title="Assign Queue Token & Exact Arrival Slot"
+                            >
+                              <Ticket className="w-3 h-3" />
+                              <span>{ref.slot_preference?.includes('Token') || ref.ai_note?.includes('TOKEN:') ? 'Edit Token' : 'Assign Token & Slot'}</span>
+                            </button>
+                          )}
+
                           {ref.status === 'Pending' && (
                             <button
                               type="button"
                               onClick={() => handleAcceptReferral(ref.id)}
-                              className="px-3 py-1.5 bg-[#FF9933] hover:bg-[#e68a2e] text-slate-950 font-black text-[11px] rounded-lg transition-colors cursor-pointer"
+                              className="px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white font-black text-[11px] rounded-lg transition-colors cursor-pointer"
                             >
                               Accept
                             </button>
                           )}
 
-                          {ref.status === 'Accepted' && (
+                          {(ref.status === 'Accepted' || ref.status === 'Pending') && (
                             <button
                               type="button"
                               onClick={() => handleMarkArrived(ref.id)}
@@ -662,7 +952,7 @@ export default function HospitalStaffWorkspace({
                             </button>
                           )}
 
-                          {ref.status === 'Arrived' && (
+                          {(ref.status === 'Arrived' || ref.status === 'Accepted') && (
                             <button
                               type="button"
                               onClick={() => setShowDoctorRouteModal(ref)}
@@ -687,8 +977,32 @@ export default function HospitalStaffWorkspace({
 
       {/* ── TAB 2: ACTIVE QUEUE ── */}
       {activeTab === 'queue' && (
-        <div className="space-y-6 animate-in fade-in duration-150">
+        <div className="space-y-4 animate-in fade-in duration-150">
           
+          {/* Source Segregation Bar (ASHA vs Direct Patient vs Teleconsult) */}
+          <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-2.5 flex items-center gap-1.5 overflow-x-auto text-xs shadow-2xs">
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider shrink-0 px-2">Origin Filter:</span>
+            {[
+              { key: 'ALL', label: `All Sources (${sourceCounts.total})` },
+              { key: 'ASHA', label: `🚨 ASHA Referrals (${sourceCounts.asha})` },
+              { key: 'PATIENT_DIRECT', label: `👤 Direct Patient (${sourceCounts.direct})` },
+              { key: 'TELECONSULT', label: `📹 Teleconsults (${sourceCounts.tele})` }
+            ].map(sBtn => (
+              <button
+                key={sBtn.key}
+                type="button"
+                onClick={() => setSourceFilter(sBtn.key)}
+                className={`px-3 py-1.5 rounded-xl font-black text-[11px] shrink-0 transition-all cursor-pointer ${
+                  sourceFilter === sBtn.key
+                    ? 'bg-[#16324F] text-white shadow-xs'
+                    : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                {sBtn.label}
+              </button>
+            ))}
+          </div>
+
           {/* Sub Filtering Controls */}
           <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
             {[
@@ -700,9 +1014,9 @@ export default function HospitalStaffWorkspace({
               <button
                 key={filterBtn.key}
                 onClick={() => setQueueFilter(filterBtn.key)}
-                className={`px-3 py-1.5 rounded-lg font-extrabold text-[11px] shrink-0 transition-colors cursor-pointer ${
+                className={`px-3 py-1.5 rounded-xl font-extrabold text-[11px] shrink-0 transition-colors cursor-pointer ${
                   queueFilter === filterBtn.key
-                    ? 'bg-[#008080] text-white'
+                    ? 'bg-[#008080] text-white shadow-xs'
                     : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
                 }`}
               >
@@ -728,6 +1042,8 @@ export default function HospitalStaffWorkspace({
                 if (ref.status === 'Arrived') statusPillColor = 'bg-teal-50 text-teal-800 border-teal-200';
                 if (ref.status === 'Completed') statusPillColor = 'bg-emerald-50 text-emerald-800 border-emerald-200';
 
+                const origin = getReferralOrigin(ref);
+
                 return (
                   <div 
                     key={ref.id}
@@ -744,6 +1060,13 @@ export default function HospitalStaffWorkspace({
                         <span className="font-mono text-xs text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded font-bold">
                           {ref.patient_unified_id ? `ID: ${ref.patient_unified_id}` : `ID: ${ref.patient_id?.slice(0, 8)}`}
                         </span>
+
+                        {/* Origin Tag */}
+                        <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border flex items-center gap-1 ${origin.badge}`}>
+                          <span>{origin.icon}</span>
+                          <span>{origin.label}</span>
+                        </span>
+
                         <span className={`text-[10px] font-black px-2 py-0.5 rounded border ${priorityClass}`}>
                           {ref.priority_label || ref.priority}
                         </span>
@@ -797,13 +1120,22 @@ export default function HospitalStaffWorkspace({
                       className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3"
                       onClick={(e) => e.stopPropagation()}
                     >
-                      {ref.doctor_assigned && (
-                        <div className="text-[10px] font-bold text-slate-500 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-lg">
-                          🩺 Specialist Assigned: <span className="text-slate-900">{ref.doctor_assigned}</span>
-                        </div>
-                      )}
-                      
-                      {!ref.doctor_assigned && <div className="text-[10px] italic text-slate-400">No clinician assigned yet</div>}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {(ref.slot_preference?.includes('Token') || ref.ai_note?.includes('TOKEN:')) && (
+                          <div className="inline-flex items-center gap-1.5 text-xs font-black text-[#008F83] bg-[#E8F7F3] border border-[#008F83]/30 px-2.5 py-1 rounded-lg font-mono">
+                            <Ticket className="w-3.5 h-3.5" />
+                            <span>{ref.slot_preference || `Token #${ref.ai_note?.match(/TOKEN:\s*([^|]+)/i)?.[1]?.trim()}`}</span>
+                          </div>
+                        )}
+
+                        {ref.doctor_assigned && (
+                          <div className="text-[10px] font-bold text-slate-500 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-lg">
+                            🩺 Specialist Assigned: <span className="text-slate-900">{ref.doctor_assigned}</span>
+                          </div>
+                        )}
+                        
+                        {!ref.doctor_assigned && <div className="text-[10px] italic text-slate-400">No clinician assigned yet</div>}
+                      </div>
 
                       <div className="flex items-center gap-2 ml-auto shrink-0">
                         <button
@@ -816,17 +1148,28 @@ export default function HospitalStaffWorkspace({
                           <span>Clinical Case</span>
                         </button>
 
+                        {ref.status !== 'Completed' && ref.status !== 'COMPLETED' && (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenTokenModal(ref)}
+                            className="px-4 py-1.5 bg-[#FF9933] hover:bg-[#e68a2e] text-slate-950 font-black text-xs rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                          >
+                            <Ticket className="w-3.5 h-3.5" />
+                            <span>{ref.slot_preference?.includes('Token') || ref.ai_note?.includes('TOKEN:') ? 'Update Token & Slot' : 'Assign Token & Slot'}</span>
+                          </button>
+                        )}
+
                         {ref.status === 'Pending' && (
                           <button
                             type="button"
                             onClick={() => handleAcceptReferral(ref.id)}
-                            className="px-4 py-1.5 bg-[#FF9933] hover:bg-[#e68a2e] text-slate-950 font-black text-xs rounded-xl transition-colors cursor-pointer"
+                            className="px-3.5 py-1.5 bg-teal-600 hover:bg-teal-700 text-white font-black text-xs rounded-xl transition-colors cursor-pointer"
                           >
-                            Accept Referral
+                            Accept
                           </button>
                         )}
 
-                        {ref.status === 'Accepted' && (
+                        {(ref.status === 'Accepted' || ref.status === 'Pending') && (
                           <button
                             type="button"
                             onClick={() => handleMarkArrived(ref.id)}
@@ -836,7 +1179,7 @@ export default function HospitalStaffWorkspace({
                           </button>
                         )}
 
-                        {ref.status === 'Arrived' && (
+                        {(ref.status === 'Arrived' || ref.status === 'Accepted') && (
                           <button
                             type="button"
                             onClick={() => setShowDoctorRouteModal(ref)}
@@ -976,6 +1319,7 @@ export default function HospitalStaffWorkspace({
           : [];
 
         const vitals = selectedReferral.vitals || {};
+        const modalOrigin = getReferralOrigin(selectedReferral);
 
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/50 backdrop-blur-xs animate-in fade-in duration-150">
@@ -989,6 +1333,21 @@ export default function HospitalStaffWorkspace({
                       <FileText className="w-3 h-3" />
                       Clinical Case File
                     </span>
+                    {modalOrigin === 'ASHA' && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 border border-emerald-200">
+                        🚨 ASHA Referral
+                      </span>
+                    )}
+                    {modalOrigin === 'PATIENT_DIRECT' && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 border border-blue-200">
+                        👤 Direct Patient Booking
+                      </span>
+                    )}
+                    {modalOrigin === 'TELECONSULT' && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-md bg-purple-100 text-purple-800 border border-purple-200">
+                        📹 Virtual Teleconsult
+                      </span>
+                    )}
                     <span className={`text-[10px] font-black px-2 py-0.5 rounded-md border ${priorityBadgeStyle}`}>
                       {selectedReferral.priority_label || selectedReferral.priority}
                     </span>
@@ -1075,9 +1434,15 @@ export default function HospitalStaffWorkspace({
                   </div>
 
                   <div className="text-right sm:text-right">
-                    <span className="text-[10px] text-slate-400 font-black uppercase tracking-wider block">Referred By Frontline Worker</span>
+                    <span className="text-[10px] text-slate-400 font-black uppercase tracking-wider block">
+                      {modalOrigin === 'PATIENT_DIRECT' 
+                        ? 'Booked Directly By' 
+                        : modalOrigin === 'TELECONSULT' 
+                        ? 'Consultation Origin' 
+                        : 'Referred By Frontline Worker'}
+                    </span>
                     <span className="text-xs font-bold text-slate-800">
-                      {selectedReferral.created_by || 'ASHA Community Worker'}
+                      {selectedReferral.created_by || (modalOrigin === 'PATIENT_DIRECT' ? 'Direct Patient (Self-Booking)' : modalOrigin === 'TELECONSULT' ? 'Virtual Teleconsultation' : 'ASHA Community Worker')}
                     </span>
                     <div className="text-[10px] text-slate-400">
                       {new Date(selectedReferral.created_at).toLocaleString('en-IN', {
@@ -1235,14 +1600,14 @@ export default function HospitalStaffWorkspace({
                 </div>
 
                 <div className="flex items-center gap-2">
-                  {selectedReferral.status === 'Pending' && (
+                  {selectedReferral.status !== 'Completed' && selectedReferral.status !== 'COMPLETED' && (
                     <button
                       type="button"
-                      onClick={() => handleAcceptReferral(selectedReferral.id)}
+                      onClick={() => handleOpenTokenModal(selectedReferral)}
                       className="px-4 py-2 bg-[#FF9933] hover:bg-[#e68a2e] text-slate-950 font-black text-xs rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
                     >
-                      <UserCheck className="w-4 h-4" />
-                      <span>Accept Referral</span>
+                      <Ticket className="w-4 h-4" />
+                      <span>{selectedReferral.slot_preference?.includes('Token') || selectedReferral.ai_note?.includes('TOKEN:') ? 'Update Token & Arrival Slot' : 'Assign Token & Arrival Slot'}</span>
                     </button>
                   )}
 
@@ -1328,6 +1693,189 @@ export default function HospitalStaffWorkspace({
         </div>
       )}
 
+      {/* ── ASSIGN OFFICIAL OPD TOKEN & ARRIVAL SLOT MODAL ── */}
+      {showTokenModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-lg w-full max-h-[92vh] flex flex-col border border-slate-200 shadow-2xl overflow-hidden">
+            
+            {/* Header */}
+            <div className="bg-gradient-to-r from-[#16324F] to-[#008F83] px-6 py-4 text-white flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-white/10 text-white rounded-2xl flex items-center justify-center">
+                  <Ticket className="w-5 h-5 text-teal-200" />
+                </div>
+                <div>
+                  <h3 className="font-black text-sm text-white">Assign Official OPD Token & Arrival Slot</h3>
+                  <p className="text-[11px] text-teal-100 font-medium">PHC Shirwal Intake Desk · Staggered Queue Management</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowTokenModal(null)}
+                className="p-1.5 text-white/80 hover:text-white rounded-xl cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-6 overflow-y-auto space-y-4 text-xs font-sans text-slate-800 flex-1">
+              
+              {/* Patient Info Strip */}
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">Patient</span>
+                  <p className="font-black text-sm text-slate-900">{showTokenModal.patient_name}</p>
+                  <p className="text-[11px] text-slate-500 font-medium">{showTokenModal.destination_department || 'General Medicine & OPD'}</p>
+                </div>
+                <span className="text-[10px] font-black bg-[#E8F7F3] text-[#008F83] px-2.5 py-1 rounded-full border border-[#008F83]/30">
+                  {showTokenModal.priority || 'ROUTINE'}
+                </span>
+              </div>
+
+              {/* 1. Official Token Number */}
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider block">
+                  Official Queue Token Number
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={assignTokenNum}
+                    onChange={e => setAssignTokenNum(e.target.value)}
+                    placeholder="e.g. SHIR-OPD-014"
+                    className="flex-1 p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono font-black text-sm text-[#008F83] focus:outline-none focus:border-[#008F83]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setAssignTokenNum(`SHIR-OPD-0${Math.floor(10 + Math.random() * 89)}`)}
+                    className="px-3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-colors cursor-pointer"
+                  >
+                    Auto-Generate
+                  </button>
+                </div>
+              </div>
+
+              {/* 2. Staggered Arrival Time Slot */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider block">
+                  Recommended Staggered Arrival Time Slot
+                </label>
+                <p className="text-[11px] text-slate-500 font-medium">
+                  Allocating spaced arrival times prevents 100+ patients crowding the morning OPD hallway at once.
+                </p>
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  {[
+                    '09:30 AM – 10:00 AM',
+                    '10:30 AM – 11:00 AM',
+                    '11:30 AM – 12:00 PM',
+                    '02:30 PM – 03:00 PM'
+                  ].map((slot) => (
+                    <button
+                      key={slot}
+                      type="button"
+                      onClick={() => setAssignSlot(slot)}
+                      className={`p-2.5 rounded-xl border font-bold text-xs transition-all cursor-pointer text-left ${
+                        assignSlot === slot
+                          ? 'bg-[#E8F7F3] border-[#008F83] text-[#008F83] ring-1 ring-[#008F83]'
+                          : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                      }`}
+                    >
+                      <Clock className="w-3.5 h-3.5 inline mr-1.5 text-slate-400" />
+                      <span>{slot}</span>
+                    </button>
+                  ))}
+                </div>
+
+                {/* Custom / Exact Time Slot Input */}
+                <div className="flex items-center gap-2 pt-2">
+                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider shrink-0">Exact Slot:</span>
+                  <input
+                    type="text"
+                    value={assignSlot}
+                    onChange={e => setAssignSlot(e.target.value)}
+                    placeholder="e.g. 10:30 AM – 11:00 AM"
+                    className="flex-1 p-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs text-slate-900 focus:outline-none focus:border-[#008F83]"
+                  />
+                </div>
+              </div>
+
+              {/* 3. Assigned Counter & Doctor */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider block">
+                    Counter / Room
+                  </label>
+                  <select
+                    value={assignRoom}
+                    onChange={e => setAssignRoom(e.target.value)}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs focus:outline-none focus:border-[#008F83]"
+                  >
+                    <option value="Counter 2 · General OPD">Counter 2 · General OPD</option>
+                    <option value="Counter 1 · Triage & Vitals">Counter 1 · Triage & Vitals</option>
+                    <option value="Room 3 · Maternal & Child Health (ANC)">Room 3 · Maternal & Child (ANC)</option>
+                    <option value="Room 4 · NCD Chronic Care">Room 4 · NCD Chronic Care</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider block">
+                    Assigned Clinician
+                  </label>
+                  <select
+                    value={assignDoctor}
+                    onChange={e => setAssignDoctor(e.target.value)}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs focus:outline-none focus:border-[#008F83]"
+                  >
+                    <option value="Dr. Arvind Kulkarni (Medical Officer)">Dr. Arvind Kulkarni (Medical Officer)</option>
+                    <option value="Dr. Priya Sharma (MBBS, DGO)">Dr. Priya Sharma (MBBS, DGO)</option>
+                    <option value="Dr. Sneha Shinde (Pediatrician)">Dr. Sneha Shinde (Pediatrician)</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* 4. Counter Guidance Instruction */}
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider block">
+                  Patient Counter Guidance
+                </label>
+                <input
+                  type="text"
+                  value={assignInstruction}
+                  onChange={e => setAssignInstruction(e.target.value)}
+                  placeholder="Report directly to counter..."
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-xs focus:outline-none focus:border-[#008F83]"
+                />
+              </div>
+
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  handleAcceptReferral(showTokenModal.id);
+                  setShowTokenModal(null);
+                }}
+                className="px-4 py-2.5 text-xs font-bold text-slate-600 hover:text-slate-900 cursor-pointer"
+              >
+                Accept without Token
+              </button>
+
+              <button
+                type="button"
+                disabled={assigningLoading}
+                onClick={handleConfirmTokenAssignment}
+                className="px-6 py-2.5 bg-[#008F83] hover:bg-[#007A70] text-white font-black text-xs rounded-xl shadow-md flex items-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                {assigningLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                <span>Confirm & Issue Token Pass</span>
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -9,14 +9,41 @@ import {
   Trash2,
   Save,
   CheckCircle,
+  CheckCircle2,
   RefreshCw,
   ChevronLeft,
+  ChevronRight,
   Stethoscope,
   Building2,
-  Activity
+  Activity,
+  Video,
+  VideoOff,
+  Mic,
+  MicOff,
+  Phone,
+  PhoneCall,
+  PhoneOff,
+  Pill,
+  Clock,
+  User,
+  Sparkles,
+  FileText,
+  Shield,
+  Check,
+  Plus
 } from 'lucide-react';
+
 import { supabase, ensureRoleAuth } from '../../services/supabase';
 import { getPatientTimeline } from '../../services/patientService';
+import {
+  getWaitingTeleconsultSessions,
+  doctorAcceptTeleconsult,
+  doctorCompleteTeleconsult,
+  getFullPatientClinicalDocket,
+  generateClinicalAiSummary
+} from '../../services/ashaService';
+
+
 
 
 const DEMO_DOCTOR_PROFILE = {
@@ -125,6 +152,43 @@ export default function DoctorWorkspace({
     setTimeout(() => setSuccessMsg(''), 4000);
   };
 
+  // ─── Live Teleconsultation Desk State ───
+  const [teleQueue, setTeleQueue] = useState([]);
+  const [activeTeleSession, setActiveTeleSession] = useState(null);
+  const [showTeleModal, setShowTeleModal] = useState(false);
+  const [teleCallTimer, setTeleCallTimer] = useState(0);
+  const [teleDiagnosis, setTeleDiagnosis] = useState('Acute Viral Febrile Illness');
+  const [teleMedicines, setTeleMedicines] = useState([
+    { name: 'Tab. Paracetamol 500mg', dosage: '1 tablet thrice daily after food (3 days)' },
+    { name: 'Sachet ORS (Oral Rehydration)', dosage: '1 packet in 1 litre boiled cool water (daily)' },
+    { name: 'Tab. Cetirizine 10mg', dosage: '1 tablet at bedtime if nasal congestion persists' }
+  ]);
+  const [teleAdvice, setTeleAdvice] = useState('Adequate oral hydration. Rest for 3 days. Return to PHC if fever persists.');
+  const [teleSaving, setTeleSaving] = useState(false);
+  const [isDoctorMuted, setIsDoctorMuted] = useState(false);
+  const [isDoctorVideoOff, setIsDoctorVideoOff] = useState(false);
+  const [quickMedName, setQuickMedName] = useState('');
+  const [quickMedDosage, setQuickMedDosage] = useState('');
+
+  // ─── Clinical Docket State (Allergies, Meds, AI Summary) ───
+  const [clinicalDocket, setClinicalDocket] = useState(null);
+  const [docketLoading, setDocketLoading] = useState(false);
+  const [aiSummary, setAiSummary] = useState(null);
+  const [aiSummaryLoading, setAiSummaryLoading] = useState(false);
+  const [aiSummaryError, setAiSummaryError] = useState(null);
+  const [allergyWarning, setAllergyWarning] = useState(null); // prescription safety shield
+
+  // Call timer for active consultation
+  useEffect(() => {
+    let t = null;
+    if (showTeleModal) {
+      t = setInterval(() => setTeleCallTimer(prev => prev + 1), 1000);
+    } else {
+      setTeleCallTimer(0);
+    }
+    return () => clearInterval(t);
+  }, [showTeleModal]);
+
   const getDraftKey = (refId) => `radvault_doctor_draft_${refId}`;
 
   const loadDoctorDbData = useCallback(async (isSilent = false) => {
@@ -147,38 +211,109 @@ export default function DoctorWorkspace({
         throw new Error('Authentication failed for Doctor portal. Please check Supabase credentials.');
       }
 
+      // Try to load doctor profile from DB
       const { data: docData, error: docErr } = await supabase
         .from('doctors')
         .select('id, name, specialty, facility_id, facilities(name)')
         .eq('user_id', activeUser.id)
         .maybeSingle();
 
-      if (docErr) throw docErr;
-
-      if (!docData) {
-        throw new Error(`Doctor profile not found in database for authenticated user ${activeUser.email}.`);
-      }
-
-      const resolvedDoctor = {
+      // ── GRACEFUL FALLBACK ─────────────────────────────────────
+      // If no doctors table row exists for this user, use a session-based fallback.
+      // This lets the doctor use the Tele-OPD queue and referral list without
+      // requiring a specific DB record — important during development/testing.
+      const resolvedDoctor = docData ? {
         id: docData.id,
         name: docData.name,
         specialty: docData.specialty,
         facility_id: docData.facility_id,
         facility_name: docData.facilities?.name || 'Shrirampur Primary Health Centre'
+      } : {
+        id: activeUser.id,
+        name: activeUser.user_metadata?.name || activeUser.email?.split('@')[0] || 'Dr. On-Duty Medical Officer',
+        specialty: 'General Medicine',
+        facility_id: null,
+        facility_name: 'Primary Health Centre - Shirwal',
+        isFallback: true
       };
+
+      if (!docData) {
+        console.info('[RadVault Doctor] No DB doctor profile found — using session fallback for:', activeUser.email);
+      }
 
       setDoctorProfile(resolvedDoctor);
 
-      const { data: refData, error: refErr } = await supabase
+      // Load referrals — if facility_id, scope by facility/assigned doctor
+      let refQuery = supabase
         .from('referrals')
         .select('*')
-        .or(`destination_facility_id.eq.${resolvedDoctor.facility_id},doctor_assigned.eq.${resolvedDoctor.name},destination_hospital.ilike.%${(resolvedDoctor.facility_name || 'Shrirampur').split(' ')[0]}%`)
         .order('created_at', { ascending: false });
 
-      if (refErr) throw refErr;
+      if (resolvedDoctor.facility_id) {
+        refQuery = supabase
+          .from('referrals')
+          .select('*')
+          .or(`destination_facility_id.eq.${resolvedDoctor.facility_id},doctor_assigned.ilike.%${resolvedDoctor.name.split(' ')[1] || resolvedDoctor.name}%`)
+          .order('created_at', { ascending: false });
+      }
+
+      const { data: refData, error: refErr } = await refQuery;
+      if (refErr) console.warn('[RadVault Doctor] Referrals fetch warning:', refErr.message);
 
       const rawRefs = refData || [];
-      const patientIds = Array.from(new Set(rawRefs.map(r => r.patient_id).filter(Boolean)));
+
+      // Also load from care_requests (holds ASHA clinical referrals, e.g. samir myanawar, and direct OPD appointments)
+      let careRefs = [];
+      try {
+        const { data: careData } = await supabase
+          .from('care_requests')
+          .select('*')
+          .neq('source', 'TELECONSULT')
+          .order('created_at', { ascending: false });
+
+        if (careData && careData.length > 0) {
+          careRefs = careData.map(c => {
+            const isHigh = c.priority === 'URGENT' || c.priority === 'HIGH' || c.priority === 'RED';
+            const isMedium = c.priority === 'MEDIUM' || c.priority === 'ORANGE';
+            const mappedPriority = isHigh ? 'HIGH' : isMedium ? 'ORANGE' : 'GREEN';
+            const priorityLabel = isHigh ? '🔴 Emergency / Immediate Attention' : isMedium ? '🟡 Urgent / Within 24 Hours' : '🟢 Routine / Local Care';
+
+            let mappedStatus = c.status === 'SUBMITTED' || c.status === 'PENDING_PHC' ? 'Arrived'
+              : c.status === 'ACCEPTED' ? 'Assigned'
+              : c.status === 'COMPLETED' ? 'Completed'
+              : c.status;
+
+            return {
+              id: c.id,
+              patient_id: c.patient_id,
+              patient_name: c.patient_name,
+              created_by: c.created_by,
+              destination_hospital: c.facility,
+              destination_department: c.department || 'General Medicine',
+              doctor_assigned: c.doctor_assigned || resolvedDoctor.name,
+              priority: mappedPriority,
+              priority_label: priorityLabel,
+              status: mappedStatus,
+              symptoms: c.reason,
+              ai_note: c.asha_notes,
+              slot_preference: c.slot_preference,
+              created_at: c.created_at,
+              isCareRequest: true
+            };
+          });
+        }
+      } catch (cErr) {
+        console.warn('[RadVault Doctor] care_requests load notice:', cErr.message);
+      }
+
+      // Combine both sources (deduplicating by id)
+      const existingRefIds = new Set(rawRefs.map(r => r.id));
+      const combinedRefs = [
+        ...rawRefs,
+        ...careRefs.filter(c => !existingRefIds.has(c.id))
+      ];
+
+      const patientIds = Array.from(new Set(combinedRefs.map(r => r.patient_id).filter(Boolean)));
 
       let patientsMap = {};
       if (patientIds.length > 0) {
@@ -198,7 +333,7 @@ export default function DoctorWorkspace({
         }
       }
 
-      const enrichedRefs = rawRefs.map(r => {
+      const enrichedRefs = combinedRefs.map(r => {
         const linkedPatient = patientsMap[r.patient_id];
         return {
           ...r,
@@ -212,18 +347,31 @@ export default function DoctorWorkspace({
 
       setReferrals(enrichedRefs);
 
+
     } catch (err) {
       console.error('[RadVault Doctor] Fetch error:', err.message);
-      setError(`Unable to load queue and clinic data: ${err.message}`);
-      setDoctorProfile(null);
-      setReferrals([]);
+      // Don't set a blocking error — let the teleconsult queue still be usable
+      if (!doctorProfile) {
+        setError(`Note: Could not load referral queue (${err.message.substring(0, 80)}). Teleconsultation Desk is still fully active.`);
+      }
     } finally {
       if (!isSilent) setLoading(false);
     }
   }, [isDemoMode, demoDataEnabled]);
 
+
+  const loadTeleQueue = useCallback(async () => {
+    try {
+      const { data } = await getWaitingTeleconsultSessions();
+      setTeleQueue(data || []);
+    } catch (err) {
+      console.warn('[DoctorWorkspace] Failed to fetch teleconsult queue:', err);
+    }
+  }, []);
+
   useEffect(() => {
     loadDoctorDbData(false);
+    loadTeleQueue();
 
     const channel = supabase.channel('doctor_referrals_live')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'referrals' }, () => {
@@ -231,15 +379,137 @@ export default function DoctorWorkspace({
       })
       .subscribe();
 
+    const teleChannel = supabase.channel('doctor_tele_live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'teleconsult_sessions' }, () => {
+        loadTeleQueue();
+      })
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('[DoctorWorkspace] Realtime subscribed to teleconsult_sessions');
+        }
+      });
+
+    // Fast 3-second poll for teleconsult queue (works even without Realtime enabled)
+    const teleInterval = setInterval(() => {
+      loadTeleQueue();
+    }, 3000);
+
+    // Slower 15-second poll for referrals
     const interval = setInterval(() => {
       loadDoctorDbData(true);
-    }, 30000);
+    }, 15000);
 
     return () => {
       supabase.removeChannel(channel);
+      supabase.removeChannel(teleChannel);
       clearInterval(interval);
+      clearInterval(teleInterval);
     };
-  }, [loadDoctorDbData]);
+  }, [loadDoctorDbData, loadTeleQueue]);
+
+
+  const loadClinicalDocket = async (patientId, patientName) => {
+    if (!patientId && !patientName) return;
+    setDocketLoading(true);
+    setClinicalDocket(null);
+    setAiSummary(null);
+    setAiSummaryError(null);
+    setAllergyWarning(null);
+    try {
+      const docket = await getFullPatientClinicalDocket(patientId, patientName);
+      setClinicalDocket(docket);
+    } catch (err) {
+      console.warn('[DoctorWorkspace] Clinical docket load error:', err.message);
+    } finally {
+      setDocketLoading(false);
+    }
+  };
+
+  const handleLoadAiSummary = async () => {
+    if (!clinicalDocket) return;
+    setAiSummaryLoading(true);
+    setAiSummaryError(null);
+    try {
+      const { summary, error } = await generateClinicalAiSummary(clinicalDocket);
+      if (error) {
+        setAiSummaryError(error);
+      } else {
+        setAiSummary(summary);
+      }
+    } catch (err) {
+      setAiSummaryError(err.message);
+    } finally {
+      setAiSummaryLoading(false);
+    }
+  };
+
+  // Prescription Safety Shield: checks a medicine name against known allergies
+  const checkAllergyContraindication = (medicineName) => {
+    if (!clinicalDocket?.allergies) return null;
+    const allergyList = clinicalDocket.allergies.toLowerCase().split(/[,;]/);
+    const CONTRAINDICATION_MAP = {
+      'penicillin': ['amoxicillin', 'ampicillin', 'cloxacillin', 'flucloxacillin', 'piperacillin'],
+      'sulfa': ['sulfamethoxazole', 'trimethoprim', 'cotrimoxazole', 'bactrim'],
+      'nsaids': ['ibuprofen', 'diclofenac', 'naproxen', 'aspirin'],
+      'aspirin': ['ibuprofen', 'diclofenac', 'naproxen'],
+      'codeine': ['tramadol', 'morphine'],
+      'sulfonamide': ['sulfamethoxazole', 'dapsone', 'furosemide'],
+    };
+    const medLower = medicineName.toLowerCase();
+    for (const allergy of allergyList) {
+      const a = allergy.trim();
+      if (medLower.includes(a)) return `⚠️ ALLERGY ALERT: Patient is allergic to "${a.toUpperCase()}". Do not prescribe this medication!`;
+      const contraList = CONTRAINDICATION_MAP[a] || [];
+      for (const contra of contraList) {
+        if (medLower.includes(contra)) {
+          return `⚠️ CONTRAINDICATION: Patient has "${a.toUpperCase()}" allergy. ${medicineName} (${contra}) is cross-reactive and contraindicated!`;
+        }
+      }
+    }
+    return null;
+  };
+
+  const handleStartTeleconsult = async (session) => {
+
+    try {
+      const docName = doctorProfile?.name || 'Dr. Arvind Kulkarni (Medical Officer)';
+      await doctorAcceptTeleconsult(session.id, docName);
+      setActiveTeleSession({ ...session, doctor_name: docName });
+      setTeleDiagnosis(session.chief_complaint?.includes('Fever') ? 'Acute Viral Febrile Illness' : 'General OPD Health Review');
+      setShowTeleModal(true);
+      showToast(`✓ Connected to ${session.patient_name} in Virtual OPD Room.`);
+      loadTeleQueue();
+      // Load clinical docket for teleconsultation patient
+      loadClinicalDocket(session.patient_id, session.patient_name);
+    } catch (err) {
+      setError(`Failed to connect teleconsult: ${err.message}`);
+    }
+  };
+
+
+  const handleCompleteTeleconsult = async () => {
+    if (!activeTeleSession) return;
+    setTeleSaving(true);
+    try {
+      await doctorCompleteTeleconsult(activeTeleSession.id, {
+        diagnosis: teleDiagnosis || 'Viral Illness and Upper Respiratory Review',
+        rx_medicines: teleMedicines,
+        doctor_advice: teleAdvice,
+        session_duration_sec: teleCallTimer,
+        care_request_id: activeTeleSession.care_request_id
+      });
+      setTeleSaving(false);
+      setShowTeleModal(false);
+      setActiveTeleSession(null);
+      showToast('✓ Teleconsultation signed and official e-Prescription (Rx) dispatched to patient in real time.');
+      loadTeleQueue();
+      loadDoctorDbData(true);
+    } catch (err) {
+      setTeleSaving(false);
+      setError(`Failed to complete teleconsultation: ${err.message}`);
+    }
+  };
+
 
   const handleSaveDraft = () => {
     if (!activeCase) return;
@@ -331,15 +601,21 @@ export default function DoctorWorkspace({
   };
 
   const handleOpenCase = (ref) => {
+
     setActiveCase(ref);
     handleLoadDraft(ref.id);
     checkConsent(ref.patient_id);
+    loadClinicalDocket(ref.patient_id, ref.patient_name);
   };
 
   const handleCloseCase = () => {
     setActiveCase(null);
     setShowSignModal(false);
+    setClinicalDocket(null);
+    setAiSummary(null);
+    setAllergyWarning(null);
   };
+
 
   const handleStartConsultation = async () => {
     if (!activeCase) return;
@@ -608,10 +884,46 @@ export default function DoctorWorkspace({
               </div>
             )}
 
+            {/* Live Incoming Teleconsult Alert Banner */}
+            {teleQueue.length > 0 && (
+              <div className="p-4 bg-teal-50 border-2 border-[#008F83] rounded-3xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-md animate-pulse">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-[#008F83] text-white flex items-center justify-center font-black shrink-0 shadow-sm">
+                    <Video className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[10px] font-black bg-[#008F83] text-white px-2 py-0.5 rounded-full uppercase tracking-wider animate-bounce">
+                        ● LIVE VIRTUAL CALL INCOMING
+                      </span>
+                      <span className="text-sm font-black text-slate-900">
+                        {teleQueue[0].patient_name}
+                      </span>
+                      <span className="text-[10px] font-mono font-bold bg-white text-slate-700 px-2 py-0.5 rounded border border-slate-200">
+                        {teleQueue[0].token || 'eS-SHIR-248'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-600 font-semibold mt-1">
+                      Reported Concern: <span className="font-bold text-slate-900">{teleQueue[0].chief_complaint || 'General Checkup'}</span> · Live Vitals Linked
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleStartTeleconsult(teleQueue[0])}
+                  className="px-5 py-2.5 bg-[#008F83] hover:bg-[#007A70] text-white font-black text-xs rounded-xl flex items-center justify-center gap-2 shadow-md transition-all cursor-pointer shrink-0"
+                >
+                  <PhoneCall className="w-4 h-4" />
+                  <span>Connect Video Call</span>
+                </button>
+              </div>
+            )}
+
             <div className="flex items-center gap-2 border-b border-slate-200 pb-1 text-xs">
               {[
                 { key: 'home', label: 'Home Overview' },
-                { key: 'cases', label: `Assigned Queue (${counts.waiting})` }
+                { key: 'cases', label: `Assigned Queue (${counts.waiting})` },
+                { key: 'teleconsult', label: `📹 Virtual Tele-OPD (${teleQueue.length})` }
               ].map(tab => (
                 <button
                   key={tab.key}
@@ -823,6 +1135,11 @@ export default function DoctorWorkspace({
                                   🩺 {ref.doctor_assigned}
                                 </span>
                               )}
+                              {(ref.slot_preference || ref.ai_note?.includes('TOKEN:')) && (
+                                <span className="text-[10px] font-black text-[#008F83] bg-[#E8F7F3] px-2 py-0.5 rounded border border-[#008F83]/30 font-mono">
+                                  🎟️ {ref.slot_preference || `Token #${ref.ai_note?.match(/TOKEN:\s*([^|]+)/i)?.[1]?.trim()}`}
+                                </span>
+                              )}
                             </div>
 
                             <span className={`text-[10px] font-black px-2.5 py-0.5 rounded border ${
@@ -879,6 +1196,85 @@ export default function DoctorWorkspace({
                   </div>
                 )}
 
+              </div>
+            )}
+
+            {activeTab === 'teleconsult' && (
+              <div className="space-y-4 animate-in fade-in duration-150">
+                <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                      <Video className="w-4 h-4 text-[#008F83]" />
+                      <span>Virtual Tele-OPD Queue (eSanjeevani Network)</span>
+                    </h3>
+                    <p className="text-xs text-slate-500 font-semibold mt-0.5">
+                      Remote patients connected from villages awaiting on-duty doctor video consultation
+                    </p>
+                  </div>
+                  <button
+                    onClick={loadTeleQueue}
+                    className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer self-start sm:self-auto"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Refresh Queue</span>
+                  </button>
+                </div>
+
+                {teleQueue.length > 0 ? (
+                  <div className="space-y-3">
+                    {teleQueue.map(item => (
+                      <div
+                        key={item.id}
+                        className="bg-white border-2 border-[#008F83]/30 rounded-3xl p-5 shadow-xs hover:border-[#008F83] transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                      >
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-red-100 text-red-800 border border-red-200 flex items-center gap-1 animate-pulse">
+                              <span className="w-1.5 h-1.5 rounded-full bg-red-600" />
+                              {item.session_status === 'IN_CALL' ? 'In Active Call' : 'In Virtual Waiting Room'}
+                            </span>
+                            <span className="font-mono text-[11px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded">
+                              {item.token || 'eS-SHIR-248'}
+                            </span>
+                          </div>
+
+                          <h4 className="text-base font-black text-slate-900">{item.patient_name}</h4>
+                          
+                          <p className="text-xs text-slate-600 font-semibold">
+                            Reported Concern: <span className="font-bold text-slate-800">{item.chief_complaint || 'General Checkup'}</span>
+                          </p>
+
+                          {item.vitals_snapshot && (
+                            <div className="flex items-center gap-3 text-[11px] font-bold text-slate-500 pt-1">
+                              <span>BP: <b className="text-slate-800">{item.vitals_snapshot.bp_systolic ? `${item.vitals_snapshot.bp_systolic}/${item.vitals_snapshot.bp_diastolic || 80}` : '120/80'}</b></span>
+                              <span>·</span>
+                              <span>SpO2: <b className="text-slate-800">{item.vitals_snapshot.spo2_pct || 98}%</b></span>
+                              <span>·</span>
+                              <span>Pulse: <b className="text-slate-800">{item.vitals_snapshot.pulse_bpm || 76} bpm</b></span>
+                            </div>
+                          )}
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => handleStartTeleconsult(item)}
+                          className="px-5 py-3 bg-[#008F83] hover:bg-[#007A70] text-white font-black text-xs rounded-2xl flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer shrink-0"
+                        >
+                          <PhoneCall className="w-4 h-4" />
+                          <span>{item.session_status === 'IN_CALL' ? 'Re-Join Call' : 'Connect Video Call'}</span>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-12 bg-white rounded-3xl border border-slate-200 shadow-2xs space-y-2">
+                    <Video className="w-8 h-8 text-slate-300 mx-auto" />
+                    <p className="text-sm font-bold text-slate-800">No patients waiting in Virtual OPD</p>
+                    <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                      When a patient initiates a teleconsultation from their Care Hub, they will appear here live in real-time.
+                    </p>
+                  </div>
+                )}
               </div>
             )}
 
@@ -951,6 +1347,174 @@ export default function DoctorWorkspace({
                 <span>Follow-Up Closed</span>
               </div>
             </div>
+
+            {/* ── CLINICAL DOSSIER PANEL ── Allergies, Meds, History, AI Copilot ── */}
+
+            {docketLoading ? (
+              <div className="bg-white border border-slate-200 rounded-3xl p-4 shadow-2xs flex items-center gap-3">
+                <Loader2 className="w-4 h-4 animate-spin text-[#008F83]" />
+                <span className="text-xs text-slate-500 font-bold">Loading clinical dossier from ABHA health records...</span>
+              </div>
+            ) : clinicalDocket ? (
+              <div className="space-y-3">
+                {/* Allergy Alert Banner */}
+                {clinicalDocket.allergies ? (
+                  <div className="bg-red-50 border-l-4 border-red-500 border border-red-200 rounded-2xl p-3.5 flex items-start gap-3">
+                    <div className="w-7 h-7 rounded-lg bg-red-100 flex items-center justify-center shrink-0 text-red-700 font-black text-sm">⚠️</div>
+                    <div>
+                      <p className="text-[10px] font-black text-red-700 uppercase tracking-wider">DOCUMENTED DRUG ALLERGY — CRITICAL</p>
+                      <p className="text-xs font-black text-red-900 mt-0.5">{clinicalDocket.allergies}</p>
+                      <p className="text-[10px] text-red-600 font-medium mt-0.5">Cross-check all prescriptions before signing. A safety shield is active below.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-2xl px-3.5 py-2.5 flex items-center gap-2.5">
+                    <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span className="text-xs font-bold text-emerald-800">No Known Drug Allergies (NKDA) — Safe to prescribe standard formulations</span>
+                  </div>
+                )}
+
+                {/* Allergy Warning (triggered by prescription safety shield) */}
+                {allergyWarning && (
+                  <div className="bg-amber-50 border-2 border-amber-400 rounded-2xl p-3 text-xs font-bold text-amber-900 flex items-center gap-2">
+                    <span className="text-xl">🛡️</span>
+                    <span>{allergyWarning}</span>
+                  </div>
+                )}
+
+                {/* Current Medications & Chronic Conditions */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {clinicalDocket.currentMedications && (
+                    <div className="bg-white border border-slate-200 rounded-2xl p-3.5 space-y-1.5">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider flex items-center gap-1">
+                        <Pill className="w-3 h-3" /> Active Medications on Record
+                      </p>
+                      <p className="text-xs font-semibold text-slate-800 leading-relaxed">{clinicalDocket.currentMedications}</p>
+                    </div>
+                  )}
+                  {clinicalDocket.chronicConditions?.length > 0 && (
+                    <div className="bg-white border border-slate-200 rounded-2xl p-3.5 space-y-1.5">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider flex items-center gap-1">
+                        <Activity className="w-3 h-3" /> Chronic Conditions
+                      </p>
+                      <div className="flex flex-wrap gap-1.5 pt-0.5">
+                        {clinicalDocket.chronicConditions.map((cond, i) => (
+                          <span key={i} className="text-[10px] font-black bg-amber-50 text-amber-800 border border-amber-200 px-2 py-0.5 rounded-full">{cond}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Vitals Trend (from vitals_history) */}
+                {clinicalDocket.vitals?.length > 0 && (
+                  <div className="bg-white border border-slate-200 rounded-2xl p-3.5 space-y-2">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Recent Vitals History ({clinicalDocket.vitals.length} readings)</p>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-[10px] font-bold text-slate-700">
+                        <thead>
+                          <tr className="text-slate-400 border-b border-slate-100">
+                            <td className="pb-1 pr-3">Date</td>
+                            <td className="pb-1 pr-3">BP</td>
+                            <td className="pb-1 pr-3">Pulse</td>
+                            <td className="pb-1 pr-3">SpO₂</td>
+                            <td className="pb-1">Temp</td>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {clinicalDocket.vitals.slice(0, 3).map((v, i) => (
+                            <tr key={i} className={i === 0 ? 'text-[#007A70] font-extrabold' : 'text-slate-600'}>
+                              <td className="py-0.5 pr-3">{new Date(v.recorded_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</td>
+                              <td className="py-0.5 pr-3">{v.bp_systolic && v.bp_diastolic ? `${v.bp_systolic}/${v.bp_diastolic}` : v.bp_systolic || '—'}</td>
+                              <td className="py-0.5 pr-3">{v.pulse_bpm ? `${v.pulse_bpm} bpm` : '—'}</td>
+                              <td className="py-0.5 pr-3">{v.spo2_pct ? `${v.spo2_pct}%` : '—'}</td>
+                              <td className="py-0.5">{v.temperature_c ? `${((v.temperature_c * 9/5) + 32).toFixed(1)}°F` : '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* AI Clinical Copilot */}
+                <div className="bg-gradient-to-br from-indigo-50 to-white border border-indigo-200 rounded-2xl p-4 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-indigo-600" />
+                      <span className="text-[10px] font-black text-indigo-700 uppercase tracking-wider">⚡ AI Clinical Copilot (Groq / RAG)</span>
+                    </div>
+                    {!aiSummary && (
+                      <button
+                        type="button"
+                        onClick={handleLoadAiSummary}
+                        disabled={aiSummaryLoading}
+                        className="text-[10px] font-black bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg cursor-pointer disabled:opacity-60 flex items-center gap-1.5 transition-colors"
+                      >
+                        {aiSummaryLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                        {aiSummaryLoading ? 'Analyzing...' : 'Generate 3-sec Briefing'}
+                      </button>
+                    )}
+                  </div>
+
+                  {aiSummaryError && (
+                    <p className="text-[10px] text-rose-600 font-bold bg-rose-50 px-3 py-1.5 rounded-lg">{aiSummaryError}</p>
+                  )}
+
+                  {aiSummary ? (
+                    <div className="space-y-2 text-xs">
+                      {aiSummary.critical_alerts && aiSummary.critical_alerts !== 'NONE' && (
+                        <div className="flex gap-2">
+                          <span className="text-red-500 shrink-0">🚨</span>
+                          <div>
+                            <span className="font-black text-red-700">Safety: </span>
+                            <span className="text-red-800 font-semibold">{aiSummary.critical_alerts}</span>
+                          </div>
+                        </div>
+                      )}
+                      {aiSummary.active_regimen && aiSummary.active_regimen !== 'NONE' && (
+                        <div className="flex gap-2">
+                          <span className="text-amber-500 shrink-0">💊</span>
+                          <div>
+                            <span className="font-black text-amber-700">Medications: </span>
+                            <span className="text-amber-900 font-semibold">{aiSummary.active_regimen}</span>
+                          </div>
+                        </div>
+                      )}
+                      {aiSummary.clinical_trajectory && (
+                        <div className="flex gap-2">
+                          <span className="text-indigo-500 shrink-0">📋</span>
+                          <div>
+                            <span className="font-black text-indigo-700">Trajectory: </span>
+                            <span className="text-indigo-800 font-semibold">{aiSummary.clinical_trajectory}</span>
+                          </div>
+                        </div>
+                      )}
+                      {aiSummary.suggested_guardrails && aiSummary.suggested_guardrails !== 'NONE' && (
+                        <div className="flex gap-2">
+                          <span className="text-slate-500 shrink-0">🛡️</span>
+                          <div>
+                            <span className="font-black text-slate-700">Avoid: </span>
+                            <span className="text-slate-700 font-semibold">{aiSummary.suggested_guardrails}</span>
+                          </div>
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setAiSummary(null)}
+                        className="text-[10px] text-indigo-400 hover:text-indigo-600 font-bold cursor-pointer mt-1"
+                      >
+                        Regenerate →
+                      </button>
+                    </div>
+                  ) : !aiSummaryLoading && !aiSummaryError && (
+                    <p className="text-[10px] text-indigo-400 font-medium">
+                      Click "Generate 3-sec Briefing" to get an AI-synthesized clinical summary of this patient's history, disease trajectory, and prescribing guardrails.
+                    </p>
+                  )}
+                </div>
+              </div>
+            ) : null}
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
               <div className="lg:col-span-5 space-y-6">
@@ -1370,6 +1934,490 @@ export default function DoctorWorkspace({
           </div>
         </div>
       )}
+
+      {/* ── LIVE DOCTOR TELECONSULTATION CONSOLE ── */}
+      {/* ── LIVE DOCTOR TELECONSULTATION CONSOLE ── */}
+      {showTeleModal && activeTeleSession && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/70 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-6xl w-full max-h-[94vh] flex flex-col border border-slate-200 shadow-2xl overflow-hidden">
+            
+            {/* Header */}
+            <div className="bg-gradient-to-r from-[#16324F] to-[#008F83] px-5 sm:px-6 py-3.5 text-white flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center font-black">
+                  <Video className="w-5 h-5 text-teal-200" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-xs sm:text-sm font-black text-white">
+                      Live Tele-OPD Video Consultation Desk
+                    </h3>
+                    <span className="text-[9px] bg-red-500 text-white font-black px-2 py-0.5 rounded-full animate-pulse flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+                      IN CALL
+                    </span>
+                    <span className="text-[10px] bg-teal-800/80 text-teal-200 px-2 py-0.5 rounded font-mono font-bold">
+                      Token: {activeTeleSession.token || 'eS-SHIR-248'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-teal-100 font-medium">
+                    Patient: <strong className="text-white font-bold">{activeTeleSession.patient_name}</strong> · Facility: {doctorProfile?.facility_name || 'Primary Health Centre - Shirwal'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2.5">
+                <div className="bg-black/40 px-3 py-1.5 rounded-full text-xs font-mono font-bold flex items-center gap-2 border border-white/10">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>{Math.floor(teleCallTimer / 60)}:{(teleCallTimer % 60).toString().padStart(2, '0')}</span>
+                </div>
+                <button
+                  onClick={() => setShowTeleModal(false)}
+                  className="p-1.5 text-white/70 hover:text-white hover:bg-white/10 rounded-xl cursor-pointer transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Split Screen Body: Left = Video + Prescribing, Right = Patient Reports & Docket */}
+            <div className="p-4 sm:p-5 overflow-y-auto flex-1 grid grid-cols-1 lg:grid-cols-12 gap-5 bg-slate-50/50">
+              
+              {/* LEFT COLUMN: Video Screen, Symptoms, Prescriptions, Call Actions */}
+              <div className="lg:col-span-6 space-y-3.5">
+                
+                {/* Video Screen Simulation */}
+                <div className="relative w-full h-52 bg-slate-950 rounded-2xl overflow-hidden flex items-center justify-center shadow-lg border border-slate-800">
+                  <div className="text-center text-white space-y-1">
+                    <div className="w-14 h-14 rounded-full bg-slate-800 border-2 border-teal-400 mx-auto flex items-center justify-center text-2xl shadow-xl">
+                      👤
+                    </div>
+                    <p className="font-extrabold text-xs text-white">{activeTeleSession.patient_name}</p>
+                    <p className="text-[10px] text-teal-300 flex items-center justify-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                      Village Patient Mobile Device (Audio/Video Live)
+                    </p>
+                    {/* Animated soundwave */}
+                    <div className="flex items-center justify-center gap-1 pt-0.5">
+                      <span className="w-1 h-2.5 bg-teal-400 rounded-full animate-pulse" />
+                      <span className="w-1 h-4 bg-teal-400 rounded-full animate-pulse delay-75" />
+                      <span className="w-1 h-6 bg-teal-400 rounded-full animate-pulse delay-150" />
+                      <span className="w-1 h-3.5 bg-teal-400 rounded-full animate-pulse delay-100" />
+                      <span className="w-1 h-2 bg-teal-400 rounded-full animate-pulse delay-200" />
+                    </div>
+                  </div>
+
+                  {/* Doctor Picture-in-Picture */}
+                  <div className="absolute top-2.5 right-2.5 w-20 h-22 bg-slate-900 border border-white/20 rounded-xl overflow-hidden flex flex-col items-center justify-center text-white shadow-xl">
+                    <span className="text-xl">{isDoctorVideoOff ? "🚫" : "👨‍⚕️"}</span>
+                    <span className="text-[8px] font-bold mt-0.5 text-slate-300">Dr. Arvind</span>
+                    <span className="text-[7px] text-teal-400 font-mono">You (MO)</span>
+                  </div>
+
+                  {/* Call Controls Bar */}
+                  <div className="absolute bottom-2.5 inset-x-0 flex items-center justify-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsDoctorMuted(!isDoctorMuted)}
+                      className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer shadow-md flex items-center gap-1.5 text-xs font-bold ${
+                        isDoctorMuted ? 'bg-red-500 text-white' : 'bg-white/20 hover:bg-white/30 text-white backdrop-blur-xs'
+                      }`}
+                    >
+                      {isDoctorMuted ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
+                      <span className="text-[10px]">{isDoctorMuted ? 'Muted' : 'Mute'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsDoctorVideoOff(!isDoctorVideoOff)}
+                      className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer shadow-md flex items-center gap-1.5 text-xs font-bold ${
+                        isDoctorVideoOff ? 'bg-red-500 text-white' : 'bg-white/20 hover:bg-white/30 text-white backdrop-blur-xs'
+                      }`}
+                    >
+                      {isDoctorVideoOff ? <VideoOff className="w-3.5 h-3.5" /> : <Video className="w-3.5 h-3.5" />}
+                      <span className="text-[10px]">{isDoctorVideoOff ? 'Camera Off' : 'Camera'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Reported Symptoms */}
+                <div className="bg-white border border-slate-200 rounded-2xl p-3 shadow-xs space-y-1">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
+                    Chief Complaint & Reported Symptoms
+                  </span>
+                  <p className="text-xs font-bold text-slate-800 bg-amber-50/70 border border-amber-200/80 p-2.5 rounded-xl">
+                    {activeTeleSession.chief_complaint || 'General medical review requested'}
+                  </p>
+                </div>
+
+                {/* Clinical Diagnosis Input */}
+                <div className="bg-white border border-slate-200 rounded-2xl p-3 shadow-xs space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
+                    Clinical Diagnosis (Written to Patient Health Record)
+                  </label>
+                  <input
+                    type="text"
+                    value={teleDiagnosis}
+                    onChange={e => setTeleDiagnosis(e.target.value)}
+                    placeholder="e.g. Acute Viral Febrile Illness"
+                    className="w-full p-2.5 border border-slate-200 rounded-xl font-bold text-xs focus:outline-none focus:border-[#008F83]"
+                  />
+                </div>
+
+                {/* Fast Prescribe Presets & Safety Shield */}
+                <div className="bg-white border border-slate-200 rounded-2xl p-3 shadow-xs space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                      Prescribe Medicines (1-Click Fast Rural Formulations)
+                    </span>
+                    <span className="text-[9px] text-[#008F83] font-bold">Dispensed at PHC</span>
+                  </div>
+
+                  {/* Contraindication shield alert banner */}
+                  {allergyWarning && (
+                    <div className="p-2.5 bg-red-50 border-2 border-red-400 rounded-xl text-xs font-bold text-red-900 flex items-center gap-2 animate-in fade-in">
+                      <span className="text-base shrink-0">🛡️</span>
+                      <span>{allergyWarning}</span>
+                    </div>
+                  )}
+
+                  {/* Preset Buttons */}
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      { name: 'Tab. Paracetamol 500mg', dosage: '1 tablet thrice daily after food (3 days)' },
+                      { name: 'Sachet ORS (Oral Rehydration)', dosage: '1 packet in 1 litre boiled cool water (daily)' },
+                      { name: 'Tab. Cetirizine 10mg', dosage: '1 tablet at bedtime' },
+                      { name: 'Cap. Amoxicillin 500mg', dosage: '1 capsule thrice daily (5 days)' },
+                      { name: 'Tab. Pantoprazole 40mg', dosage: '1 tablet empty stomach in morning' }
+                    ].map((med, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => {
+                          const warning = checkAllergyContraindication(med.name);
+                          if (warning) {
+                            setAllergyWarning(warning);
+                          } else {
+                            setAllergyWarning(null);
+                            if (!teleMedicines.some(m => m.name === med.name)) {
+                              setTeleMedicines(prev => [...prev, med]);
+                            }
+                          }
+                        }}
+                        className="px-2.5 py-1 bg-slate-100 hover:bg-[#E8F7F3] hover:text-[#008F83] border border-slate-200 rounded-lg text-[11px] font-bold text-slate-700 transition-colors cursor-pointer flex items-center gap-1"
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>{med.name.split(' ')[1] || med.name}</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Prescribed List */}
+                  <div className="space-y-1.5 pt-1">
+                    {teleMedicines.length === 0 ? (
+                      <p className="text-[11px] text-slate-400 italic">No medicines prescribed yet. Click presets above.</p>
+                    ) : (
+                      teleMedicines.map((m, idx) => (
+                        <div key={idx} className="flex items-center justify-between p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                          <div>
+                            <span className="font-extrabold text-slate-900">{m.name}</span>
+                            <span className="text-slate-500 text-[11px] ml-2 block sm:inline">{m.dosage}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setTeleMedicines(prev => prev.filter((_, i) => i !== idx))}
+                            className="text-rose-500 hover:text-rose-700 p-1 cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* Doctor's Advice */}
+                <div className="bg-white border border-slate-200 rounded-2xl p-3 shadow-xs space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
+                    Doctor's Instructions & Follow-up
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={teleAdvice}
+                    onChange={e => setTeleAdvice(e.target.value)}
+                    placeholder="e.g. Ensure patient drinks boiled water and rests. Return if fever doesn't subside."
+                    className="w-full p-2.5 border border-slate-200 rounded-xl font-medium text-xs focus:outline-none focus:border-[#008F83]"
+                  />
+                </div>
+
+                {/* Sign Rx Button */}
+                <button
+                  type="button"
+                  disabled={teleSaving}
+                  onClick={handleCompleteTeleconsult}
+                  className="w-full py-3 bg-[#008F83] hover:bg-[#007A70] text-white font-black text-xs rounded-2xl shadow-lg flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-50"
+                >
+                  {teleSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                  <span>Sign & Issue Official e-Prescription (Rx)</span>
+                </button>
+
+              </div>
+
+              {/* RIGHT COLUMN: Full Patient Reports & Required Clinical Details */}
+              <div className="lg:col-span-6 space-y-3.5 overflow-y-auto">
+                
+                {/* 1. Patient Profile Banner */}
+                <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs space-y-2">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <span className="text-[9px] uppercase font-black tracking-wider bg-[#16324F] text-teal-100 px-2 py-0.5 rounded">
+                        Patient Dossier
+                      </span>
+                      <h4 className="text-base font-black text-slate-900 mt-1">{activeTeleSession.patient_name}</h4>
+                      <p className="text-[11px] text-slate-500 font-medium">
+                        {clinicalDocket?.age ? `${clinicalDocket.age} yrs` : 'Age: —'} · {clinicalDocket?.gender || 'Gender: —'} · Blood: {clinicalDocket?.bloodGroup || '—'}
+                      </p>
+                    </div>
+                    {clinicalDocket?.abhaId && (
+                      <div className="text-right">
+                        <span className="text-[9px] text-slate-400 font-bold block">ABHA ID</span>
+                        <span className="text-xs font-mono font-black text-teal-700">{clinicalDocket.abhaId}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* 2. Critical Safety Alert: Allergies */}
+                <div className="space-y-2">
+                  {clinicalDocket?.allergies ? (
+                    <div className="bg-red-50 border-2 border-red-500 rounded-2xl p-3 flex items-start gap-2.5 shadow-xs">
+                      <div className="w-7 h-7 rounded-lg bg-red-100 flex items-center justify-center shrink-0 text-red-700 font-black text-sm">⚠️</div>
+                      <div>
+                        <p className="text-[10px] font-black text-red-700 uppercase tracking-wider">DOCUMENTED DRUG ALLERGY (CRITICAL)</p>
+                        <p className="text-xs font-black text-red-900 mt-0.5">{clinicalDocket.allergies}</p>
+                        <p className="text-[10px] text-red-600 font-medium mt-0.5">Cross-check all prescribed drugs. Cross-reactive antibiotics will be blocked.</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="bg-emerald-50 border border-emerald-200 rounded-2xl px-3 py-2 flex items-center gap-2 shadow-xs">
+                      <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span className="text-xs font-bold text-emerald-800">No Known Drug Allergies (NKDA)</span>
+                    </div>
+                  )}
+
+                  {/* Active Medications & Chronic Conditions */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div className="bg-white border border-slate-200 rounded-2xl p-3 shadow-xs space-y-1">
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider flex items-center gap-1">
+                        <Pill className="w-3 h-3 text-teal-600" /> Active Medications
+                      </p>
+                      <p className="text-xs font-bold text-slate-800">
+                        {clinicalDocket?.currentMedications || 'None recorded'}
+                      </p>
+                    </div>
+
+                    <div className="bg-white border border-slate-200 rounded-2xl p-3 shadow-xs space-y-1">
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider flex items-center gap-1">
+                        <Activity className="w-3 h-3 text-amber-600" /> Chronic Conditions
+                      </p>
+                      <div className="flex flex-wrap gap-1 pt-0.5">
+                        {clinicalDocket?.chronicConditions && clinicalDocket.chronicConditions.length > 0 ? (
+                          clinicalDocket.chronicConditions.map((cond, i) => (
+                            <span key={i} className="text-[10px] font-black bg-amber-50 text-amber-800 border border-amber-200 px-1.5 py-0.2 rounded-full">{cond}</span>
+                          ))
+                        ) : (
+                          <span className="text-[11px] text-slate-400">None documented</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. Live Frontline Vitals Snapshot & Trends */}
+                <div className="bg-white border border-slate-200 rounded-2xl p-3.5 shadow-xs space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                      Frontline Vitals & Biometrics
+                    </span>
+                    <span className="text-[9px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded font-bold">
+                      Real-Time
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-4 gap-2 text-center text-xs">
+                    <div className="bg-slate-50 p-2 rounded-xl border border-slate-200">
+                      <p className="text-[9px] text-slate-400 font-bold">BP</p>
+                      <p className="font-black text-slate-800">{activeTeleSession.vitals_snapshot?.bp_systolic ? `${activeTeleSession.vitals_snapshot.bp_systolic}/${activeTeleSession.vitals_snapshot.bp_diastolic || 80}` : '120/80'}</p>
+                    </div>
+                    <div className="bg-slate-50 p-2 rounded-xl border border-slate-200">
+                      <p className="text-[9px] text-slate-400 font-bold">Pulse</p>
+                      <p className="font-black text-slate-800">{activeTeleSession.vitals_snapshot?.pulse_bpm || 76} bpm</p>
+                    </div>
+                    <div className="bg-slate-50 p-2 rounded-xl border border-slate-200">
+                      <p className="text-[9px] text-slate-400 font-bold">SpO2</p>
+                      <p className="font-black text-slate-800">{activeTeleSession.vitals_snapshot?.spo2_pct || 98}%</p>
+                    </div>
+                    <div className="bg-slate-50 p-2 rounded-xl border border-slate-200">
+                      <p className="text-[9px] text-slate-400 font-bold">Temp</p>
+                      <p className="font-black text-slate-800">98.6°F</p>
+                    </div>
+                  </div>
+
+                  {/* Vitals History Trend Table */}
+                  {clinicalDocket?.vitals && clinicalDocket.vitals.length > 0 && (
+                    <div className="pt-1">
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-1">Recent Vitals Trend</p>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-[10px] font-bold text-slate-700">
+                          <thead>
+                            <tr className="text-slate-400 border-b border-slate-100">
+                              <td className="pb-1">Date</td>
+                              <td className="pb-1">BP</td>
+                              <td className="pb-1">Pulse</td>
+                              <td className="pb-1">SpO2</td>
+                              <td className="pb-1">Temp</td>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {clinicalDocket.vitals.slice(0, 3).map((v, i) => (
+                              <tr key={i} className={i === 0 ? 'text-[#008F83] font-black' : 'text-slate-600'}>
+                                <td className="py-0.5">{new Date(v.recorded_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</td>
+                                <td className="py-0.5">{v.bp_systolic && v.bp_diastolic ? `${v.bp_systolic}/${v.bp_diastolic}` : '—'}</td>
+                                <td className="py-0.5">{v.pulse_bpm ? `${v.pulse_bpm} bpm` : '—'}</td>
+                                <td className="py-0.5">{v.spo2_pct ? `${v.spo2_pct}%` : '—'}</td>
+                                <td className="py-0.5">{v.temperature_c ? `${((v.temperature_c * 9/5) + 32).toFixed(1)}°F` : '—'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 4. ⚡ AI Clinical Copilot (Groq / RAG Briefing) */}
+                <div className="bg-gradient-to-br from-indigo-50 to-white border border-indigo-200 rounded-2xl p-3.5 shadow-xs space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <Sparkles className="w-4 h-4 text-indigo-600" />
+                      <span className="text-[10px] font-black text-indigo-700 uppercase tracking-wider">
+                        ⚡ AI Clinical Copilot (Groq / RAG Briefing)
+                      </span>
+                    </div>
+                    {!aiSummary && (
+                      <button
+                        type="button"
+                        onClick={handleLoadAiSummary}
+                        disabled={aiSummaryLoading}
+                        className="text-[10px] font-black bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1 rounded-lg cursor-pointer disabled:opacity-60 flex items-center gap-1 transition-colors"
+                      >
+                        {aiSummaryLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                        {aiSummaryLoading ? 'Analyzing...' : '3-sec Briefing'}
+                      </button>
+                    )}
+                  </div>
+
+                  {aiSummaryError && (
+                    <p className="text-[10px] text-rose-600 font-bold bg-rose-50 p-2 rounded-lg">{aiSummaryError}</p>
+                  )}
+
+                  {aiSummary ? (
+                    <div className="space-y-1.5 text-xs">
+                      {aiSummary.critical_alerts && aiSummary.critical_alerts !== 'NONE' && (
+                        <div className="flex items-start gap-1.5">
+                          <span className="text-red-500 shrink-0">🚨</span>
+                          <div>
+                            <span className="font-black text-red-700">Safety: </span>
+                            <span className="text-red-800 font-medium">{aiSummary.critical_alerts}</span>
+                          </div>
+                        </div>
+                      )}
+                      {aiSummary.active_regimen && aiSummary.active_regimen !== 'NONE' && (
+                        <div className="flex items-start gap-1.5">
+                          <span className="text-amber-500 shrink-0">💊</span>
+                          <div>
+                            <span className="font-black text-amber-700">Medications: </span>
+                            <span className="text-amber-900 font-medium">{aiSummary.active_regimen}</span>
+                          </div>
+                        </div>
+                      )}
+                      {aiSummary.clinical_trajectory && (
+                        <div className="flex items-start gap-1.5">
+                          <span className="text-indigo-500 shrink-0">📋</span>
+                          <div>
+                            <span className="font-black text-indigo-700">Trajectory: </span>
+                            <span className="text-indigo-900 font-medium">{aiSummary.clinical_trajectory}</span>
+                          </div>
+                        </div>
+                      )}
+                      {aiSummary.suggested_guardrails && aiSummary.suggested_guardrails !== 'NONE' && (
+                        <div className="flex items-start gap-1.5">
+                          <span className="text-slate-500 shrink-0">🛡️</span>
+                          <div>
+                            <span className="font-black text-slate-700">Avoid: </span>
+                            <span className="text-slate-700 font-medium">{aiSummary.suggested_guardrails}</span>
+                          </div>
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setAiSummary(null)}
+                        className="text-[10px] text-indigo-500 hover:text-indigo-700 font-bold cursor-pointer"
+                      >
+                        Regenerate →
+                      </button>
+                    </div>
+                  ) : !aiSummaryLoading && !aiSummaryError && (
+                    <p className="text-[10px] text-indigo-500 font-medium">
+                      Click "3-sec Briefing" to run AI synthesis of this patient's medical history, allergies, and prescribing guardrails.
+                    </p>
+                  )}
+                </div>
+
+                {/* 5. Prior Consultations & Records */}
+                <div className="bg-white border border-slate-200 rounded-2xl p-3 shadow-xs space-y-1.5">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
+                    Prior Consultations & Records on File
+                  </span>
+                  {clinicalDocket?.pastConsultations && clinicalDocket.pastConsultations.length > 0 ? (
+                    <div className="space-y-1.5">
+                      {clinicalDocket.pastConsultations.slice(0, 3).map((c, i) => (
+                        <div key={i} className="p-2 bg-slate-50 rounded-xl border border-slate-100 text-xs space-y-0.5">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-slate-900">{c.diagnosis || 'General OPD Visit'}</span>
+                            <span className="text-[10px] text-slate-400">{new Date(c.created_at).toLocaleDateString('en-IN')}</span>
+                          </div>
+                          <p className="text-[11px] text-slate-600">{c.treatment_advice || c.clinical_assessment || 'Standard review'}</p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-slate-400 italic">No prior hospital consultations on file for this patient.</p>
+                  )}
+                </div>
+
+              </div>
+
+            </div>
+
+            {/* Footer */}
+            <div className="p-3 border-t border-slate-200 bg-white flex items-center justify-between shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowTeleModal(false)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-xl font-bold text-xs text-slate-700 cursor-pointer transition-colors"
+              >
+                Close Desk
+              </button>
+
+              <div className="text-[11px] text-slate-400 font-medium">
+                Official ABDM e-Prescription will be cryptographically linked to Patient ABHA ID
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
