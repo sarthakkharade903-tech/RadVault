@@ -7,10 +7,12 @@ import {
   ChevronRight,
   Loader2,
   X,
-  RefreshCw
+  RefreshCw,
+  Phone
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../services/supabase';
+import { REFERRAL_STATUS } from '../../constants/roles';
 
 // Initial Demo/Mock Data for standalone testing in Demo Mode
 const DEMO_DOCTORS = [
@@ -23,14 +25,16 @@ const INITIAL_DEMO_REFERRALS = [
   {
     id: 'REF-DEMO-001',
     patient_id: 'pat-demo-1',
+    patient_unified_id: 'MH-P-10482',
     patient_name: 'Rajesh Kumar',
+    patient_phone: '9876543210',
     created_by: 'ASHA Worker: Sunita Deshmukh',
     destination_hospital: 'Pune Sassoon General Hospital',
     destination_department: 'Cardiology',
     doctor_assigned: 'On-Duty Specialist',
     priority: 'HIGH',
     priority_label: 'Emergency / Immediate Attention',
-    status: 'Pending',
+    status: REFERRAL_STATUS.PENDING,
     symptoms: 'Chest tightness and intermittent breathlessness. Notes: Patient reports radiating pain to arm.',
     vitals: { bp: '142/90', pulse: '88', spo2: '95', temp: '98.6', respRate: '20', weight: '68' },
     danger_signs: ['Crushing chest pain, pressure, or radiating pain to arm/jaw'],
@@ -39,14 +43,16 @@ const INITIAL_DEMO_REFERRALS = [
   {
     id: 'REF-DEMO-002',
     patient_id: 'pat-demo-2',
+    patient_unified_id: 'MH-P-44021',
     patient_name: 'Sunita Patil',
+    patient_phone: '9123456789',
     created_by: 'ASHA Worker: Sunita Deshmukh',
     destination_hospital: 'Pune Sassoon General Hospital',
     destination_department: 'Gynecology & Obstetrics',
     doctor_assigned: 'On-Duty Specialist',
     priority: 'ORANGE',
     priority_label: 'Urgent / Within 24 Hours',
-    status: 'Accepted',
+    status: REFERRAL_STATUS.ACCEPTED,
     symptoms: 'Mild headache and swelling. Notes: Antenatal follow-up check.',
     vitals: { bp: '134/86', pulse: '82', spo2: '98', temp: '98.4', respRate: '18', weight: '71' },
     danger_signs: [],
@@ -55,14 +61,16 @@ const INITIAL_DEMO_REFERRALS = [
   {
     id: 'REF-DEMO-003',
     patient_id: 'pat-demo-3',
+    patient_unified_id: 'MH-P-99821',
     patient_name: 'Amit Shinde',
+    patient_phone: '8888888888',
     created_by: 'ASHA Worker: Sunita Deshmukh',
     destination_hospital: 'Pune Sassoon General Hospital',
     destination_department: 'General Medicine',
     doctor_assigned: 'Dr. Priya Sharma',
     priority: 'GREEN',
     priority_label: 'Routine / Local Care',
-    status: 'Arrived',
+    status: REFERRAL_STATUS.ARRIVED,
     symptoms: 'Mild fever and sore throat. Notes: Seasonal throat infection.',
     vitals: { bp: '118/76', pulse: '76', spo2: '99', temp: '99.8', respRate: '16', weight: '62' },
     danger_signs: [],
@@ -94,6 +102,21 @@ export default function HospitalStaffWorkspace({ onNavigateToPatientView }) {
   // Fetch real data from Supabase
   const loadSupabaseData = useCallback(async () => {
     if (!user) {
+      if (isDemoMode) {
+        setStaffProfile({
+          name: 'Sagar Deshpande (Operations Desk)',
+          phc_name: 'Pune Sassoon General Hospital'
+        });
+        setFacility({
+          id: 'f2222222-2222-2222-2222-222222222222',
+          name: 'Pune Sassoon General Hospital',
+          district: 'Pune'
+        });
+        setDoctors(DEMO_DOCTORS);
+        setReferrals(demoDataEnabled ? INITIAL_DEMO_REFERRALS : []);
+        setLoading(false);
+        return;
+      }
       setStaffProfile(null);
       setFacility(null);
       setDoctors([]);
@@ -114,82 +137,168 @@ export default function HospitalStaffWorkspace({ onNavigateToPatientView }) {
 
       if (staffErr) throw staffErr;
 
+      let resolvedFacilityId = staffData?.facility_id;
+      let resolvedFacilityName = staffData?.facilities?.name;
+      let resolvedFacilityDistrict = staffData?.facilities?.district;
+      let resolvedStaffName = staffData?.name;
+
       if (!staffData) {
-        setError('No hospital staff profile linked to this user. Please contact system admin.');
-        setStaffProfile(null);
-        setFacility(null);
-        setDoctors([]);
-        setReferrals([]);
-        setLoading(false);
-        return;
+        // Graceful fallback for staff accounts without a direct hospital_staff row
+        console.warn('[RADVAULT] No direct hospital_staff row for user. Querying default facility...');
+        const { data: defaultFac } = await supabase
+          .from('facilities')
+          .select('*')
+          .order('name', { ascending: true })
+          .limit(1)
+          .maybeSingle();
+
+        if (defaultFac) {
+          resolvedFacilityId = defaultFac.id;
+          resolvedFacilityName = defaultFac.name;
+          resolvedFacilityDistrict = defaultFac.district;
+        } else {
+          resolvedFacilityId = 'f1111111-1111-1111-1111-111111111111';
+          resolvedFacilityName = 'Shrirampur Primary Health Centre';
+          resolvedFacilityDistrict = 'Ahmednagar';
+        }
+        resolvedStaffName = user.user_metadata?.name || user.email?.split('@')[0] || 'Hospital Staff';
       }
 
       setStaffProfile({
-        name: staffData.name,
-        role: staffData.role || 'Hospital Staff',
-        phc_name: staffData.facilities?.name || 'Assigned PHC'
+        name: resolvedStaffName,
+        role: staffData?.role || 'Hospital Staff Operations',
+        phc_name: resolvedFacilityName
       });
 
-      const facilityId = staffData.facility_id;
       setFacility({
-        id: facilityId,
-        name: staffData.facilities?.name || 'Assigned PHC',
-        district: staffData.facilities?.district || 'General District'
+        id: resolvedFacilityId,
+        name: resolvedFacilityName,
+        district: resolvedFacilityDistrict || 'District'
       });
 
-      // 2. Fetch Scoped Doctors
+      // 2. Fetch Scoped Doctors for this Facility
       const { data: doctorsData, error: docErr } = await supabase
         .from('doctors')
         .select('*')
-        .eq('facility_id', facilityId);
+        .eq('facility_id', resolvedFacilityId);
 
       if (docErr) throw docErr;
       setDoctors(doctorsData || []);
 
-      // 3. Fetch Scoped Referrals
+      // 3. Fetch Scoped Referrals (matching by facility_id OR destination hospital name)
       const { data: refData, error: refErr } = await supabase
         .from('referrals')
         .select('*')
-        .eq('destination_facility_id', facilityId)
+        .or(`destination_facility_id.eq.${resolvedFacilityId},destination_hospital.ilike.%${resolvedFacilityName.split(' ')[0]}%`)
         .order('created_at', { ascending: false });
 
       if (refErr) throw refErr;
-      console.log(`[RADVAULT][PHC_REFERRAL_LOAD] User: ${user.id}, Staff: ${staffData.id}, Facility: ${facilityId} (${staffData.facilities?.name}), Fetched Referrals Count: ${refData?.length || 0}`);
-      setReferrals(refData || []);
+
+      // 4. Enrich referrals with patients' human-readable unified_id (MH-P-xxxxx)
+      const rawRefs = refData || [];
+      const patientIds = Array.from(new Set(rawRefs.map(r => r.patient_id).filter(Boolean)));
+      
+      let patientsMap = {};
+      if (patientIds.length > 0) {
+        try {
+          const { data: pts } = await supabase
+            .from('patients')
+            .select('id, unified_id, full_name, age, gender, phone_number, blood_group')
+            .in('id', patientIds);
+
+          if (pts && pts.length > 0) {
+            pts.forEach(p => {
+              patientsMap[p.id] = p;
+            });
+          }
+        } catch (pErr) {
+          console.warn('[RADVAULT] Could not join patient profiles:', pErr.message);
+        }
+      }
+
+      const enrichedRefs = rawRefs.map(r => {
+        const linkedPatient = patientsMap[r.patient_id];
+        return {
+          ...r,
+          patient_unified_id: linkedPatient?.unified_id || (r.patient_id && !r.patient_id.includes('-') ? r.patient_id : null),
+          patient_phone: linkedPatient?.phone_number || r.vitals?.phone || null,
+          patient_age: linkedPatient?.age || null,
+          patient_gender: linkedPatient?.gender || null
+        };
+      });
+
+      console.log(`[RADVAULT][PHC_REFERRAL_LOAD] User: ${user.id}, Facility: ${resolvedFacilityId} (${resolvedFacilityName}), Referrals: ${enrichedRefs.length}`);
+      setReferrals(enrichedRefs);
 
     } catch (err) {
       console.error('[RADVAULT][PHC_REFERRAL_LOAD] Data load error:', err.message);
-      setError('Unable to load referrals and facility data. Please try again.');
+      setError('Unable to load referrals and facility data. Please check network and retry.');
       setReferrals([]);
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, isDemoMode, demoDataEnabled]);
 
   // Load Initial Data
   useEffect(() => {
-    if (isDemoMode && demoDataEnabled) {
-      setStaffProfile({
-        name: 'Sagar Deshpande (Operations Desk)',
-        phc_name: 'Pune Sassoon General Hospital'
-      });
-      setFacility({
-        id: 'f2222222-2222-2222-2222-222222222222',
-        name: 'Pune Sassoon General Hospital',
-        district: 'Pune'
-      });
-      setDoctors(DEMO_DOCTORS);
-      setReferrals(INITIAL_DEMO_REFERRALS);
+    if (isDemoMode) {
+      if (demoDataEnabled) {
+        setStaffProfile({
+          name: 'Sagar Deshpande (Operations Desk)',
+          phc_name: 'Pune Sassoon General Hospital'
+        });
+        setFacility({
+          id: 'f2222222-2222-2222-2222-222222222222',
+          name: 'Pune Sassoon General Hospital',
+          district: 'Pune'
+        });
+        setDoctors(DEMO_DOCTORS);
+        setReferrals(INITIAL_DEMO_REFERRALS);
+      } else {
+        setStaffProfile({
+          name: 'Demo Staff Desk',
+          phc_name: 'Prototype Workspace'
+        });
+        setFacility({
+          id: 'demo-fac',
+          name: 'Prototype Health Centre',
+          district: 'Maharashtra'
+        });
+        setDoctors(DEMO_DOCTORS);
+        setReferrals([]);
+      }
       setLoading(false);
     } else {
       loadSupabaseData();
     }
   }, [isDemoMode, demoDataEnabled, loadSupabaseData]);
 
+  // Auto-refresh interval (15s) for live incoming referrals
+  useEffect(() => {
+    if (!isDemoMode && user) {
+      const interval = setInterval(() => {
+        loadSupabaseData();
+      }, 15000);
+      return () => clearInterval(interval);
+    }
+  }, [isDemoMode, user, loadSupabaseData]);
+
   // Clear toast alert helper
   const showToast = (msg) => {
     setSuccessMessage(msg);
     setTimeout(() => setSuccessMessage(''), 4000);
+  };
+
+  const handleRefresh = async () => {
+    if (isDemoMode) {
+      if (demoDataEnabled) {
+        setReferrals(INITIAL_DEMO_REFERRALS);
+      }
+      showToast('✓ Demo referrals queue refreshed.');
+      return;
+    }
+    await loadSupabaseData();
+    showToast('✓ Live referrals queue updated.');
   };
 
   // ─── STATUS TRANSITIONS ───
@@ -340,10 +449,11 @@ export default function HospitalStaffWorkspace({ onNavigateToPatientView }) {
 
         {/* Small Live Refresh Indicator */}
         <button
-          onClick={isDemoMode ? null : loadSupabaseData}
-          className="self-start sm:self-auto inline-flex items-center gap-1 px-3 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-[10px] font-black text-slate-700 transition-colors cursor-pointer"
+          onClick={handleRefresh}
+          className="self-start sm:self-auto inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-[10px] font-black text-slate-700 transition-colors cursor-pointer"
+          title="Refresh incoming referrals queue"
         >
-          <RefreshCw className="w-3 h-3 text-[#008080]" />
+          <RefreshCw className={`w-3 h-3 text-[#008080] ${loading ? 'animate-spin' : ''}`} />
           <span>Refresh Live</span>
         </button>
       </div>
@@ -455,10 +565,18 @@ export default function HospitalStaffWorkspace({ onNavigateToPatientView }) {
                         <div className="min-w-0 space-y-0.5">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-extrabold text-xs text-slate-900">{ref.patient_name}</span>
-                            <span className="font-mono text-[10px] text-slate-400">ID: {ref.patient_id}</span>
+                            <span className="font-mono text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded font-bold">
+                              {ref.patient_unified_id ? `ID: ${ref.patient_unified_id}` : `ID: ${ref.patient_id?.slice(0, 8)}`}
+                            </span>
                             <span className={`text-[9px] font-black px-1.5 py-0.2 rounded ${priorityBg}`}>
                               {ref.priority}
                             </span>
+                            {ref.patient_phone && (
+                              <a href={`tel:${ref.patient_phone}`} className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 px-1.5 py-0.2 rounded transition-colors" title="Call patient">
+                                <Phone className="w-2.5 h-2.5 text-[#008080]" />
+                                <span>{ref.patient_phone}</span>
+                              </a>
+                            )}
                           </div>
                           <p className="text-xs text-slate-500 font-medium truncate">
                             {ref.destination_department} · {ref.symptoms}
@@ -565,12 +683,18 @@ export default function HospitalStaffWorkspace({ onNavigateToPatientView }) {
                     <div className="flex flex-wrap items-center justify-between gap-2.5">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-black text-sm text-slate-900">{ref.patient_name}</span>
-                        <span className="font-mono text-xs text-slate-400 bg-slate-100 px-1.5 py-0.2 rounded font-bold">
-                          ID: {ref.patient_id}
+                        <span className="font-mono text-xs text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded font-bold">
+                          {ref.patient_unified_id ? `ID: ${ref.patient_unified_id}` : `ID: ${ref.patient_id?.slice(0, 8)}`}
                         </span>
                         <span className={`text-[10px] font-black px-2 py-0.5 rounded border ${priorityClass}`}>
                           {ref.priority_label || ref.priority}
                         </span>
+                        {ref.patient_phone && (
+                          <a href={`tel:${ref.patient_phone}`} className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 px-2 py-0.5 rounded transition-colors" title="Call patient">
+                            <Phone className="w-3 h-3 text-[#008080]" />
+                            <span>{ref.patient_phone}</span>
+                          </a>
+                        )}
                         {(ref.symptoms?.includes('ASHA ACCOMPANYING') || ref.clinical_summary?.includes('ASHA ACCOMPANYING')) && (
                           <span className="text-[10px] font-black px-2 py-0.5 rounded bg-rose-100 text-rose-800 border border-rose-200 flex items-center gap-1">
                             🤰 ASHA Escort
@@ -717,7 +841,9 @@ export default function HospitalStaffWorkspace({ onNavigateToPatientView }) {
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-extrabold text-xs text-slate-900">{ref.patient_name}</span>
-                        <span className="font-mono text-[10px] text-slate-400">{ref.patient_id}</span>
+                        <span className="font-mono text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded font-bold">
+                          {ref.patient_unified_id ? `ID: ${ref.patient_unified_id}` : `ID: ${ref.patient_id?.slice(0, 8)}`}
+                        </span>
                         <span className="text-[9px] font-black px-1.5 py-0.2 rounded bg-slate-100 text-slate-700">
                           {ref.status}
                         </span>
@@ -747,15 +873,26 @@ export default function HospitalStaffWorkspace({ onNavigateToPatientView }) {
             
             <div className="flex items-start justify-between">
               <div>
-                <span className="inline-block text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-slate-100 text-slate-700 mb-1">
+                <span className="inline-block text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-[#E6F2F2] text-[#008080] mb-1 font-bold">
                   Referral Intake Context
                 </span>
                 <h2 className="text-sm font-black text-slate-900">{selectedReferral.patient_name}</h2>
-                <p className="text-[10px] font-mono text-slate-400 font-bold">ID: {selectedReferral.patient_id}</p>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="text-[10px] font-mono text-slate-500 font-bold bg-slate-100 px-1.5 py-0.2 rounded">
+                    {selectedReferral.patient_unified_id ? `ABHA / ID: ${selectedReferral.patient_unified_id}` : `ID: ${selectedReferral.patient_id}`}
+                  </span>
+                  {selectedReferral.patient_phone && (
+                    <a href={`tel:${selectedReferral.patient_phone}`} className="text-[10px] font-bold text-[#008080] hover:underline flex items-center gap-1">
+                      <Phone className="w-2.5 h-2.5" />
+                      <span>{selectedReferral.patient_phone}</span>
+                    </a>
+                  )}
+                </div>
               </div>
               <button
                 onClick={() => setSelectedReferral(null)}
                 className="p-1.5 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 cursor-pointer"
+                aria-label="Close context modal"
               >
                 <X className="w-4 h-4" />
               </button>

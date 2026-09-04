@@ -11,7 +11,7 @@ import {
   ArrowRight
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { ROLES, ROLE_CONFIG } from '../../constants/roles';
+import { ROLES, ROLE_CONFIG, normalizeRole } from '../../constants/roles';
 import { PORTAL_ITEMS } from '../landing/LandingPage';
 
 const ROLE_DEFAULT_CREDENTIALS = {
@@ -53,9 +53,10 @@ export default function PortalSignIn({ portalKey, onBack, onLoginSuccess, onSwit
       const res = await login(email.trim(), password);
       if (res.success) {
         const authenticatedUser = res.data?.user;
-        const serverRole =
+        const rawRole =
           authenticatedUser?.app_metadata?.role ||
           authenticatedUser?.user_metadata?.role;
+        const serverRole = normalizeRole(rawRole);
 
         // Role Mismatch Verification: Ensure account matches selected portal
         if (serverRole && serverRole !== expectedRole) {
@@ -75,6 +76,8 @@ export default function PortalSignIn({ portalKey, onBack, onLoginSuccess, onSwit
         const rawErr = res.error || '';
         if (rawErr.toLowerCase().includes('invalid login credentials')) {
           setErrorMessage('Email or password is incorrect. Please verify your credentials.');
+        } else if (rawErr.toLowerCase().includes('not found') || rawErr.toLowerCase().includes('user not found')) {
+          setErrorMessage('Account not found. Please verify your registered email address.');
         } else if (rawErr.toLowerCase().includes('network')) {
           setErrorMessage('Unable to connect to Supabase service. Please check your connectivity.');
         } else {

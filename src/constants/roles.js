@@ -52,3 +52,47 @@ export const ROLE_CONFIG = {
     description: 'Beneficiary: Personal health record vault, emergency ID & active care timeline'
   }
 };
+
+export const ROLE_HOME = {
+  [ROLES.ASHA]: '/asha',
+  [ROLES.HOSPITAL_STAFF]: '/hospital-staff',
+  [ROLES.DOCTOR]: '/doctor',
+  [ROLES.PATIENT]: '/patient',
+};
+
+export const REFERRAL_STATUS = {
+  PENDING: 'Pending',
+  ACCEPTED: 'Accepted',
+  ARRIVED: 'Arrived',
+  IN_CONSULTATION: 'In Consultation',
+  COMPLETED: 'Completed',
+  CANCELLED: 'Cancelled'
+};
+
+/**
+ * Normalizes any role variant to the canonical role key.
+ * Expected canonical values: 'asha', 'hospital_staff', 'doctor', 'patient'.
+ */
+export function normalizeRole(roleStr) {
+  if (!roleStr || typeof roleStr !== 'string') return null;
+  const clean = roleStr.toLowerCase().trim().replace(/[-\s]/g, '_');
+  if (
+    clean === 'hospital_staff' ||
+    clean === 'staff' ||
+    clean === 'hospitalstaff' ||
+    clean === 'hospital_admin' ||
+    clean === 'hospital'
+  ) {
+    return ROLES.HOSPITAL_STAFF;
+  }
+  if (clean === 'asha' || clean === 'asha_worker') {
+    return ROLES.ASHA;
+  }
+  if (clean === 'doctor' || clean === 'physician') {
+    return ROLES.DOCTOR;
+  }
+  if (clean === 'patient' || clean === 'beneficiary') {
+    return ROLES.PATIENT;
+  }
+  return null;
+}

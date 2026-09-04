@@ -12,16 +12,19 @@ import {
   X,
   LogOut,
   Pill,
-  MapPin
+  MapPin,
+  ClipboardList,
+  BarChart2
 } from 'lucide-react';
 
 import AshaDashboard from '../asha/AshaDashboard';
 import AshaPatientsView from '../asha/AshaPatientsView';
-import AshaTodayView from '../asha/AshaTodayView';
 import AshaFollowUpsView from '../asha/AshaFollowUpsView';
 import AshaReferralsView from '../asha/AshaReferralsView';
 import AshaAlertsView from '../asha/AshaAlertsView';
 import AshaCommunityView from '../asha/AshaCommunityView';
+import AshaVillageView from '../asha/AshaVillageView';
+import AshaVillageSurveyView from '../asha/AshaVillageSurveyView';
 import PatientContextView from '../asha/PatientContextView';
 import EncounterWizard from '../asha/EncounterWizard';
 import MedicineKitManager from '../asha/MedicineKitManager';
@@ -60,8 +63,8 @@ export default function AshaWorkspace({ onNavigateToPatientView }) {
     });
   }, [patients, ashaVillages]);
 
-  // Navigation State: 'home' | 'patients' | 'today' | 'consultations' | 'followups' | 'emergencies' | 'community' | 'settings'
-  const [activeTab, setActiveTab] = useState('home');
+  // Navigation State: 'today' | 'patients' | 'village' | 'survey' | 'community' | 'followups' | 'referrals' | 'medicine_kit' | 'settings'
+  const [activeTab, setActiveTab] = useState('today');
   const [selectedPatient, setSelectedPatient] = useState(null);
   const [activeSubView, setActiveSubView] = useState(null); // null | 'patient_context' | 'encounter_wizard'
   const [villageFilterForPatients, setVillageFilterForPatients] = useState('ALL');
@@ -72,6 +75,7 @@ export default function AshaWorkspace({ onNavigateToPatientView }) {
   const [registerInitialName, setRegisterInitialName] = useState('');
   const [showReferralModal, setShowReferralModal] = useState(false);
   const [showSurveyModal, setShowSurveyModal] = useState(false);
+  const [surveyInitialMode, setSurveyInitialMode] = useState('MANUAL_SURVEY');
   const [encounterForReferral, setEncounterForReferral] = useState(null);
 
   // Responsive Sidebar (Tablet / Mobile)
@@ -224,12 +228,14 @@ export default function AshaWorkspace({ onNavigateToPatientView }) {
   };
 
   const navItems = [
-    { key: 'home', label: 'Home', icon: Home, badge: null },
-    { key: 'community', label: 'Village Survey', icon: MapPin, badge: null },
-    { key: 'patients', label: 'Patients', icon: Users, badge: null },
-    { key: 'referrals', label: 'Referrals', icon: Building2, badge: stats.pendingReferrals || null, badgeColor: 'bg-sky-100 text-sky-900' },
-    { key: 'followups', label: 'Follow-ups', icon: Clock, badge: stats.followupsDue || null, badgeColor: 'bg-amber-100 text-amber-900' },
-    { key: 'medicine_kit', label: 'Medicine Kit', icon: Pill, badge: null }
+    { key: 'today',        label: 'Today',          icon: Home,          badge: null },
+    { key: 'patients',     label: 'Patients',        icon: Users,         badge: null },
+    { key: 'village',      label: 'My Village',      icon: MapPin,        badge: null },
+    { key: 'survey',       label: 'Village Survey',  icon: ClipboardList, badge: null },
+    { key: 'community',    label: 'Community',       icon: BarChart2,     badge: null },
+    { key: 'followups',    label: 'Follow-ups',      icon: Clock,         badge: stats.followupsDue || null, badgeColor: 'bg-amber-100 text-amber-900' },
+    { key: 'referrals',    label: 'Referrals',       icon: Building2,     badge: stats.pendingReferrals || null, badgeColor: 'bg-sky-100 text-sky-900' },
+    { key: 'medicine_kit', label: 'Medicine Kit',    icon: Pill,          badge: null }
   ];
 
   const workerName = user?.email ? user.email.split('@')[0] : 'Sunita Deshmukh';
@@ -277,18 +283,10 @@ export default function AshaWorkspace({ onNavigateToPatientView }) {
               setRegisterInitialName(query || '');
               setShowRegisterModal(true);
             }}
-            onOpenSurvey={() => setShowSurveyModal(true)}
-          />
-        );
-
-      case 'today':
-        return (
-          <AshaTodayView
-            encounters={recentEncounters}
-            patients={scopedPatients}
-            followUpTasks={followUpTasks}
-            onSelectPatient={handleSelectPatient}
-            onCompleteFollowUp={handleCompleteFollowUpTask}
+            onOpenSurvey={() => {
+              setSurveyInitialMode('MANUAL_SURVEY');
+              setShowSurveyModal(true);
+            }}
           />
         );
 
@@ -327,6 +325,39 @@ export default function AshaWorkspace({ onNavigateToPatientView }) {
             ashaId={ashaProfile?.id || user?.id}
             ashaName={ashaProfile?.name || 'Sunita Deshmukh'}
             phcName={ashaProfile?.phc_name || 'Shrirampur Primary Health Centre'}
+          />
+        );
+
+      case 'village':
+        return (
+          <AshaVillageView
+            patients={scopedPatients}
+            loading={false}
+            onRefresh={refreshAllData}
+            onSelectPatient={handleSelectPatient}
+            onStartEncounter={(patient) => {
+              setSelectedPatient(patient);
+              setActiveSubView('encounter_wizard');
+            }}
+            onOpenRegister={(query) => {
+              setRegisterInitialName(query || '');
+              setShowRegisterModal(true);
+            }}
+            assignedVillages={ashaVillages || []}
+          />
+        );
+
+      case 'survey':
+        return (
+          <AshaVillageSurveyView
+            patients={scopedPatients}
+            assignedVillages={ashaVillages || []}
+            onOpenSurvey={(mode) => {
+              setSurveyInitialMode(mode || 'MANUAL_SURVEY');
+              setShowSurveyModal(true);
+            }}
+            onSelectPatient={handleSelectPatient}
+            onRefresh={refreshAllData}
           />
         );
 
@@ -404,6 +435,7 @@ export default function AshaWorkspace({ onNavigateToPatientView }) {
           </div>
         );
 
+      case 'today':
       case 'home':
       default:
         return (
@@ -601,7 +633,7 @@ export default function AshaWorkspace({ onNavigateToPatientView }) {
 
       {/* ── MOBILE BOTTOM NAVIGATION ── */}
       <nav
-        className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-2 py-1.5 flex items-center justify-around z-30 shadow-lg"
+        className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-1 py-1.5 flex items-center gap-0.5 overflow-x-auto z-30 shadow-lg scrollbar-none"
         aria-label="Mobile Bottom Navigation"
       >
         {navItems.map((item) => {
@@ -617,7 +649,7 @@ export default function AshaWorkspace({ onNavigateToPatientView }) {
                 setSelectedPatient(null);
                 setActiveTab(item.key);
               }}
-              className={`flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-xl font-bold text-[10px] transition-all relative ${
+              className={`flex-shrink-0 flex flex-col items-center gap-0.5 py-1 px-2 rounded-xl font-bold text-[9px] transition-all relative ${
                 isActive ? 'text-[#008080]' : 'text-slate-400 hover:text-slate-600'
               }`}
             >
@@ -629,7 +661,7 @@ export default function AshaWorkspace({ onNavigateToPatientView }) {
                   </span>
                 )}
               </div>
-              <span>{item.label}</span>
+              <span className="whitespace-nowrap">{item.label}</span>
             </button>
           );
         })}
@@ -678,6 +710,7 @@ export default function AshaWorkspace({ onNavigateToPatientView }) {
           assignedVillages={ashaVillages}
           existingPatients={patients}
           onSurveyCompleted={handleSurveyCompleted}
+          initialMode={surveyInitialMode}
         />
       )}
     </div>

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Upload,
   FileText,
@@ -51,12 +51,19 @@ export default function VillageSurveyModal({
   onClose,
   assignedVillages = [],
   existingPatients = [],
-  onSurveyCompleted
+  onSurveyCompleted,
+  initialMode = 'MANUAL_SURVEY'
 }) {
   const { isDemoMode, ashaProfile } = useAuth();
 
   // Mode: 'MANUAL_SURVEY' (Primary) | 'CSV_IMPORT' (Secondary)
-  const [surveyMode, setSurveyMode] = useState('MANUAL_SURVEY');
+  const [surveyMode, setSurveyMode] = useState(initialMode);
+
+  useEffect(() => {
+    if (initialMode && isOpen) {
+      setSurveyMode(initialMode);
+    }
+  }, [initialMode, isOpen]);
 
   // ─── A. MANUAL HOUSEHOLD SURVEY STATE ──────────────────────────────────────
   const defaultVillage = assignedVillages[0] || { id: null, name: 'Shrirampur Ward 4', area_id: null };

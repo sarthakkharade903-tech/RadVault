@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from './context/AuthContext';
-import { ROLES, ROLE_CONFIG } from './constants/roles';
+import { ROLES, ROLE_CONFIG, ROLE_HOME } from './constants/roles';
 
 // Existing Patient Portal Components
 import { PatientHome } from './components/dashboard/PatientHome';
@@ -160,8 +160,11 @@ function App() {
   const [showPortalPicker, setShowPortalPicker] = useState(false);
   const [selectedPortal, setSelectedPortal] = useState(() => {
     if (typeof window !== 'undefined') {
-      const hash = window.location.hash.replace('#', '').toLowerCase();
-      if (['asha', 'hospital', 'doctor', 'patient'].includes(hash)) return hash;
+      const raw = window.location.hash.replace('#', '').toLowerCase().trim();
+      if (['hospital', 'hospital-staff', 'staff'].includes(raw)) return 'hospital';
+      if (['asha', 'asha-worker'].includes(raw)) return 'asha';
+      if (['doctor'].includes(raw)) return 'doctor';
+      if (['patient'].includes(raw)) return 'patient';
     }
     return null;
   });
@@ -252,32 +255,64 @@ function App() {
   // Sync role with URL hash on mount & hashchange for native routing in demo mode
   useEffect(() => {
     const handleHashChange = async () => {
-      const hash = window.location.hash.replace('#', '').toLowerCase();
-      if (['asha', 'hospital', 'doctor', 'patient'].includes(hash)) {
-        setSelectedPortal(hash);
-        if (hash === 'patient') {
+      const raw = (window.location.hash || '').replace('#', '').toLowerCase().trim();
+      if (!raw) {
+        if (!isAuthenticated && !isPatientDemoActive) {
+          setSelectedPortal(null);
+        }
+        return;
+      }
+
+      let targetRole = null;
+      let portalKey = null;
+
+      if (['hospital', 'hospital-staff', 'staff'].includes(raw)) {
+        targetRole = ROLES.HOSPITAL_STAFF;
+        portalKey = 'hospital';
+      } else if (['asha', 'asha-worker'].includes(raw)) {
+        targetRole = ROLES.ASHA;
+        portalKey = 'asha';
+      } else if (['doctor'].includes(raw)) {
+        targetRole = ROLES.DOCTOR;
+        portalKey = 'doctor';
+      } else if (['patient'].includes(raw)) {
+        targetRole = ROLES.PATIENT;
+        portalKey = 'patient';
+      }
+
+      if (targetRole) {
+        if (targetRole === ROLES.PATIENT) {
           setIsPatientDemoActive(true);
-          await switchDemoRole(ROLES.PATIENT);
         } else {
           setIsPatientDemoActive(false);
         }
-      } else if (!hash) {
-        setSelectedPortal(null);
-        setIsPatientDemoActive(false);
+
+        if (isAuthenticated) {
+          // Already authenticated: clear portal login state
+          setSelectedPortal(null);
+        } else {
+          // Unauthenticated: if in Demo Mode, allow direct role preview; otherwise prompt login
+          if (isDemoMode) {
+            setSelectedPortal(null);
+            await switchDemoRole(targetRole);
+          } else {
+            setSelectedPortal(portalKey);
+          }
+        }
       }
     };
 
     handleHashChange();
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
-  }, []);
+  }, [isAuthenticated, isDemoMode, switchDemoRole]);
 
   // Update hash when demo role changes
   const handleRoleSelect = async (targetRole) => {
     setShowPortalPicker(false);
     const hashKey = targetRole === ROLES.HOSPITAL_STAFF ? 'hospital' : targetRole;
     window.location.hash = hashKey;
-    setSelectedPortal(hashKey);
+    setSelectedPortal(null); // CRITICAL: Do NOT trap into PortalSignIn when selecting a workspace
     if (targetRole === ROLES.PATIENT) {
       setIsPatientDemoActive(true);
     } else {
@@ -288,7 +323,7 @@ function App() {
 
   const handleEnterPatientDemo = async () => {
     setIsPatientDemoActive(true);
-    setSelectedPortal('patient');
+    setSelectedPortal(null);
     window.location.hash = 'patient';
     await switchDemoRole(ROLES.PATIENT);
   };
@@ -331,10 +366,12 @@ function App() {
               setIsPatientDemoActive(false);
             }
           }}
-          onLoginSuccess={() => {
+          onLoginSuccess={(authData) => {
             setSelectedPortal(null);
             setIsPatientDemoActive(false);
-            window.location.hash = '';
+            const userRole = authData?.user?.user_metadata?.role || authData?.user?.app_metadata?.role;
+            const targetHash = userRole === ROLES.HOSPITAL_STAFF ? 'hospital' : (userRole || 'asha');
+            window.location.hash = targetHash;
           }}
           onEnterDemoPatient={handleEnterPatientDemo}
         />

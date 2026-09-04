@@ -11,7 +11,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../services/supabase';
-import { ROLES } from '../constants/roles';
+import { ROLES, normalizeRole } from '../constants/roles';
 import { mockPatient } from '../data/mockPatientData';
 
 export const AuthContext = createContext();
@@ -69,10 +69,7 @@ export function AuthProvider({ children }) {
     // Priority 1: app_metadata (server-controlled, immutable by user)
     // Priority 2: user_metadata (fallback for dev users)
     const rawRole = supabaseUser.app_metadata?.role || supabaseUser.user_metadata?.role;
-    if (rawRole && Object.values(ROLES).includes(rawRole)) {
-      return rawRole;
-    }
-    return null;
+    return normalizeRole(rawRole);
   };
 
   useEffect(() => {
@@ -417,6 +414,19 @@ const DEMO_ROLE_CREDENTIALS = {
       setAuthError(null);
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
+      if (data?.user) {
+        setUser(data.user);
+        setSession(data.session);
+        const validRole = extractValidatedRole(data.user);
+        if (validRole) {
+          setVerifiedRole(validRole);
+          setAuthStatus(AUTH_STATUS.AUTHENTICATED);
+        } else {
+          setVerifiedRole(null);
+          setAuthStatus(AUTH_STATUS.AUTHENTICATED_NO_ROLE);
+        }
+        return { success: true, data, role: validRole };
+      }
       return { success: true, data };
     } catch (err) {
       setAuthError(err.message);
