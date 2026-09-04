@@ -1,14 +1,22 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Inbox,
-  ArrowRight,
   AlertTriangle,
   Search,
   ChevronRight,
   Loader2,
   X,
   RefreshCw,
-  Phone
+  Phone,
+  FileText,
+  Stethoscope,
+  Activity,
+  Building2,
+  ShieldAlert,
+  UserCheck,
+  CheckCircle2,
+  ExternalLink,
+  Sparkles
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../services/supabase';
@@ -28,6 +36,9 @@ const INITIAL_DEMO_REFERRALS = [
     patient_unified_id: 'MH-P-10482',
     patient_name: 'Rajesh Kumar',
     patient_phone: '9876543210',
+    patient_age: 48,
+    patient_gender: 'Male',
+    patient_blood_group: 'B+',
     created_by: 'ASHA Worker: Sunita Deshmukh',
     destination_hospital: 'Pune Sassoon General Hospital',
     destination_department: 'Cardiology',
@@ -36,6 +47,7 @@ const INITIAL_DEMO_REFERRALS = [
     priority_label: 'Emergency / Immediate Attention',
     status: REFERRAL_STATUS.PENDING,
     symptoms: 'Chest tightness and intermittent breathlessness. Notes: Patient reports radiating pain to arm.',
+    ai_note: 'Triage Risk: High. Suspected acute coronary event or severe cardiac ischemia. Urgent ECG and cardiology evaluation recommended upon intake.',
     vitals: { bp: '142/90', pulse: '88', spo2: '95', temp: '98.6', respRate: '20', weight: '68' },
     danger_signs: ['Crushing chest pain, pressure, or radiating pain to arm/jaw'],
     created_at: new Date().toISOString()
@@ -46,6 +58,10 @@ const INITIAL_DEMO_REFERRALS = [
     patient_unified_id: 'MH-P-44021',
     patient_name: 'Sunita Patil',
     patient_phone: '9123456789',
+    patient_age: 26,
+    patient_gender: 'Female',
+    patient_blood_group: 'O+',
+    is_pregnant: true,
     created_by: 'ASHA Worker: Sunita Deshmukh',
     destination_hospital: 'Pune Sassoon General Hospital',
     destination_department: 'Gynecology & Obstetrics',
@@ -53,7 +69,8 @@ const INITIAL_DEMO_REFERRALS = [
     priority: 'ORANGE',
     priority_label: 'Urgent / Within 24 Hours',
     status: REFERRAL_STATUS.ACCEPTED,
-    symptoms: 'Mild headache and swelling. Notes: Antenatal follow-up check.',
+    symptoms: 'Mild headache and swelling. Notes: Antenatal follow-up check. ASHA ACCOMPANYING.',
+    ai_note: 'Gestational monitoring: 28 weeks gestation with mild pedal edema and borderline elevated systolic pressure. Rule out early preeclampsia.',
     vitals: { bp: '134/86', pulse: '82', spo2: '98', temp: '98.4', respRate: '18', weight: '71' },
     danger_signs: [],
     created_at: new Date().toISOString()
@@ -64,6 +81,9 @@ const INITIAL_DEMO_REFERRALS = [
     patient_unified_id: 'MH-P-99821',
     patient_name: 'Amit Shinde',
     patient_phone: '8888888888',
+    patient_age: 34,
+    patient_gender: 'Male',
+    patient_blood_group: 'A+',
     created_by: 'ASHA Worker: Sunita Deshmukh',
     destination_hospital: 'Pune Sassoon General Hospital',
     destination_department: 'General Medicine',
@@ -72,13 +92,14 @@ const INITIAL_DEMO_REFERRALS = [
     priority_label: 'Routine / Local Care',
     status: REFERRAL_STATUS.ARRIVED,
     symptoms: 'Mild fever and sore throat. Notes: Seasonal throat infection.',
+    ai_note: 'Upper respiratory infection symptoms. Vitals stable. Standard symptomatic treatment protocol advised.',
     vitals: { bp: '118/76', pulse: '76', spo2: '99', temp: '99.8', respRate: '16', weight: '62' },
     danger_signs: [],
     created_at: new Date().toISOString()
   }
 ];
 
-export default function HospitalStaffWorkspace({ onNavigateToPatientView }) {
+export default function HospitalStaffWorkspace({ onNavigateToPatientView: _onNavigateToPatientView }) {
   const { user, isDemoMode, demoDataEnabled } = useAuth();
   
   // Navigation Tabs: 'home' | 'queue' | 'referrals'
@@ -223,7 +244,8 @@ export default function HospitalStaffWorkspace({ onNavigateToPatientView }) {
           patient_unified_id: linkedPatient?.unified_id || (r.patient_id && !r.patient_id.includes('-') ? r.patient_id : null),
           patient_phone: linkedPatient?.phone_number || r.vitals?.phone || null,
           patient_age: linkedPatient?.age || null,
-          patient_gender: linkedPatient?.gender || null
+          patient_gender: linkedPatient?.gender || null,
+          patient_blood_group: linkedPatient?.blood_group || null
         };
       });
 
@@ -307,6 +329,7 @@ export default function HospitalStaffWorkspace({ onNavigateToPatientView }) {
   const handleAcceptReferral = async (refId) => {
     if (isDemoMode) {
       setReferrals(prev => prev.map(r => r.id === refId ? { ...r, status: 'Accepted' } : r));
+      setSelectedReferral(prev => (prev && prev.id === refId ? { ...prev, status: 'Accepted' } : prev));
       showToast('✓ Referral accepted and moved to waiting queue.');
       return;
     }
@@ -320,6 +343,7 @@ export default function HospitalStaffWorkspace({ onNavigateToPatientView }) {
       if (err) throw err;
       
       setReferrals(prev => prev.map(r => r.id === refId ? { ...r, status: 'Accepted' } : r));
+      setSelectedReferral(prev => (prev && prev.id === refId ? { ...prev, status: 'Accepted' } : prev));
       showToast('✓ Referral accepted successfully.');
     } catch (err) {
       setError(`Failed to accept referral: ${err.message}`);
@@ -330,6 +354,7 @@ export default function HospitalStaffWorkspace({ onNavigateToPatientView }) {
   const handleMarkArrived = async (refId) => {
     if (isDemoMode) {
       setReferrals(prev => prev.map(r => r.id === refId ? { ...r, status: 'Arrived' } : r));
+      setSelectedReferral(prev => (prev && prev.id === refId ? { ...prev, status: 'Arrived' } : prev));
       showToast('✓ Patient marked as arrived. Ready for doctor routing.');
       return;
     }
@@ -343,6 +368,7 @@ export default function HospitalStaffWorkspace({ onNavigateToPatientView }) {
       if (err) throw err;
 
       setReferrals(prev => prev.map(r => r.id === refId ? { ...r, status: 'Arrived' } : r));
+      setSelectedReferral(prev => (prev && prev.id === refId ? { ...prev, status: 'Arrived' } : prev));
       showToast('✓ Patient marked as arrived.');
     } catch (err) {
       setError(`Failed to mark arrival: ${err.message}`);
@@ -353,6 +379,7 @@ export default function HospitalStaffWorkspace({ onNavigateToPatientView }) {
   const handleRouteToDoctor = async (refId, doctorName) => {
     if (isDemoMode) {
       setReferrals(prev => prev.map(r => r.id === refId ? { ...r, doctor_assigned: doctorName } : r));
+      setSelectedReferral(prev => (prev && prev.id === refId ? { ...prev, doctor_assigned: doctorName } : prev));
       setShowDoctorRouteModal(null);
       showToast(`✓ Patient successfully routed to ${doctorName}.`);
       return;
@@ -367,6 +394,7 @@ export default function HospitalStaffWorkspace({ onNavigateToPatientView }) {
       if (err) throw err;
 
       setReferrals(prev => prev.map(r => r.id === refId ? { ...r, doctor_assigned: doctorName } : r));
+      setSelectedReferral(prev => (prev && prev.id === refId ? { ...prev, doctor_assigned: doctorName } : prev));
       setShowDoctorRouteModal(null);
       showToast(`✓ Scoped referral updated with assigned specialist: ${doctorName}`);
     } catch (err) {
@@ -561,10 +589,17 @@ export default function HospitalStaffWorkspace({ onNavigateToPatientView }) {
                     const priorityBg = isHigh ? 'bg-rose-50 text-rose-800' : isUrgent ? 'bg-amber-50 text-amber-900' : 'bg-slate-100 text-slate-700';
                     
                     return (
-                      <div key={ref.id} className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 first:pt-0 last:pb-0">
+                      <div 
+                        key={ref.id} 
+                        onClick={() => setSelectedReferral(ref)}
+                        className="py-3 px-2 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50 transition-colors cursor-pointer group first:pt-0 last:pb-0"
+                      >
                         <div className="min-w-0 space-y-0.5">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-extrabold text-xs text-slate-900">{ref.patient_name}</span>
+                            <span className="font-extrabold text-xs text-slate-900 group-hover:text-[#008080] transition-colors flex items-center gap-1.5">
+                              <FileText className="w-3.5 h-3.5 text-[#008080]" />
+                              {ref.patient_name}
+                            </span>
                             <span className="font-mono text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded font-bold">
                               {ref.patient_unified_id ? `ID: ${ref.patient_unified_id}` : `ID: ${ref.patient_id?.slice(0, 8)}`}
                             </span>
@@ -572,7 +607,12 @@ export default function HospitalStaffWorkspace({ onNavigateToPatientView }) {
                               {ref.priority}
                             </span>
                             {ref.patient_phone && (
-                              <a href={`tel:${ref.patient_phone}`} className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 px-1.5 py-0.2 rounded transition-colors" title="Call patient">
+                              <a 
+                                href={`tel:${ref.patient_phone}`} 
+                                onClick={(e) => e.stopPropagation()}
+                                className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 px-1.5 py-0.2 rounded transition-colors" 
+                                title="Call patient"
+                              >
                                 <Phone className="w-2.5 h-2.5 text-[#008080]" />
                                 <span>{ref.patient_phone}</span>
                               </a>
@@ -583,16 +623,20 @@ export default function HospitalStaffWorkspace({ onNavigateToPatientView }) {
                           </p>
                         </div>
 
-                        <div className="flex items-center gap-2 shrink-0">
+                        <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
                           <button
+                            type="button"
                             onClick={() => setSelectedReferral(ref)}
-                            className="px-2.5 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 font-bold text-[11px] rounded-lg transition-colors cursor-pointer"
+                            className="px-2.5 py-1.5 bg-teal-50 hover:bg-teal-100 text-[#008080] border border-teal-200 font-bold text-[11px] rounded-lg transition-colors cursor-pointer flex items-center gap-1"
+                            title="Open Clinical Case"
                           >
-                            Context
+                            <FileText className="w-3 h-3" />
+                            <span>Clinical Case</span>
                           </button>
                           
                           {ref.status === 'Pending' && (
                             <button
+                              type="button"
                               onClick={() => handleAcceptReferral(ref.id)}
                               className="px-3 py-1.5 bg-[#FF9933] hover:bg-[#e68a2e] text-slate-950 font-black text-[11px] rounded-lg transition-colors cursor-pointer"
                             >
@@ -602,6 +646,7 @@ export default function HospitalStaffWorkspace({ onNavigateToPatientView }) {
 
                           {ref.status === 'Accepted' && (
                             <button
+                              type="button"
                               onClick={() => handleMarkArrived(ref.id)}
                               className="px-3 py-1.5 bg-[#008080] hover:bg-[#006666] text-white font-black text-[11px] rounded-lg transition-colors cursor-pointer"
                             >
@@ -611,6 +656,7 @@ export default function HospitalStaffWorkspace({ onNavigateToPatientView }) {
 
                           {ref.status === 'Arrived' && (
                             <button
+                              type="button"
                               onClick={() => setShowDoctorRouteModal(ref)}
                               className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-black text-[11px] rounded-lg transition-colors cursor-pointer"
                             >
@@ -677,12 +723,16 @@ export default function HospitalStaffWorkspace({ onNavigateToPatientView }) {
                 return (
                   <div 
                     key={ref.id}
-                    className="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs space-y-3.5 hover:border-slate-300 transition-colors"
+                    onClick={() => setSelectedReferral(ref)}
+                    className="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs space-y-3.5 hover:border-[#008080]/60 hover:shadow-md transition-all cursor-pointer group"
                   >
                     {/* Header Row */}
                     <div className="flex flex-wrap items-center justify-between gap-2.5">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-black text-sm text-slate-900">{ref.patient_name}</span>
+                        <span className="font-black text-sm text-slate-900 group-hover:text-[#008080] transition-colors flex items-center gap-1.5">
+                          <FileText className="w-4 h-4 text-[#008080]" />
+                          {ref.patient_name}
+                        </span>
                         <span className="font-mono text-xs text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded font-bold">
                           {ref.patient_unified_id ? `ID: ${ref.patient_unified_id}` : `ID: ${ref.patient_id?.slice(0, 8)}`}
                         </span>
@@ -690,7 +740,12 @@ export default function HospitalStaffWorkspace({ onNavigateToPatientView }) {
                           {ref.priority_label || ref.priority}
                         </span>
                         {ref.patient_phone && (
-                          <a href={`tel:${ref.patient_phone}`} className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 px-2 py-0.5 rounded transition-colors" title="Call patient">
+                          <a 
+                            href={`tel:${ref.patient_phone}`} 
+                            onClick={(e) => e.stopPropagation()}
+                            className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 px-2 py-0.5 rounded transition-colors" 
+                            title="Call patient"
+                          >
                             <Phone className="w-3 h-3 text-[#008080]" />
                             <span>{ref.patient_phone}</span>
                           </a>
@@ -730,7 +785,10 @@ export default function HospitalStaffWorkspace({ onNavigateToPatientView }) {
                     </div>
 
                     {/* Actions and Routing footer */}
-                    <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
+                    <div 
+                      className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       {ref.doctor_assigned && (
                         <div className="text-[10px] font-bold text-slate-500 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-lg">
                           🩺 Specialist Assigned: <span className="text-slate-900">{ref.doctor_assigned}</span>
@@ -743,9 +801,11 @@ export default function HospitalStaffWorkspace({ onNavigateToPatientView }) {
                         <button
                           type="button"
                           onClick={() => setSelectedReferral(ref)}
-                          className="px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50 border border-slate-200 rounded-xl transition-colors cursor-pointer"
+                          className="px-3 py-1.5 text-xs font-bold text-[#008080] bg-teal-50/70 hover:bg-teal-100 border border-teal-200 rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                          title="Open Clinical Case File"
                         >
-                          Context
+                          <FileText className="w-3.5 h-3.5" />
+                          <span>Clinical Case</span>
                         </button>
 
                         {ref.status === 'Pending' && (
@@ -781,11 +841,12 @@ export default function HospitalStaffWorkspace({ onNavigateToPatientView }) {
                         {ref.status === 'Completed' && (
                           <button
                             type="button"
-                            onClick={() => onNavigateToPatientView()}
-                            className="px-3 py-1.5 text-xs font-bold text-[#008080] hover:text-[#006666] flex items-center gap-0.5 transition-colors cursor-pointer"
+                            onClick={() => setSelectedReferral(ref)}
+                            className="px-3.5 py-1.5 text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
+                            title="Open Completed Clinical Case"
                           >
-                            <span>Open Records</span>
-                            <ArrowRight className="w-3 h-3" />
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>View Case File</span>
                           </button>
                         )}
                       </div>
@@ -866,105 +927,327 @@ export default function HospitalStaffWorkspace({ onNavigateToPatientView }) {
         </div>
       )}
 
-      {/* ─── MODAL 1: VIEW PATIENT CONTEXT ─── */}
-      {selectedReferral && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
-          <div className="bg-white rounded-3xl max-w-md w-full p-5 border border-slate-200 shadow-2xl space-y-4">
-            
-            <div className="flex items-start justify-between">
-              <div>
-                <span className="inline-block text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-[#E6F2F2] text-[#008080] mb-1 font-bold">
-                  Referral Intake Context
-                </span>
-                <h2 className="text-sm font-black text-slate-900">{selectedReferral.patient_name}</h2>
-                <div className="flex items-center gap-2 mt-0.5">
-                  <span className="text-[10px] font-mono text-slate-500 font-bold bg-slate-100 px-1.5 py-0.2 rounded">
-                    {selectedReferral.patient_unified_id ? `ABHA / ID: ${selectedReferral.patient_unified_id}` : `ID: ${selectedReferral.patient_id}`}
-                  </span>
-                  {selectedReferral.patient_phone && (
-                    <a href={`tel:${selectedReferral.patient_phone}`} className="text-[10px] font-bold text-[#008080] hover:underline flex items-center gap-1">
-                      <Phone className="w-2.5 h-2.5" />
-                      <span>{selectedReferral.patient_phone}</span>
-                    </a>
+      {/* ─── MODAL 1: CLINICAL CASE DOSSIER & INTAKE CONTEXT ─── */}
+      {selectedReferral && (() => {
+        const isHighRisk = selectedReferral.priority === 'HIGH' || selectedReferral.priority === 'RED';
+        const isUrgent = selectedReferral.priority === 'ORANGE';
+        const priorityBadgeStyle = isHighRisk 
+          ? 'bg-rose-100 text-rose-800 border-rose-200'
+          : isUrgent 
+          ? 'bg-amber-100 text-amber-900 border-amber-200' 
+          : 'bg-emerald-100 text-emerald-900 border-emerald-200';
+
+        let statusBadgeStyle = 'bg-slate-100 text-slate-700 border-slate-200';
+        if (selectedReferral.status === 'Accepted') statusBadgeStyle = 'bg-sky-100 text-sky-800 border-sky-200';
+        if (selectedReferral.status === 'Arrived') statusBadgeStyle = 'bg-teal-100 text-teal-800 border-teal-200';
+        if (selectedReferral.status === 'Completed') statusBadgeStyle = 'bg-emerald-100 text-emerald-800 border-emerald-200';
+
+        // Safe danger signs normalization
+        const dangerSigns = Array.isArray(selectedReferral.danger_signs)
+          ? selectedReferral.danger_signs
+          : (typeof selectedReferral.danger_signs === 'string' && selectedReferral.danger_signs.trim())
+          ? [selectedReferral.danger_signs]
+          : [];
+
+        const vitals = selectedReferral.vitals || {};
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/50 backdrop-blur-xs animate-in fade-in duration-150">
+            <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[92vh] flex flex-col border border-slate-200 shadow-2xl overflow-hidden">
+              
+              {/* Modal Top Header */}
+              <div className="p-5 border-b border-slate-100 bg-slate-50/60 flex items-start justify-between gap-3 shrink-0">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-[#008080]/10 text-[#008080] border border-[#008080]/20">
+                      <FileText className="w-3 h-3" />
+                      Clinical Case File
+                    </span>
+                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-md border ${priorityBadgeStyle}`}>
+                      {selectedReferral.priority_label || selectedReferral.priority}
+                    </span>
+                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-md border ${statusBadgeStyle}`}>
+                      Status: {selectedReferral.status}
+                    </span>
+                  </div>
+
+                  <h2 className="text-xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+                    {selectedReferral.patient_name}
+                  </h2>
+
+                  <div className="flex items-center gap-3 text-xs text-slate-600 font-medium flex-wrap">
+                    <span className="font-mono text-[11px] font-bold bg-slate-200/80 px-2 py-0.5 rounded text-slate-800">
+                      {selectedReferral.patient_unified_id ? `ABHA / ID: ${selectedReferral.patient_unified_id}` : `ID: ${selectedReferral.patient_id}`}
+                    </span>
+                    {(selectedReferral.patient_gender || selectedReferral.patient_age) && (
+                      <span className="text-slate-500">
+                        {[selectedReferral.patient_gender, selectedReferral.patient_age ? `${selectedReferral.patient_age} yrs` : null].filter(Boolean).join(' · ')}
+                      </span>
+                    )}
+                    {selectedReferral.patient_blood_group && (
+                      <span className="font-extrabold text-rose-700 bg-rose-50 border border-rose-200 px-1.5 py-0.2 rounded text-[10px]">
+                        Blood: {selectedReferral.patient_blood_group}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setSelectedReferral(null)}
+                  className="p-2 rounded-full bg-white hover:bg-slate-100 text-slate-500 border border-slate-200 shadow-2xs transition-colors cursor-pointer"
+                  aria-label="Close clinical case file"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Scrollable Case Body */}
+              <div className="p-5 overflow-y-auto space-y-4 text-xs font-semibold text-slate-700 divide-y divide-slate-100">
+                
+                {/* Contact & Facility Overview */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100 space-y-1">
+                    <span className="text-[10px] text-slate-400 font-black uppercase tracking-wider block">Patient Phone & Direct Call</span>
+                    {selectedReferral.patient_phone ? (
+                      <a 
+                        href={`tel:${selectedReferral.patient_phone}`} 
+                        className="inline-flex items-center gap-1.5 text-sm font-black text-[#008080] hover:underline"
+                      >
+                        <Phone className="w-3.5 h-3.5" />
+                        <span>{selectedReferral.patient_phone}</span>
+                        <span className="text-[10px] bg-teal-100 text-teal-800 px-1.5 py-0.2 rounded ml-1 font-bold">Call Now</span>
+                      </a>
+                    ) : (
+                      <span className="text-slate-400 italic text-xs">No phone recorded</span>
+                    )}
+                  </div>
+
+                  <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100 space-y-1">
+                    <span className="text-[10px] text-slate-400 font-black uppercase tracking-wider block">Destination Facility & Unit</span>
+                    <div className="text-xs font-black text-slate-900 flex items-center gap-1.5">
+                      <Building2 className="w-3.5 h-3.5 text-slate-500" />
+                      <span>{selectedReferral.destination_hospital || 'District Hospital / PHC'}</span>
+                    </div>
+                    <div className="text-[11px] text-slate-500">
+                      Unit: <span className="font-bold text-slate-700">{selectedReferral.destination_department || 'OPD Triage'}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Assigned Clinician Desk */}
+                <div className="pt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <span className="text-[10px] text-slate-400 font-black uppercase tracking-wider block">Doctor / Specialist Desk</span>
+                    <div className="text-sm font-extrabold text-slate-900 flex items-center gap-1.5 mt-0.5">
+                      <Stethoscope className="w-4 h-4 text-[#008080]" />
+                      {selectedReferral.doctor_assigned ? (
+                        <span className="text-slate-900">{selectedReferral.doctor_assigned}</span>
+                      ) : (
+                        <span className="text-amber-700 italic">Not Assigned (Awaiting OPD Triage Desk)</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="text-right sm:text-right">
+                    <span className="text-[10px] text-slate-400 font-black uppercase tracking-wider block">Referred By Frontline Worker</span>
+                    <span className="text-xs font-bold text-slate-800">
+                      {selectedReferral.created_by || 'ASHA Community Worker'}
+                    </span>
+                    <div className="text-[10px] text-slate-400">
+                      {new Date(selectedReferral.created_at).toLocaleString('en-IN', {
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Flagged Danger Signs */}
+                {dangerSigns.length > 0 && (
+                  <div className="pt-4">
+                    <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl space-y-1.5">
+                      <div className="flex items-center gap-1.5 text-rose-800 font-black text-xs uppercase tracking-wide">
+                        <ShieldAlert className="w-4 h-4 text-rose-600" />
+                        <span>Critical Danger Signs Flagged by Frontline Triage</span>
+                      </div>
+                      <ul className="list-disc list-inside space-y-1 text-xs text-rose-900 font-bold pl-1">
+                        {dangerSigns.map((sign, idx) => (
+                          <li key={idx}>{sign}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                )}
+
+                {/* Pregnancy / Special Escort Flag */}
+                {(selectedReferral.is_pregnant || selectedReferral.symptoms?.includes('ASHA ACCOMPANYING') || selectedReferral.clinical_summary?.includes('ASHA ACCOMPANYING')) && (
+                  <div className="pt-3">
+                    <div className="p-2.5 bg-purple-50 border border-purple-200 rounded-xl flex items-center gap-2 text-xs font-bold text-purple-900">
+                      <span className="text-base">🤰</span>
+                      <span>High-Priority Antenatal / Escorted Case — ASHA worker accompanying for priority OPD admission.</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Frontline Triage Vitals */}
+                <div className="pt-4 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-slate-400 font-black uppercase tracking-wider flex items-center gap-1">
+                      <Activity className="w-3.5 h-3.5 text-[#008080]" />
+                      Recorded Vitals at Triage
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-bold">Standard Health Mission Parameters</span>
+                  </div>
+
+                  {Object.keys(vitals).length > 0 ? (
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                        <span className="text-[10px] text-slate-400 block font-bold">Blood Pressure</span>
+                        <span className="text-sm font-black text-slate-900">{vitals.bp || '—'}</span>
+                        <span className="text-[9px] text-slate-400 block font-medium">mmHg</span>
+                      </div>
+
+                      <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                        <span className="text-[10px] text-slate-400 block font-bold">Pulse / HR</span>
+                        <span className="text-sm font-black text-slate-900">{vitals.pulse ? `${vitals.pulse} bpm` : '—'}</span>
+                        <span className="text-[9px] text-slate-400 block font-medium">Beats/min</span>
+                      </div>
+
+                      <div className={`p-2.5 rounded-xl border ${vitals.spo2 && Number(vitals.spo2) < 95 ? 'bg-amber-50 border-amber-200 text-amber-900' : 'bg-slate-50 border-slate-200'}`}>
+                        <span className="text-[10px] text-slate-400 block font-bold">Oxygen (SpO₂)</span>
+                        <span className="text-sm font-black text-slate-900">{vitals.spo2 ? `${vitals.spo2}%` : '—'}</span>
+                        <span className="text-[9px] text-slate-400 block font-medium">{vitals.spo2 && Number(vitals.spo2) < 95 ? '⚠️ Low Oxygen' : 'Normal'}</span>
+                      </div>
+
+                      <div className={`p-2.5 rounded-xl border ${vitals.temp && Number(vitals.temp) >= 100 ? 'bg-amber-50 border-amber-200 text-amber-900' : 'bg-slate-50 border-slate-200'}`}>
+                        <span className="text-[10px] text-slate-400 block font-bold">Temperature</span>
+                        <span className="text-sm font-black text-slate-900">{vitals.temp ? `${vitals.temp}°F` : '—'}</span>
+                        <span className="text-[9px] text-slate-400 block font-medium">{vitals.temp && Number(vitals.temp) >= 100 ? '⚠️ Fever' : 'Normal'}</span>
+                      </div>
+
+                      {vitals.respRate && (
+                        <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                          <span className="text-[10px] text-slate-400 block font-bold">Respiration</span>
+                          <span className="text-sm font-black text-slate-900">{vitals.respRate}/min</span>
+                          <span className="text-[9px] text-slate-400 block font-medium">Breaths</span>
+                        </div>
+                      )}
+
+                      {vitals.weight && (
+                        <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                          <span className="text-[10px] text-slate-400 block font-bold">Weight</span>
+                          <span className="text-sm font-black text-slate-900">{vitals.weight} kg</span>
+                          <span className="text-[9px] text-slate-400 block font-medium">Body mass</span>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="p-3 bg-slate-50 rounded-xl text-center text-slate-400 italic text-xs border border-slate-100">
+                      No numeric vitals were submitted for this referral encounter.
+                    </div>
+                  )}
+                </div>
+
+                {/* Chief Complaint / Symptoms */}
+                <div className="pt-4 space-y-1.5">
+                  <span className="text-[10px] text-slate-400 font-black uppercase tracking-wider block">Intake Symptoms & Notes</span>
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs text-slate-800 leading-relaxed font-medium">
+                    {selectedReferral.symptoms || 'No detailed symptoms specified.'}
+                  </div>
+                </div>
+
+                {/* ASHA AI Clinical Assessment Note */}
+                {(selectedReferral.ai_note || selectedReferral.clinical_summary) && (
+                  <div className="pt-4 space-y-1.5">
+                    <span className="text-[10px] text-purple-700 font-black uppercase tracking-wider flex items-center gap-1">
+                      <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                      ASHA AI Clinical Assessment Note
+                    </span>
+                    <div className="p-3.5 bg-purple-50/70 border border-purple-200 rounded-2xl text-xs text-purple-950 font-semibold leading-relaxed">
+                      {selectedReferral.ai_note || selectedReferral.clinical_summary}
+                    </div>
+                  </div>
+                )}
+
+                {/* Attached Medical Records / Scans */}
+                {selectedReferral.attached_file_url && (
+                  <div className="pt-4 space-y-1.5">
+                    <span className="text-[10px] text-slate-400 font-black uppercase tracking-wider block">Attached Medical Record / Scan</span>
+                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <FileText className="w-4 h-4 text-[#008080]" />
+                        <span className="text-xs font-bold text-slate-800 truncate">Patient Health Document / Scan</span>
+                      </div>
+                      <a
+                        href={selectedReferral.attached_file_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3 py-1.5 bg-[#008080] hover:bg-[#006666] text-white text-[11px] font-bold rounded-lg flex items-center gap-1 transition-colors"
+                      >
+                        <span>View Scan</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                    </div>
+                  </div>
+                )}
+
+              </div>
+
+              {/* Modal Action Footer */}
+              <div className="p-4 border-t border-slate-200 bg-slate-50 flex flex-wrap items-center justify-between gap-3 shrink-0">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedReferral(null)}
+                    className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-bold rounded-xl cursor-pointer transition-colors shadow-2xs"
+                  >
+                    Close Case
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {selectedReferral.status === 'Pending' && (
+                    <button
+                      type="button"
+                      onClick={() => handleAcceptReferral(selectedReferral.id)}
+                      className="px-4 py-2 bg-[#FF9933] hover:bg-[#e68a2e] text-slate-950 font-black text-xs rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
+                    >
+                      <UserCheck className="w-4 h-4" />
+                      <span>Accept Referral</span>
+                    </button>
+                  )}
+
+                  {selectedReferral.status === 'Accepted' && (
+                    <button
+                      type="button"
+                      onClick={() => handleMarkArrived(selectedReferral.id)}
+                      className="px-4 py-2 bg-[#008080] hover:bg-[#006666] text-white font-black text-xs rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Mark Patient Arrived</span>
+                    </button>
+                  )}
+
+                  {(selectedReferral.status === 'Arrived' || selectedReferral.status === 'Accepted') && (
+                    <button
+                      type="button"
+                      onClick={() => setShowDoctorRouteModal(selectedReferral)}
+                      className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-black text-xs rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
+                    >
+                      <Stethoscope className="w-4 h-4" />
+                      <span>{selectedReferral.doctor_assigned ? 'Reassign Doctor Desk' : 'Assign Doctor Desk'}</span>
+                    </button>
                   )}
                 </div>
               </div>
-              <button
-                onClick={() => setSelectedReferral(null)}
-                className="p-1.5 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 cursor-pointer"
-                aria-label="Close context modal"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="divide-y divide-slate-100 text-xs font-bold text-slate-700 space-y-3">
-              
-              {/* Routing detail */}
-              <div className="pt-2 grid grid-cols-2 gap-3">
-                <div>
-                  <span className="text-[10px] text-slate-400 block font-medium uppercase">Priority Risk</span>
-                  <span className="text-slate-900">{selectedReferral.priority_label || selectedReferral.priority}</span>
-                </div>
-                <div>
-                  <span className="text-[10px] text-slate-400 block font-medium uppercase">Status</span>
-                  <span className="text-slate-900">{selectedReferral.status}</span>
-                </div>
-                <div>
-                  <span className="text-[10px] text-slate-400 block font-medium uppercase">Facility Target</span>
-                  <span className="text-slate-900">{selectedReferral.destination_hospital || 'Facility PHC'}</span>
-                </div>
-                <div>
-                  <span className="text-[10px] text-slate-400 block font-medium uppercase">Clinician Desk</span>
-                  <span className="text-slate-900">{selectedReferral.doctor_assigned || 'Unassigned'}</span>
-                </div>
-              </div>
-
-              {/* Vitals */}
-              {selectedReferral.vitals && Object.keys(selectedReferral.vitals).length > 0 && (
-                <div className="pt-3">
-                  <span className="text-[10px] text-slate-400 block font-medium uppercase mb-1">ASHA Triage Vitals</span>
-                  <div className="grid grid-cols-3 gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-100 font-extrabold text-[11px]">
-                    {selectedReferral.vitals.bp && <div>BP: {selectedReferral.vitals.bp}</div>}
-                    {selectedReferral.vitals.pulse && <div>HR: {selectedReferral.vitals.pulse} bpm</div>}
-                    {selectedReferral.vitals.spo2 && <div>SpO₂: {selectedReferral.vitals.spo2}%</div>}
-                    {selectedReferral.vitals.temp && <div>Temp: {selectedReferral.vitals.temp}°F</div>}
-                  </div>
-                </div>
-              )}
-
-              {/* Danger signs */}
-              {selectedReferral.danger_signs && selectedReferral.danger_signs.length > 0 && (
-                <div className="pt-3">
-                  <span className="text-[10px] text-rose-600 block font-black uppercase mb-0.5">⚠️ Danger Signs Flagged</span>
-                  <p className="text-xs text-rose-700 bg-rose-50 border border-rose-100 p-2.5 rounded-xl leading-relaxed">
-                    {selectedReferral.danger_signs.join(', ')}
-                  </p>
-                </div>
-              )}
-
-              {/* Complaint detail */}
-              <div className="pt-3">
-                <span className="text-[10px] text-slate-400 block font-medium uppercase">Intake Complaint & Symptoms</span>
-                <p className="text-xs text-slate-800 font-medium leading-relaxed mt-1">
-                  {selectedReferral.symptoms}
-                </p>
-              </div>
 
             </div>
-
-            <div className="pt-2 flex justify-end">
-              <button
-                onClick={() => setSelectedReferral(null)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl cursor-pointer"
-              >
-                Close Context
-              </button>
-            </div>
-
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ─── MODAL 2: ROUTE TO CLINICIAN ─── */}
       {showDoctorRouteModal && (
