@@ -1,4 +1,4 @@
-﻿import React, { useState } from "react";
+import React, { useState } from "react";
 import { HeartPulse, Leaf, Users, Building2, ArrowRight } from "lucide-react";
 import ASHAPortal from "./components/ASHA/ASHAPortal";
 import PatientLogin from "./components/Patient/PatientLogin";
@@ -6,7 +6,7 @@ import FamilyDashboard from "./components/Patient/FamilyDashboard";
 import illusAsha from "./assets/illus_asha.jpg";
 import illusFamily from "./assets/illus_family.jpg";
 import illusHospital from "./assets/illus_hospital.jpg";
-import HospitalDashboard from './components/dashboard/HospitalDashboard';
+import HospitalStaffWorkspace from './components/workspaces/HospitalStaffWorkspace';
 
 const PORTALS = [
   {
@@ -217,7 +217,7 @@ function App() {
     return <FamilyDashboard family={familyAuthData.family} members={familyAuthData.members} onLogout={() => setFamilyAuthData(null)} onBack={goHome} />;
   }
   if (activePortal === "reception") {
-    return <HospitalDashboard goHome={goHome} />;
+    return <HospitalStaffWorkspace onBack={goHome} goHome={goHome} />;
   }
 
   return <LandingPage onSelectPortal={setActivePortal} />;
