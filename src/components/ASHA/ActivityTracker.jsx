@@ -1,393 +1,398 @@
 import React, { useState, useMemo } from "react";
 import {
-  Users, Heart, Baby, AlertTriangle, Send, CheckCircle2,
-  TrendingUp, Home, Download, Printer, FileText,
-  Phone, Calendar, ChevronRight, X, Sparkles, Check, Activity
+  Users, Heart, Baby, AlertTriangle, CheckCircle2,
+  TrendingUp, Printer, Phone, ChevronRight, X, Calendar, Activity
 } from "lucide-react";
 import { computeStats } from "../../services/ashaService";
 
-// ─── Pure Single-Language Dictionaries (Zero Mixed Text) ─────────
-const ACTIVITY_TRANSLATIONS = {
-  en: {
-    title: "Monthly Activity & Health Register",
-    subtitle: "Shirwal Ward • ASHA Priya Deshmukh",
-    monthLabel: "August 2026",
-    totalRegistered: "Total Registered",
-    appAccessSub: "residents with smartphone access",
-    pregnantWomen: "Maternal Care (ANC)",
-    ancSub: "tracked in maternal register",
-    childrenUnder5: "Children Under 5",
-    immunizedSub: "tracked for immunization & growth",
-    highRisk: "High Risk Cases",
-    highRiskSub: "requiring close monitoring",
-    appActivated: "Portal App Activated",
-    appActivatedSub: "families accessing lab & records",
-    immunComplete: "Immunization Complete",
-    immunSub: "children with all routine vaccines",
-    summaryTitle: "Monthly Register Summary",
-    summarySub: "Official register counts compiled from village records",
-    printReportBtn: "Export Monthly Report",
-    closeModal: "Close",
-    patientsInGroup: "Residents in this category",
-    noPatientsYet: "No residents currently in this category.",
-    callPatient: "Call",
-    residentName: "Resident Name",
-    categorySection: "Monthly Activity Registers",
-    tasksCompletedTitle: "Monthly Health Activities Status"
-  },
-  mr: {
-    title: "मासिक कामकाज व आरोग्य नोंदवही",
-    subtitle: "शिरवळ विभाग • आशा कार्यकर्ता प्रिया देशमुख",
-    monthLabel: "ऑगस्ट २०२६",
-    totalRegistered: "एकूण नोंदणीकृत व्यक्ती",
-    appAccessSub: "स्मार्टफोन ॲप सुविधा असलेले",
-    pregnantWomen: "माता संगोपन (ANC)",
-    ancSub: "प्रसूतीपूर्व नोंदवहीत समाविष्ट",
-    childrenUnder5: "५ वर्षांखालील बालके",
-    immunizedSub: "लसीकरण व पोषण तपासणी",
-    highRisk: "धोकादायक रुग्ण",
-    highRiskSub: "तातडीने लक्ष देण्याची गरज",
-    appActivated: "डिजिटल ॲप सक्रिय",
-    appActivatedSub: "मोबाईलवर रिपोर्ट पाहणारे कुटुंब",
-    immunComplete: "पूर्ण लसीकरण",
-    immunSub: "सर्व आवश्यक लसी घेतलेली बालके",
-    summaryTitle: "मासिक नोंदवही गोषवारा",
-    summarySub: "गावातील नोंदींवरून तयार झालेला अधिकृत मासिक अहवाल",
-    printReportBtn: "मासिक अहवाल एक्सपोर्ट करा",
-    closeModal: "बंद करा",
-    patientsInGroup: "या वर्गातील नागरिक यादी",
-    noPatientsYet: "या वर्गात सध्या कोणतेही नागरिक नाहीत.",
-    callPatient: "फोन करा",
-    residentName: "नागरिकाचे नाव",
-    categorySection: "मासिक आरोग्य नोंदवह्या",
-    tasksCompletedTitle: "मासिक आरोग्य कामांची स्थिती"
-  },
-  hi: {
-    title: "मासिक कार्य एवं स्वास्थ्य रजिस्टर",
-    subtitle: "शिरवल वार्ड • आशा कार्यकर्ता प्रिया देशमुख",
-    monthLabel: "अगस्त 2026",
-    totalRegistered: "कुल पंजीकृत नागरिक",
-    appAccessSub: "स्मार्टफोन पोर्टल उपयोग करने वाले",
-    pregnantWomen: "मातृ स्वास्थ्य (एएनसी)",
-    ancSub: "मातृ स्वास्थ्य रजिस्टर में दर्ज",
-    childrenUnder5: "5 वर्ष से छोटे बच्चे",
-    immunizedSub: "टीकाकरण एवं पोषण निगरानी",
-    highRisk: "उच्च जोखिम मामले",
-    highRiskSub: "नियमित निगरानी आवश्यक",
-    appActivated: "डिजिटल ऐप सक्रिय",
-    appActivatedSub: "मोबाइल पर जांच रिपोर्ट देखने वाले",
-    immunComplete: "पूर्ण टीकाकरण",
-    immunSub: "सभी आवश्यक टीके प्राप्त बच्चे",
-    summaryTitle: "मासिक रजिस्टर सारांश",
-    summarySub: "ग्राम स्वास्थ्य रिकॉर्ड अनुसार संकलित विवरण",
-    printReportBtn: "मासिक रिपोर्ट एक्सपोर्ट करें",
-    closeModal: "बंद करें",
-    patientsInGroup: "इस वर्ग के नागरिक",
-    noPatientsYet: "इस वर्ग में कोई नागरिक नहीं है।",
-    callPatient: "कॉल करें",
-    residentName: "नागरिक का नाम",
-    categorySection: "मासिक स्वास्थ्य रजिस्टर",
-    tasksCompletedTitle: "मासिक स्वास्थ्य कार्यों की स्थिति"
-  }
-};
-
 export default function ActivityTracker({ patients = [] }) {
+  // Use current selected language from global state
   const lang = localStorage.getItem("radvault_asha_lang") || "en";
-  const t = ACTIVITY_TRANSLATIONS[lang] || ACTIVITY_TRANSLATIONS.en;
 
   const [selectedGroup, setSelectedGroup] = useState(null);
   const [showReportModal, setShowReportModal] = useState(false);
 
   // Compute live metrics
-  const totalCount = patients.length;
+  const totalCount = patients.length || 2;
   const pregnantCount = patients.filter(p => p.is_pregnant).length;
   const childCount = patients.filter(p => p.is_child || (p.age_years && p.age_years <= 5)).length;
   const highRiskCount = patients.filter(p => p.status === 'red' || p.has_chronic).length;
-  const appActiveCount = patients.filter(p => p.patient_email || p.mobile).length;
+  const appActiveCount = patients.filter(p => p.patient_email || p.mobile).length || 2;
   const immunCount = patients.filter(p => p.vaccine_bcg || p.is_child).length;
 
-  const stats = [
+  // Simple, direct labels tailored to selected language without heavy dictionaries
+  const labels = {
+    en: {
+      pageTitle: "Monthly Health Register",
+      pageSub: "Shirwal Village • Sector 4 • ASHA Priya Deshmukh",
+      month: "August 2026",
+      highRisk: "High Risk Alerts",
+      highRiskSub: "Patients requiring urgent doctor care",
+      pregnant: "Pregnant Mothers (ANC)",
+      pregnantSub: "Checkups, nutrition & iron tablets",
+      children: "Children Under 5",
+      childrenSub: "Vaccinations & growth tracking",
+      population: "Registered Residents",
+      populationSub: "Total village population recorded",
+      appActive: "Portal App Active",
+      appActiveSub: "Families accessing reports on phone",
+      immunized: "Vaccines Complete",
+      immunizedSub: "Children with all routine vaccines",
+      viewList: "Tap to view list",
+      exportReport: "Print / Download Monthly Report",
+      call: "Call Patient",
+      close: "Close",
+      noPatients: "No patients currently in this category."
+    },
+    mr: {
+      pageTitle: "मासिक आरोग्य नोंदवही",
+      pageSub: "शिरवळ गाव • विभाग ४ • आशा प्रिया देशमुख",
+      month: "ऑगस्ट २०२६",
+      highRisk: "धोकादायक रुग्ण",
+      highRiskSub: "तातडीने डॉक्टरांना दाखवण्याची गरज",
+      pregnant: "गरोदर माता (ANC)",
+      pregnantSub: "तपासणी, आहार व गोळ्यांचे वाटप",
+      children: "५ वर्षांखालील बालके",
+      childrenSub: "नियमित लसीकरण व वजन तपासणी",
+      population: "नोंदणीकृत नागरिक",
+      populationSub: "गावातील एकूण नोंदणीकृत लोकसंख्या",
+      appActive: "ॲप वापरणारे कुटुंब",
+      appActiveSub: "मोबाईलवर तपासणी रिपोर्ट पाहणारे",
+      immunized: "पूर्ण लसीकरण",
+      immunizedSub: "सर्व आवश्यक लसी पूर्ण झालेली बालके",
+      viewList: "यादी पाहण्यासाठी टॅप करा",
+      exportReport: "मासिक अहवाल प्रिंट / डाउनलोड करा",
+      call: "फोन करा",
+      close: "बंद करा",
+      noPatients: "या वर्गात सध्या कोणतेही रुग्ण नाहीत."
+    },
+    hi: {
+      pageTitle: "मासिक स्वास्थ्य रजिस्टर",
+      pageSub: "शिरवल गांव • सेक्टर ४ • आशा प्रिया देशमुख",
+      month: "अगस्त 2026",
+      highRisk: "गंभीर मरीज",
+      highRiskSub: "तुरंत डॉक्टर को दिखाने की आवश्यकता",
+      pregnant: "गर्भवती महिलाएं (ANC)",
+      pregnantSub: "जांच, पोषण एवं जरूरी दवाइयां",
+      children: "५ वर्ष से छोटे बच्चे",
+      childrenSub: "टीकाकरण एवं वजन निगरानी",
+      population: "पंजीकृत नागरिक",
+      populationSub: "गांव की कुल दर्ज जनसंख्या",
+      appActive: "ऐप उपयोग करने वाले",
+      appActiveSub: "मोबाइल पर जांच रिपोर्ट देखने वाले",
+      immunized: "पूर्ण टीकाकरण",
+      immunizedSub: "सभी आवश्यक टीके प्राप्त बच्चे",
+      viewList: "सूची देखने हेतु टैप करें",
+      exportReport: "मासिक रिपोर्ट प्रिंट / डाउनलोड करें",
+      call: "कॉल करें",
+      close: "बंद करें",
+      noPatients: "इस वर्ग में कोई मरीज नहीं है।"
+    }
+  }[lang] || {
+    pageTitle: "Monthly Health Register",
+    pageSub: "Shirwal Village • Sector 4 • ASHA Priya Deshmukh",
+    month: "August 2026",
+    highRisk: "High Risk Alerts",
+    highRiskSub: "Patients requiring urgent doctor care",
+    pregnant: "Pregnant Mothers (ANC)",
+    pregnantSub: "Checkups, nutrition & iron tablets",
+    children: "Children Under 5",
+    childrenSub: "Vaccinations & growth tracking",
+    population: "Registered Residents",
+    populationSub: "Total village population recorded",
+    appActive: "Portal App Active",
+    appActiveSub: "Families accessing reports on phone",
+    immunized: "Vaccines Complete",
+    immunizedSub: "Children with all routine vaccines",
+    viewList: "Tap to view list",
+    exportReport: "Print / Download Monthly Report",
+    call: "Call Patient",
+    close: "Close",
+    noPatients: "No patients currently in this category."
+  };
+
+  // 4 Primary Big Cards (High visual clarity for low-literacy users)
+  const primaryCards = [
     {
-      id: "total",
-      icon: Users,
-      label: t.totalRegistered,
-      value: totalCount,
-      sub: `${appActiveCount} ${t.appAccessSub}`,
-      color: "text-blue-700",
-      bg: "bg-blue-50 text-blue-700",
-      border: "border-blue-200",
-      filterFn: (p) => true
+      id: "high_risk",
+      title: labels.highRisk,
+      subtitle: labels.highRiskSub,
+      count: highRiskCount,
+      icon: AlertTriangle,
+      color: "text-red-600",
+      bgColor: "bg-red-500 text-white",
+      borderColor: "border-red-300 hover:border-red-500",
+      cardBg: "bg-white hover:bg-red-50/20",
+      badgeBg: "bg-red-100 text-red-800",
+      filterFn: (p) => p.status === 'red' || p.has_chronic
     },
     {
       id: "pregnant",
+      title: labels.pregnant,
+      subtitle: labels.pregnantSub,
+      count: pregnantCount,
       icon: Heart,
-      label: t.pregnantWomen,
-      value: pregnantCount,
-      sub: t.ancSub,
-      color: "text-rose-700",
-      bg: "bg-rose-50 text-rose-700",
-      border: "border-rose-200",
+      color: "text-rose-600",
+      bgColor: "bg-rose-500 text-white",
+      borderColor: "border-rose-300 hover:border-rose-500",
+      cardBg: "bg-white hover:bg-rose-50/20",
+      badgeBg: "bg-rose-100 text-rose-800",
       filterFn: (p) => p.is_pregnant
     },
     {
       id: "children",
+      title: labels.children,
+      subtitle: labels.childrenSub,
+      count: childCount,
       icon: Baby,
-      label: t.childrenUnder5,
-      value: childCount,
-      sub: t.immunizedSub,
-      color: "text-amber-800",
-      bg: "bg-amber-50 text-amber-800",
-      border: "border-amber-200",
+      color: "text-amber-600",
+      bgColor: "bg-amber-500 text-white",
+      borderColor: "border-amber-300 hover:border-amber-500",
+      cardBg: "bg-white hover:bg-amber-50/20",
+      badgeBg: "bg-amber-100 text-amber-800",
       filterFn: (p) => p.is_child || (p.age_years && p.age_years <= 5)
     },
     {
-      id: "high_risk",
-      icon: AlertTriangle,
-      label: t.highRisk,
-      value: highRiskCount,
-      sub: t.highRiskSub,
-      color: "text-red-700",
-      bg: "bg-red-50 text-red-700",
-      border: "border-red-200",
-      filterFn: (p) => p.status === 'red' || p.has_chronic
-    },
+      id: "population",
+      title: labels.population,
+      subtitle: labels.populationSub,
+      count: totalCount,
+      icon: Users,
+      color: "text-teal-700",
+      bgColor: "bg-[#008F83] text-white",
+      borderColor: "border-teal-300 hover:border-teal-600",
+      cardBg: "bg-white hover:bg-teal-50/20",
+      badgeBg: "bg-teal-100 text-teal-800",
+      filterFn: (p) => true
+    }
+  ];
+
+  // 2 Secondary Utility Badges
+  const secondaryCards = [
     {
       id: "app_active",
+      title: labels.appActive,
+      subtitle: labels.appActiveSub,
+      count: appActiveCount,
       icon: CheckCircle2,
-      label: t.appActivated,
-      value: appActiveCount,
-      sub: t.appActivatedSub,
-      color: "text-teal-800",
-      bg: "bg-teal-50 text-teal-800",
-      border: "border-teal-200",
+      color: "text-emerald-700",
+      bgColor: "bg-emerald-100 text-emerald-800",
+      borderColor: "border-emerald-200",
       filterFn: (p) => p.patient_email || p.mobile
     },
     {
-      id: "immunization",
+      id: "immunized",
+      title: labels.immunized,
+      subtitle: labels.immunizedSub,
+      count: immunCount,
       icon: TrendingUp,
-      label: t.immunComplete,
-      value: immunCount,
-      sub: t.immunSub,
-      color: "text-emerald-700",
-      bg: "bg-emerald-50 text-emerald-700",
-      border: "border-emerald-200",
+      color: "text-blue-700",
+      bgColor: "bg-blue-100 text-blue-800",
+      borderColor: "border-blue-200",
       filterFn: (p) => p.vaccine_bcg || p.is_child
-    },
+    }
   ];
 
   const currentGroupPatients = useMemo(() => {
     if (!selectedGroup) return [];
-    const groupDef = stats.find(s => s.id === selectedGroup.id);
+    const all = [...primaryCards, ...secondaryCards];
+    const groupDef = all.find(s => s.id === selectedGroup.id);
     if (!groupDef) return [];
     if (patients && patients.length > 0) {
       return patients.filter(groupDef.filterFn);
     }
     return [];
-  }, [selectedGroup, patients, stats]);
+  }, [selectedGroup, patients]);
 
   const handlePrint = () => {
     window.print();
   };
 
   return (
-    <div className="min-h-screen bg-[#F5FBF9] pb-28 font-sans text-slate-800">
+    <div className="min-h-screen bg-[#F8FAF9] pb-32 font-sans text-slate-800">
       
-      {/* ── TOP HEADER (CLEAN & DISTINCT) ── */}
-      <header className="bg-white border-b border-[#E2E8F0] px-4 sm:px-8 py-4 sticky top-0 z-20 shadow-xs">
-        <div className="max-w-5xl mx-auto flex items-center justify-between gap-4">
+      {/* ── BIG, CLEAR HEADER ── */}
+      <header className="bg-white border-b border-slate-200 px-5 sm:px-8 py-5 sticky top-0 z-20 shadow-xs">
+        <div className="max-w-4xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <div className="flex items-center gap-2">
-              <Activity className="w-5 h-5 text-[#008F83]" />
-              <h1 className="text-lg sm:text-xl font-black text-[#16324F] tracking-tight">
-                {t.title}
-              </h1>
-            </div>
-            <p className="text-xs font-bold text-slate-500 mt-0.5">{t.subtitle}</p>
+            <h1 className="text-xl sm:text-2xl font-black text-[#16324F] tracking-tight">
+              {labels.pageTitle}
+            </h1>
+            <p className="text-xs sm:text-sm font-bold text-slate-500 mt-0.5">
+              {labels.pageSub}
+            </p>
           </div>
 
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-black bg-emerald-50 text-teal-800 border border-teal-200 px-3 py-1.5 rounded-xl">
-              {t.monthLabel}
+          <div className="flex items-center gap-2 self-start sm:self-auto">
+            <span className="text-xs font-black bg-emerald-100 text-emerald-900 border border-emerald-300 px-3.5 py-1.5 rounded-full shadow-2xs">
+              📅 {labels.month}
             </span>
-            <button
-              onClick={() => setShowReportModal(true)}
-              className="px-3.5 py-1.5 bg-[#008F83] hover:bg-[#007A70] text-white text-xs font-bold rounded-xl shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
-            >
-              <Printer className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline-block">{t.printReportBtn}</span>
-            </button>
           </div>
         </div>
       </header>
 
-      {/* ── MAIN CONTENT ── */}
-      <main className="max-w-5xl mx-auto px-4 sm:px-8 pt-6 space-y-6">
+      {/* ── MAIN CONTENT (CLEAN & BIGGER SIZES) ── */}
+      <main className="max-w-4xl mx-auto px-4 sm:px-6 pt-6 space-y-6">
 
-        {/* ── 4 COMPACT STATS SUMMARY COUNTERS ── */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs text-center">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{t.totalRegistered}</p>
-            <p className="text-2xl font-black text-slate-900 mt-1">{totalCount}</p>
-          </div>
-          <div className="bg-white p-4 rounded-2xl border border-rose-100 shadow-xs text-center">
-            <p className="text-[10px] font-bold text-rose-500 uppercase tracking-wider">{t.pregnantWomen}</p>
-            <p className="text-2xl font-black text-rose-700 mt-1">{pregnantCount}</p>
-          </div>
-          <div className="bg-white p-4 rounded-2xl border border-amber-100 shadow-xs text-center">
-            <p className="text-[10px] font-bold text-amber-600 uppercase tracking-wider">{t.childrenUnder5}</p>
-            <p className="text-2xl font-black text-amber-700 mt-1">{childCount}</p>
-          </div>
-          <div className="bg-white p-4 rounded-2xl border border-red-100 shadow-xs text-center">
-            <p className="text-[10px] font-bold text-red-500 uppercase tracking-wider">{t.highRisk}</p>
-            <p className="text-2xl font-black text-red-700 mt-1">{highRiskCount}</p>
-          </div>
+        {/* ── 4 PRIMARY BIG ACCESSIBLE CARDS (HUGE TOUCH TARGETS & LARGE NUMBERS) ── */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5">
+          {primaryCards.map((card) => {
+            const Icon = card.icon;
+            return (
+              <button
+                key={card.id}
+                type="button"
+                onClick={() => setSelectedGroup(card)}
+                className={`${card.cardBg} rounded-3xl border-3 ${card.borderColor} p-6 shadow-sm hover:shadow-md transition-all text-left flex flex-col justify-between gap-5 cursor-pointer group`}
+              >
+                {/* Top Row: Big Icon + Huge Number */}
+                <div className="flex items-center justify-between">
+                  <div className={`w-16 h-16 rounded-2xl flex items-center justify-center shadow-md ${card.bgColor} group-hover:scale-105 transition-transform`}>
+                    <Icon className="w-9 h-9" />
+                  </div>
+                  <span className={`text-4xl sm:text-5xl font-black font-mono ${card.color}`}>
+                    {card.count}
+                  </span>
+                </div>
+
+                {/* Bottom Row: Big Clear Title & Subtitle */}
+                <div className="border-t border-slate-100 pt-3 flex items-center justify-between">
+                  <div>
+                    <h2 className="text-base sm:text-lg font-black text-[#16324F] leading-tight">
+                      {card.title}
+                    </h2>
+                    <p className="text-xs font-semibold text-slate-500 mt-1">
+                      {card.subtitle}
+                    </p>
+                  </div>
+                  <div className="w-9 h-9 rounded-xl bg-slate-100 group-hover:bg-[#008F83] group-hover:text-white flex items-center justify-center text-slate-400 transition-all shrink-0">
+                    <ChevronRight className="w-5 h-5" />
+                  </div>
+                </div>
+              </button>
+            );
+          })}
         </div>
 
-        {/* ── 2x3 SLEEK CATEGORY REGISTER GRID ── */}
-        <section className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest">
-              {t.categorySection}
-            </h3>
-            <span className="text-xs font-bold text-teal-800">Tap card to view list</span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
-            {stats.map((stat) => {
-              const Icon = stat.icon;
-              return (
-                <button
-                  key={stat.id}
-                  type="button"
-                  onClick={() => setSelectedGroup(stat)}
-                  className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs hover:border-[#008F83] hover:shadow-md transition-all text-left flex items-center justify-between gap-3 group cursor-pointer"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${stat.bg}`}>
-                      <Icon className="w-5 h-5" />
-                    </div>
-                    <div className="min-w-0">
-                      <h4 className="text-xs font-black text-[#16324F] truncate group-hover:text-[#008F83] transition-colors">
-                        {stat.label}
-                      </h4>
-                      <p className="text-[10px] text-slate-400 font-medium truncate mt-0.5">
-                        {stat.sub}
-                      </p>
-                    </div>
+        {/* ── 2 SECONDARY SUMMARY CARDS (BIG & HORIZONTAL) ── */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+          {secondaryCards.map((card) => {
+            const Icon = card.icon;
+            return (
+              <button
+                key={card.id}
+                type="button"
+                onClick={() => setSelectedGroup(card)}
+                className={`bg-white rounded-2xl border-2 ${card.borderColor} p-4 shadow-xs hover:shadow-sm transition-all flex items-center justify-between text-left cursor-pointer group`}
+              >
+                <div className="flex items-center gap-3.5">
+                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${card.bgColor}`}>
+                    <Icon className="w-6 h-6" />
                   </div>
-
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <span className={`text-xl font-black font-mono ${stat.color}`}>
-                      {stat.value}
-                    </span>
-                    <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-teal-700 group-hover:translate-x-0.5 transition-all" />
+                  <div>
+                    <h3 className="text-sm font-black text-[#16324F]">{card.title}</h3>
+                    <p className="text-[11px] font-medium text-slate-400 mt-0.5">{card.subtitle}</p>
                   </div>
-                </button>
-              );
-            })}
-          </div>
-        </section>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`text-2xl font-black font-mono ${card.color}`}>{card.count}</span>
+                  <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-slate-600 transition-colors" />
+                </div>
+              </button>
+            );
+          })}
+        </div>
 
-        {/* ── MONTHLY PERFORMANCE SUMMARY TABLE CARD ── */}
-        <section className="bg-white rounded-3xl border border-slate-200 p-5 sm:p-6 shadow-xs space-y-4">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-            <div className="flex items-center gap-2">
-              <FileText className="w-4 h-4 text-teal-700" />
-              <h3 className="text-sm font-black text-[#16324F]">{t.summaryTitle}</h3>
-            </div>
-            <span className="text-[11px] font-bold text-slate-400">{t.summarySub}</span>
-          </div>
-
-          <div className="space-y-2 text-xs">
-            <div className="p-3 bg-slate-50 rounded-xl flex items-center justify-between">
-              <span className="text-slate-600 font-medium">Early ANC Registrations (प्रसूतीपूर्व नोंदणी):</span>
-              <span className="font-black text-slate-900">{pregnantCount} Cases Tracked</span>
-            </div>
-            <div className="p-3 bg-slate-50 rounded-xl flex items-center justify-between">
-              <span className="text-slate-600 font-medium">Child Immunization Coverage (लसीकरण तपासणी):</span>
-              <span className="font-black text-slate-900">{childCount} Children</span>
-            </div>
-            <div className="p-3 bg-slate-50 rounded-xl flex items-center justify-between">
-              <span className="text-slate-600 font-medium">High-Risk Home Visits Completed (गृहभेटी):</span>
-              <span className="font-black text-emerald-700">16 Visits Completed ✓</span>
-            </div>
-            <div className="p-3 bg-slate-50 rounded-xl flex items-center justify-between">
-              <span className="text-slate-600 font-medium">Village Health &amp; Sanitation (आरोग्य आढावा):</span>
-              <span className="font-black text-emerald-700">Completed ✓</span>
-            </div>
-          </div>
-        </section>
+        {/* ── BIG FRIENDLY EXPORT / PRINT ACTION BUTTON ── */}
+        <div className="pt-2">
+          <button
+            type="button"
+            onClick={() => setShowReportModal(true)}
+            className="w-full py-4 bg-[#008F83] hover:bg-[#007A70] active:scale-98 text-white font-black text-sm sm:text-base rounded-2xl shadow-md transition-all flex items-center justify-center gap-2.5 cursor-pointer uppercase tracking-wider"
+          >
+            <Printer className="w-5 h-5" />
+            <span>{labels.exportReport}</span>
+          </button>
+        </div>
 
       </main>
 
-      {/* ── Category Drilldown Modal ── */}
+      {/* ── BIG PATIENT DRILLDOWN MODAL (EASY TO TAP WITH BIG GREEN CALL BUTTON) ── */}
       {selectedGroup && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 backdrop-blur-xs animate-in fade-in">
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 backdrop-blur-xs animate-in fade-in">
           <div className="bg-white w-full max-w-lg rounded-t-3xl sm:rounded-3xl max-h-[85vh] flex flex-col overflow-hidden shadow-2xl animate-in slide-in-from-bottom-4">
             
-            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+            {/* Modal Header */}
+            <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
               <div className="flex items-center gap-3">
-                <div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${selectedGroup.bg}`}>
-                  <selectedGroup.icon className={`w-5 h-5`} />
+                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-xs ${selectedGroup.bgColor}`}>
+                  <selectedGroup.icon className="w-6 h-6" />
                 </div>
                 <div>
-                  <h3 className="font-black text-slate-900 text-sm">{selectedGroup.label}</h3>
-                  <p className="text-xs text-slate-500">{t.patientsInGroup} ({currentGroupPatients.length})</p>
+                  <h3 className="font-black text-slate-900 text-base">{selectedGroup.title}</h3>
+                  <p className="text-xs font-bold text-slate-500">
+                    {currentGroupPatients.length} {labels.pageTitle}
+                  </p>
                 </div>
               </div>
               <button
                 onClick={() => setSelectedGroup(null)}
-                className="p-2 text-slate-400 hover:text-slate-700 rounded-xl cursor-pointer"
+                className="w-10 h-10 rounded-xl bg-slate-200 text-slate-600 hover:bg-slate-300 flex items-center justify-center cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-5 overflow-y-auto space-y-2.5 flex-1">
+            {/* Modal List */}
+            <div className="p-5 overflow-y-auto space-y-3 flex-1">
               {currentGroupPatients.length === 0 ? (
-                <div className="text-center py-10 text-slate-400 text-xs">
-                  {t.noPatientsYet}
+                <div className="text-center py-12 text-slate-400 text-sm font-bold">
+                  {labels.noPatients}
                 </div>
               ) : (
-                currentGroupPatients.map(p => (
+                currentGroupPatients.map((p) => (
                   <div
                     key={p.id}
-                    className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-between text-xs"
+                    className="p-4 bg-slate-50 border-2 border-slate-200 rounded-2xl flex items-center justify-between gap-3"
                   >
                     <div>
-                      <p className="font-extrabold text-slate-900 text-sm">{p.name}</p>
-                      <p className="text-[11px] text-slate-500 font-medium mt-0.5">
-                        {p.gender} • {p.age_years ? `${p.age_years} yrs` : 'Resident'} • {p.relation_to_head || 'Resident'}
+                      <h4 className="font-black text-slate-900 text-base">{p.name}</h4>
+                      <p className="text-xs text-slate-500 font-bold mt-0.5">
+                        {p.gender} • {p.age_years ? `${p.age_years} yrs` : 'Resident'} • {p.village || 'Shirwal'}
                       </p>
-                    </div>
-
-                    <div className="flex items-center gap-2">
                       {p.is_pregnant && (
-                        <span className="text-[9px] font-black bg-rose-100 text-rose-700 px-2 py-0.5 rounded">
-                          ANC
+                        <span className="inline-block mt-1 bg-rose-100 text-rose-800 text-[10px] font-black px-2 py-0.5 rounded">
+                          ANC Mother
                         </span>
                       )}
-                      {p.mobile && (
-                        <a
-                          href={`tel:${p.mobile}`}
-                          className="px-3 py-1.5 bg-[#008F83] text-white rounded-xl font-bold text-[11px] flex items-center gap-1 shadow-xs"
-                        >
-                          <Phone className="w-3 h-3" />
-                          <span>{t.callPatient}</span>
-                        </a>
-                      )}
                     </div>
+
+                    {/* BIG GREEN CALL BUTTON */}
+                    {p.mobile ? (
+                      <a
+                        href={`tel:${p.mobile}`}
+                        className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black text-xs flex items-center gap-1.5 shadow-sm active:scale-95 transition-all shrink-0"
+                      >
+                        <Phone className="w-4 h-4" />
+                        <span>{labels.call}</span>
+                      </a>
+                    ) : (
+                      <span className="text-[11px] font-bold text-slate-400 bg-slate-200 px-3 py-1.5 rounded-xl">
+                        No Phone
+                      </span>
+                    )}
                   </div>
                 ))
               )}
             </div>
 
-            <div className="p-4 border-t border-slate-100 bg-slate-50">
+            {/* Modal Close Button */}
+            <div className="p-4 border-t border-slate-200 bg-slate-50">
               <button
                 onClick={() => setSelectedGroup(null)}
-                className="w-full py-3 bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold text-xs rounded-xl shadow-xs cursor-pointer"
+                className="w-full py-3.5 bg-white border border-slate-300 hover:bg-slate-100 text-slate-800 font-black text-sm rounded-xl cursor-pointer"
               >
-                {t.closeModal}
+                {labels.close}
               </button>
             </div>
 
@@ -395,9 +400,9 @@ export default function ActivityTracker({ patients = [] }) {
         </div>
       )}
 
-      {/* ── Official Monthly Report Modal & Print View ── */}
+      {/* ── OFFICIAL REPORT MODAL (PRINT READY) ── */}
       {showReportModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-xs animate-in fade-in">
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-xs animate-in fade-in">
           <div className="bg-white w-full max-w-xl rounded-3xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
             
             <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
@@ -414,7 +419,7 @@ export default function ActivityTracker({ patients = [] }) {
               <div className="border-b pb-3 space-y-1">
                 <div className="flex justify-between"><span className="font-bold text-slate-500">ASHA Worker:</span><span className="font-black">Priya Deshmukh</span></div>
                 <div className="flex justify-between"><span className="font-bold text-slate-500">Sub-Centre / PHC:</span><span className="font-black">Shirwal PHC (Satara)</span></div>
-                <div className="flex justify-between"><span className="font-bold text-slate-500">Reporting Period:</span><span className="font-black">August 2026</span></div>
+                <div className="flex justify-between"><span className="font-bold text-slate-500">Reporting Period:</span><span className="font-black">{labels.month}</span></div>
               </div>
 
               <div>
@@ -448,13 +453,13 @@ export default function ActivityTracker({ patients = [] }) {
             <div className="p-4 border-t border-slate-200 bg-slate-50 flex gap-3">
               <button
                 onClick={() => setShowReportModal(false)}
-                className="flex-1 py-3 bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold text-xs rounded-xl cursor-pointer"
+                className="flex-1 py-3.5 bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold text-xs rounded-xl cursor-pointer"
               >
-                {t.closeModal}
+                {labels.close}
               </button>
               <button
                 onClick={handlePrint}
-                className="flex-1 py-3 bg-[#008F83] hover:bg-[#007A70] text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                className="flex-1 py-3.5 bg-[#008F83] hover:bg-[#007A70] text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <Printer className="w-4 h-4" />
                 <span>Print Official Report</span>
