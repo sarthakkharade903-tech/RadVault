@@ -106,6 +106,52 @@ const INITIAL_DEMO_REFERRALS = [
     vitals: { bp: '118/76', pulse: '76', spo2: '99', temp: '99.8', respRate: '16', weight: '62' },
     danger_signs: [],
     created_at: new Date().toISOString()
+  },
+  {
+    id: 'REF-DEMO-004',
+    patient_id: 'pat-demo-4',
+    patient_unified_id: 'MH-P-55210',
+    patient_name: 'Anand Bhosle',
+    patient_phone: '9822114455',
+    patient_age: 42,
+    patient_gender: 'Male',
+    patient_blood_group: 'AB+',
+    created_by: 'Direct Patient (Self-Booking)',
+    source: 'PATIENT_DIRECT',
+    destination_hospital: 'Pune Sassoon General Hospital',
+    destination_department: 'General Medicine',
+    doctor_assigned: null,
+    priority: 'GREEN',
+    priority_label: 'Routine / Direct OPD',
+    status: REFERRAL_STATUS.PENDING,
+    symptoms: 'Self-scheduled morning consultation for mild recurring joint pain.',
+    ai_note: 'Routine outpatient consultation request from patient portal.',
+    vitals: { bp: '122/80', pulse: '74', spo2: '99', temp: '98.4', respRate: '16', weight: '70' },
+    danger_signs: [],
+    created_at: new Date().toISOString()
+  },
+  {
+    id: 'REF-DEMO-005',
+    patient_id: 'pat-demo-5',
+    patient_unified_id: 'MH-P-88319',
+    patient_name: 'Kavita Jadhav',
+    patient_phone: '9423001122',
+    patient_age: 29,
+    patient_gender: 'Female',
+    patient_blood_group: 'B+',
+    created_by: 'Virtual Teleconsultation (eSanjeevani)',
+    source: 'TELECONSULT',
+    destination_hospital: 'Pune Sassoon General Hospital',
+    destination_department: 'Pediatrics',
+    doctor_assigned: 'Dr. Meera Nambiar',
+    priority: 'ORANGE',
+    priority_label: 'Teleconsult / Virtual Queue',
+    status: REFERRAL_STATUS.ACCEPTED,
+    symptoms: 'Virtual teleconsultation requested for 3-year-old child with persistent seasonal cough and fever.',
+    ai_note: 'Virtual OPD session pending. Video room active.',
+    vitals: { bp: '110/70', pulse: '88', spo2: '97', temp: '100.2', respRate: '22', weight: '14' },
+    danger_signs: [],
+    created_at: new Date().toISOString()
   }
 ];
 
@@ -121,6 +167,7 @@ export default function HospitalStaffWorkspace({
   // Navigation Tabs: 'home' | 'queue' | 'referrals'
   const [activeTab, setActiveTab] = useState('home');
   const [queueFilter, setQueueFilter] = useState('ALL'); // 'ALL' | 'Pending' | 'Accepted_Arrived' | 'Completed'
+  const [sourceFilter, setSourceFilter] = useState('ALL'); // 'ALL' | 'ASHA' | 'PATIENT_DIRECT' | 'TELECONSULT'
   const [searchQuery, setSearchQuery] = useState('');
 
   // Operational State
@@ -131,6 +178,18 @@ export default function HospitalStaffWorkspace({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+
+  // Referral Origin & Pipeline Helper
+  const getReferralOrigin = useCallback((ref) => {
+    const text = `${ref.source || ''} ${ref.created_by || ''} ${ref.symptoms || ''}`.toLowerCase();
+    if (text.includes('teleconsult')) {
+      return { key: 'TELECONSULT', label: 'Virtual Teleconsult', icon: '📹', badge: 'bg-[#E8F7F3] text-[#008F83] border-[#008F83]/30' };
+    }
+    if (text.includes('patient') || text.includes('self-booking') || text.includes('self-scheduled') || text.includes('direct opd')) {
+      return { key: 'PATIENT_DIRECT', label: 'Direct Patient Booking', icon: '👤', badge: 'bg-slate-100 text-slate-700 border-slate-200' };
+    }
+    return { key: 'ASHA', label: 'ASHA Field Referral', icon: '🚨', badge: 'bg-red-50 text-red-700 border-red-200' };
+  }, []);
 
   // Selected Referral Context / Modals
   const [selectedReferral, setSelectedReferral] = useState(null);
@@ -398,10 +457,23 @@ export default function HospitalStaffWorkspace({
     return { pending, waiting, completed };
   }, [referrals]);
 
+  // Memos for intake source segregation (ASHA vs Direct Patient vs Teleconsult)
+  const sourceCounts = useMemo(() => {
+    const asha = referrals.filter(r => getReferralOrigin(r).key === 'ASHA').length;
+    const direct = referrals.filter(r => getReferralOrigin(r).key === 'PATIENT_DIRECT').length;
+    const tele = referrals.filter(r => getReferralOrigin(r).key === 'TELECONSULT').length;
+    return { asha, direct, tele, total: referrals.length };
+  }, [referrals, getReferralOrigin]);
+
   // Scoped referrals based on active tab and filters
   const filteredReferrals = useMemo(() => {
     let list = [...referrals];
     
+    // Applying source segregation filter (ASHA vs Direct Patient vs Teleconsult)
+    if (sourceFilter !== 'ALL') {
+      list = list.filter(r => getReferralOrigin(r).key === sourceFilter);
+    }
+
     // Applying tab filters
     if (activeTab === 'queue') {
       if (queueFilter === 'Pending') {
@@ -420,12 +492,13 @@ export default function HospitalStaffWorkspace({
         (r.patient_name || '').toLowerCase().includes(q) ||
         (r.patient_id || '').toLowerCase().includes(q) ||
         (r.destination_department || '').toLowerCase().includes(q) ||
-        (r.symptoms || '').toLowerCase().includes(q)
+        (r.symptoms || '').toLowerCase().includes(q) ||
+        (r.created_by || '').toLowerCase().includes(q)
       );
     }
     
     return list;
-  }, [referrals, activeTab, queueFilter, searchQuery]);
+  }, [referrals, activeTab, queueFilter, sourceFilter, searchQuery, getReferralOrigin]);
 
   if (loading) {
     return (
@@ -687,8 +760,32 @@ export default function HospitalStaffWorkspace({
 
       {/* ── TAB 2: ACTIVE QUEUE ── */}
       {activeTab === 'queue' && (
-        <div className="space-y-6 animate-in fade-in duration-150">
+        <div className="space-y-4 animate-in fade-in duration-150">
           
+          {/* Source Segregation Bar (ASHA vs Direct Patient vs Teleconsult) */}
+          <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-2.5 flex items-center gap-1.5 overflow-x-auto text-xs shadow-2xs">
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider shrink-0 px-2">Origin Filter:</span>
+            {[
+              { key: 'ALL', label: `All Sources (${sourceCounts.total})` },
+              { key: 'ASHA', label: `🚨 ASHA Referrals (${sourceCounts.asha})` },
+              { key: 'PATIENT_DIRECT', label: `👤 Direct Patient (${sourceCounts.direct})` },
+              { key: 'TELECONSULT', label: `📹 Teleconsults (${sourceCounts.tele})` }
+            ].map(sBtn => (
+              <button
+                key={sBtn.key}
+                type="button"
+                onClick={() => setSourceFilter(sBtn.key)}
+                className={`px-3 py-1.5 rounded-xl font-black text-[11px] shrink-0 transition-all cursor-pointer ${
+                  sourceFilter === sBtn.key
+                    ? 'bg-[#16324F] text-white shadow-xs'
+                    : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                {sBtn.label}
+              </button>
+            ))}
+          </div>
+
           {/* Sub Filtering Controls */}
           <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
             {[
@@ -700,9 +797,9 @@ export default function HospitalStaffWorkspace({
               <button
                 key={filterBtn.key}
                 onClick={() => setQueueFilter(filterBtn.key)}
-                className={`px-3 py-1.5 rounded-lg font-extrabold text-[11px] shrink-0 transition-colors cursor-pointer ${
+                className={`px-3 py-1.5 rounded-xl font-extrabold text-[11px] shrink-0 transition-colors cursor-pointer ${
                   queueFilter === filterBtn.key
-                    ? 'bg-[#008080] text-white'
+                    ? 'bg-[#008080] text-white shadow-xs'
                     : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
                 }`}
               >
@@ -728,6 +825,8 @@ export default function HospitalStaffWorkspace({
                 if (ref.status === 'Arrived') statusPillColor = 'bg-teal-50 text-teal-800 border-teal-200';
                 if (ref.status === 'Completed') statusPillColor = 'bg-emerald-50 text-emerald-800 border-emerald-200';
 
+                const origin = getReferralOrigin(ref);
+
                 return (
                   <div 
                     key={ref.id}
@@ -744,6 +843,13 @@ export default function HospitalStaffWorkspace({
                         <span className="font-mono text-xs text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded font-bold">
                           {ref.patient_unified_id ? `ID: ${ref.patient_unified_id}` : `ID: ${ref.patient_id?.slice(0, 8)}`}
                         </span>
+
+                        {/* Origin Tag */}
+                        <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border flex items-center gap-1 ${origin.badge}`}>
+                          <span>{origin.icon}</span>
+                          <span>{origin.label}</span>
+                        </span>
+
                         <span className={`text-[10px] font-black px-2 py-0.5 rounded border ${priorityClass}`}>
                           {ref.priority_label || ref.priority}
                         </span>
@@ -976,6 +1082,7 @@ export default function HospitalStaffWorkspace({
           : [];
 
         const vitals = selectedReferral.vitals || {};
+        const modalOrigin = getReferralOrigin(selectedReferral);
 
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/50 backdrop-blur-xs animate-in fade-in duration-150">
@@ -989,6 +1096,21 @@ export default function HospitalStaffWorkspace({
                       <FileText className="w-3 h-3" />
                       Clinical Case File
                     </span>
+                    {modalOrigin === 'ASHA' && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 border border-emerald-200">
+                        🚨 ASHA Referral
+                      </span>
+                    )}
+                    {modalOrigin === 'PATIENT_DIRECT' && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 border border-blue-200">
+                        👤 Direct Patient Booking
+                      </span>
+                    )}
+                    {modalOrigin === 'TELECONSULT' && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-md bg-purple-100 text-purple-800 border border-purple-200">
+                        📹 Virtual Teleconsult
+                      </span>
+                    )}
                     <span className={`text-[10px] font-black px-2 py-0.5 rounded-md border ${priorityBadgeStyle}`}>
                       {selectedReferral.priority_label || selectedReferral.priority}
                     </span>
@@ -1075,9 +1197,15 @@ export default function HospitalStaffWorkspace({
                   </div>
 
                   <div className="text-right sm:text-right">
-                    <span className="text-[10px] text-slate-400 font-black uppercase tracking-wider block">Referred By Frontline Worker</span>
+                    <span className="text-[10px] text-slate-400 font-black uppercase tracking-wider block">
+                      {modalOrigin === 'PATIENT_DIRECT' 
+                        ? 'Booked Directly By' 
+                        : modalOrigin === 'TELECONSULT' 
+                        ? 'Consultation Origin' 
+                        : 'Referred By Frontline Worker'}
+                    </span>
                     <span className="text-xs font-bold text-slate-800">
-                      {selectedReferral.created_by || 'ASHA Community Worker'}
+                      {selectedReferral.created_by || (modalOrigin === 'PATIENT_DIRECT' ? 'Direct Patient (Self-Booking)' : modalOrigin === 'TELECONSULT' ? 'Virtual Teleconsultation' : 'ASHA Community Worker')}
                     </span>
                     <div className="text-[10px] text-slate-400">
                       {new Date(selectedReferral.created_at).toLocaleString('en-IN', {

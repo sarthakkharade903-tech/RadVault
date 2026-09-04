@@ -233,20 +233,26 @@ export async function createCareRequest(payload) {
     console.warn('[ashaService] Auth check warning:', authErr);
   }
 
+  const defaultCreatedBy =
+    payload.created_by ||
+    (payload.source === 'PATIENT_DIRECT' ? 'Direct Patient (Self-Booking)' :
+     payload.source === 'TELECONSULT' ? 'Virtual Teleconsultation (eSanjeevani)' :
+     'ASHA Worker (Priya Deshmukh)');
+
   // 1. Sanitize payload strictly for care_requests table columns
   // care_requests table has ONLY: id, patient_id, patient_name, source, created_by, facility, department, slot_preference, appointment_date, doctor_assigned, priority, reason, asha_notes, status, created_at, updated_at, completed_at
   const careRequestRecord = {
     patient_id: payload.patient_id || null,
     patient_name: payload.patient_name || 'Village Patient',
     source: payload.source || 'ASHA_REFERRED',
-    created_by: payload.created_by || 'ASHA Worker (Priya Deshmukh)',
+    created_by: defaultCreatedBy,
     facility: payload.facility || payload.destination_hospital || 'Primary Health Centre',
     department: payload.department || 'General Medicine',
     slot_preference: payload.slot_preference || null,
     appointment_date: payload.appointment_date || null,
     doctor_assigned: payload.doctor_assigned || null,
     priority: payload.priority || 'ROUTINE',
-    reason: payload.reason || payload.asha_notes || 'Referred for specialist evaluation',
+    reason: payload.reason || payload.asha_notes || 'Referred for medical evaluation',
     asha_notes: payload.asha_notes || payload.reason || '',
     status: 'SUBMITTED',
     created_at: new Date().toISOString(),
@@ -334,7 +340,7 @@ export async function createCareRequest(payload) {
     const referralData = {
       patient_id: targetPatientId,
       patient_name: payload.patient_name || 'Village Patient',
-      created_by: payload.created_by || 'ASHA Worker (Priya Deshmukh)',
+      created_by: defaultCreatedBy,
       destination_hospital: hospitalName,
       destination_facility_id: facilityId,
       destination_department: payload.department || 'General Medicine',
@@ -342,7 +348,7 @@ export async function createCareRequest(payload) {
       priority: normalizedPriority,
       priority_label: priorityLabel,
       status: 'Pending',
-      symptoms: payload.reason || payload.asha_notes || 'Referred by frontline ASHA for medical care',
+      symptoms: payload.reason || payload.asha_notes || (payload.source === 'TELECONSULT' ? 'Virtual teleconsultation requested by patient' : 'Referred for medical evaluation'),
       vitals: payload.vitals || null,
       ai_note: payload.ai_note || payload.reason || null
     };
