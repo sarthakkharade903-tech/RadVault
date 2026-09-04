@@ -2,137 +2,131 @@ import React, { useState, useEffect, useMemo } from "react";
 import {
   Phone, CheckCircle2, Check, Heart, Baby, Activity,
   Stethoscope, Shield, CalendarCheck, ArrowRight, RefreshCw,
-  AlertTriangle, Send, Loader2, Hospital
+  Send, Loader2, Hospital, MapPin
 } from "lucide-react";
 import { supabase } from "../../services/supabase";
-import { computeDueList } from "../../services/ashaService";
 
-// ─── Translations ──────────────────────────────────────────────────────────
+// ─── Single-Language Clean Translations (Read from global lang) ───────────
 const T = {
   en: {
     title: "Follow-Up Register",
-    subtitle: "Patients needing your attention today",
+    subtitle: "Daily patient visits & referral recovery tracking",
+    all: "All Pending",
     overdue: "Overdue",
     dueToday: "Due Today",
     upcoming: "Upcoming",
-    done: "Done",
-    all: "All",
-    markDone: "Mark Done",
+    done: "Completed",
+    markDone: "Mark Visited",
     callPatient: "Call",
     logVisit: "Log Visit",
-    noItems: "All follow-ups are complete!",
-    noItemsSub: "Great work! No pending follow-ups right now.",
-    lastVisit: "Last visited",
+    noItems: "All follow-ups are up to date!",
+    noItemsSub: "Great job! No pending patient follow-ups right now.",
+    lastVisit: "Last visit",
     daysAgo: "days ago",
     neverVisited: "Never visited",
-    ancDue: "ANC Visit Due",
-    vaccineDue: "Vaccine Due",
-    highRisk: "High Risk Check",
+    ancDue: "ANC Checkup Due",
+    vaccineDue: "Child Vaccine Due",
+    highRisk: "High-Risk Monitor",
     tbDots: "TB Medicine Check",
     ncdMonitor: "BP / Sugar Check",
-    referralCheck: "Referral Follow-Up",
-    postTreatment: "Post-Treatment Recovery",
-    referralCheckDetail: "Referred {n} days ago — confirm patient reached hospital",
-    postTreatmentDetail: "Treatment complete — verify home recovery & medicines",
-    completed: "Done",
+    referralCheck: "Referral Arrival Check",
+    postTreatment: "Post-Discharge Care",
+    referralCheckDetail: "Referred {n} days ago — verify patient reached hospital",
+    postTreatmentDetail: "Discharged from hospital — check recovery & medicines",
+    completed: "Completed",
     weeks: "wks pregnant",
     restore: "Restore",
-    refresh: "Refresh",
-    referredTo: "Referred to",
-    daysAgoReferred: "days since referral",
+    refresh: "Sync",
+    referredTo: "Hospital",
     verifyArrival: "Verify Arrival",
-    checkRecovery: "Check Recovery",
+    checkRecovery: "Home Check",
   },
   mr: {
     title: "पाठपुरावा नोंदवही",
-    subtitle: "आजच्या तपासणीसाठी रुग्ण",
+    subtitle: "दैनंदिन गृहभेटी व रुग्ण तपासणी पाठपुरावा",
+    all: "सर्व प्रलंबित",
     overdue: "वेळ उलटली",
-    dueToday: "आजचे",
-    upcoming: "येणारे",
-    done: "पूर्ण",
-    all: "सर्व",
-    markDone: "पूर्ण करा",
-    callPatient: "फोन",
-    logVisit: "भेट नोंदवा",
-    noItems: "सर्व पाठपुरावे पूर्ण!",
-    noItemsSub: "शाब्बास! सध्या कोणताही प्रलंबित पाठपुरावा नाही.",
+    dueToday: "आजच्या भेटी",
+    upcoming: "पुढील भेटी",
+    done: "पूर्ण झालेल्या",
+    markDone: "भेट पूर्ण",
+    callPatient: "फोन करा",
+    logVisit: "नोंद करा",
+    noItems: "सर्व पाठपुरावे पूर्ण झाले आहेत!",
+    noItemsSub: "शाब्बास! सध्या कोणताही रुग्ण प्रलंबित नाही.",
     lastVisit: "शेवटची भेट",
     daysAgo: "दिवसांपूर्वी",
     neverVisited: "कधीच भेट नाही",
-    ancDue: "ANC भेट आवश्यक",
-    vaccineDue: "लसीकरण आवश्यक",
-    highRisk: "धोकादायक तपासणी",
+    ancDue: "गरोदर माता तपासणी",
+    vaccineDue: "बालक लसीकरण",
+    highRisk: "धोकादायक रुग्ण",
     tbDots: "टीबी औषध तपासणी",
     ncdMonitor: "बीपी / साखर तपासणी",
-    referralCheck: "रेफरल पाठपुरावा",
-    postTreatment: "उपचारानंतर तपासणी",
-    referralCheckDetail: "{n} दिवसांपूर्वी रेफर केले — रुग्ण रुग्णालयात पोहोचला का?",
-    postTreatmentDetail: "उपचार पूर्ण — घरी बरे होणे व औषधे तपासा",
+    referralCheck: "रेफरल उपस्थिती तपासणी",
+    postTreatment: "उपचारानंतर गृहभेट",
+    referralCheckDetail: "{n} दिवसांपूर्वी पाठवले — रुग्ण रुग्णालयात पोहोचला का?",
+    postTreatmentDetail: "रुग्णालय सुट्टी — घरी बरे होणे व औषधे तपासा",
     completed: "पूर्ण",
     weeks: "आठवडे गरोदर",
-    restore: "पूर्ववत करा",
+    restore: "पूर्ववत",
     refresh: "ताजे करा",
-    referredTo: "रेफर केले",
-    daysAgoReferred: "दिवसांपूर्वी रेफर",
+    referredTo: "रुग्णालय",
     verifyArrival: "उपस्थिती तपासा",
-    checkRecovery: "बरे होणे तपासा",
+    checkRecovery: "घरी भेट द्या",
   },
   hi: {
     title: "फॉलो-अप रजिस्टर",
-    subtitle: "आज के लिए ध्यान देने योग्य मरीज",
+    subtitle: "दैनिक गृहभेंट एवं रेफरल रिकवरी निगरानी",
+    all: "सभी लंबित",
     overdue: "समय निकल गया",
     dueToday: "आज का",
     upcoming: "आगामी",
     done: "पूर्ण",
-    all: "सभी",
-    markDone: "पूर्ण करें",
-    callPatient: "कॉल",
-    logVisit: "भेंट दर्ज करें",
-    noItems: "सभी फॉलो-अप पूर्ण!",
-    noItemsSub: "शाबाश! अभी कोई लंबित फॉलो-अप नहीं है।",
+    markDone: "भेंट पूर्ण",
+    callPatient: "कॉल करें",
+    logVisit: "दर्ज करें",
+    noItems: "सभी फॉलो-अप पूर्ण हैं!",
+    noItemsSub: "शाबाश! अभी कोई लंबित मरीज नहीं है।",
     lastVisit: "अंतिम भेंट",
     daysAgo: "दिन पहले",
     neverVisited: "कभी भेंट नहीं",
-    ancDue: "ANC विजिट आवश्यक",
-    vaccineDue: "टीका आवश्यक",
-    highRisk: "उच्च जोखिम जांच",
+    ancDue: "गर्भवती जांच",
+    vaccineDue: "टीकाकरण आवश्यक",
+    highRisk: "उच्च जोखिम मरीज",
     tbDots: "टीबी दवा जांच",
     ncdMonitor: "बीपी / शुगर जांच",
-    referralCheck: "रेफरल फॉलो-अप",
-    postTreatment: "उपचार के बाद रिकवरी",
-    referralCheckDetail: "{n} दिन पहले रेफर किया — मरीज़ अस्पताल पहुंचा?",
-    postTreatmentDetail: "इलाज पूरा हुआ — घर में दवाएं और रिकवरी जांचें",
+    referralCheck: "रेफरल उपस्थिति जांच",
+    postTreatment: "इलाज बाद गृहभेंट",
+    referralCheckDetail: "{n} दिन पहले भेजा — क्या मरीज अस्पताल पहुंचा?",
+    postTreatmentDetail: "अस्पताल से छुट्टी — घर पर दवाएं व स्वास्थ्य जांचें",
     completed: "पूर्ण",
     weeks: "सप्ताह गर्भवती",
     restore: "पूर्ववत",
     refresh: "ताज़ा करें",
-    referredTo: "रेफर किया",
-    daysAgoReferred: "दिन पहले रेफर",
-    verifyArrival: "उपस्थिति सत्यापित करें",
-    checkRecovery: "रिकवरी जांचें",
+    referredTo: "अस्पताल",
+    verifyArrival: "उपस्थिति जांचें",
+    checkRecovery: "गृह जांच",
   }
 };
 
-// ─── Type Config ───────────────────────────────────────────────────────────
-const TYPE_CONFIG = {
-  anc:           { icon: Heart,         bg: "bg-rose-50",    border: "border-rose-400",    text: "text-rose-700",    badge: "bg-rose-100 text-rose-800 border-rose-200" },
-  vaccine:       { icon: Shield,        bg: "bg-violet-50",  border: "border-violet-400",  text: "text-violet-700",  badge: "bg-violet-100 text-violet-800 border-violet-200" },
-  followup:      { icon: Activity,      bg: "bg-red-50",     border: "border-red-500",     text: "text-red-700",     badge: "bg-red-100 text-red-800 border-red-200" },
-  tb:            { icon: Stethoscope,   bg: "bg-amber-50",   border: "border-amber-400",   text: "text-amber-700",   badge: "bg-amber-100 text-amber-800 border-amber-200" },
-  ncd:           { icon: Baby,          bg: "bg-orange-50",  border: "border-orange-400",  text: "text-orange-700",  badge: "bg-orange-100 text-orange-800 border-orange-200" },
-  // ── Referral pipeline types (the real problem statement solvers) ──────────
-  referralCheck: { icon: Send,          bg: "bg-blue-50",    border: "border-blue-500",    text: "text-blue-700",    badge: "bg-blue-100 text-blue-800 border-blue-200" },
-  postTreatment: { icon: Hospital,      bg: "bg-teal-50",    border: "border-teal-500",    text: "text-teal-700",    badge: "bg-teal-100 text-teal-800 border-teal-200" },
+// ─── Unified Icon Map (Unified Signal Green theme) ───────────────────────────
+const TYPE_ICONS = {
+  anc: Heart,
+  vaccine: Shield,
+  followup: Activity,
+  tb: Stethoscope,
+  ncd: Baby,
+  referralCheck: Send,
+  postTreatment: Hospital,
 };
 
-// ─── Urgency band ──────────────────────────────────────────────────────────
 function getUrgencyBand(item) {
   if (item.urgencyDays <= 0) return "overdue";
   if (item.urgencyDays <= 1) return "dueToday";
   return "upcoming";
 }
 
-// ─── Build routine follow-up list from patients ────────────────────────────
+// ─── Routine Health Visit Derivations ───────────────────────────────────────
 function buildRoutineItems(patients, t) {
   if (!patients || !patients.length) return [];
   const today = new Date();
@@ -145,7 +139,7 @@ function buildRoutineItems(patients, t) {
       ? Math.floor((today - new Date(p.last_visit_date)) / 86400000)
       : null;
 
-    // ANC
+    // ANC Milestone
     if (p.is_pregnant && p.lmp_date) {
       const weeks = Math.floor((today - new Date(p.lmp_date)) / (7 * 24 * 60 * 60 * 1000));
       const expectedAnc = weeks >= 36 ? 4 : weeks >= 28 ? 3 : weeks >= 16 ? 2 : 1;
@@ -164,7 +158,7 @@ function buildRoutineItems(patients, t) {
       }
     }
 
-    // Vaccine
+    // Child Immunization
     if (p.is_child) {
       const missing = ["bcg","opv","dpt","hep_b","measles","mr"].filter(v => !p[`vaccine_${v}`]);
       if (missing.length) {
@@ -175,13 +169,13 @@ function buildRoutineItems(patients, t) {
           mobile, village,
           type: "vaccine",
           label: t.vaccineDue,
-          detail: `${missing[0].toUpperCase()} · ${missing.length} pending`,
+          detail: `${missing[0].toUpperCase()} • ${missing.length} pending`,
           urgencyDays: 1,
         });
       }
     }
 
-    // High Risk
+    // High Risk / Red status
     if (p.status === "red") {
       const daysWithoutVisit = lastVisitDays !== null ? lastVisitDays : 10;
       if (daysWithoutVisit >= 7) {
@@ -219,7 +213,7 @@ function buildRoutineItems(patients, t) {
       }
     }
 
-    // NCD monthly check
+    // NCD Chronic (Monthly BP/Sugar)
     if (p.has_chronic && lastVisitDays !== null && lastVisitDays >= 28) {
       items.push({
         id: `ncd-${p.id}`,
@@ -237,12 +231,7 @@ function buildRoutineItems(patients, t) {
   return items;
 }
 
-// ─── Build REFERRAL pipeline follow-up items from care_requests ────────────
-// This is the real problem statement connection:
-// 1. referralCheck  — Patient referred 48h+ ago, hospital hasn't accepted yet
-//                     → ASHA must call patient to verify they went
-// 2. postTreatment  — Hospital marked referral COMPLETED
-//                     → ASHA must visit home to verify recovery + medicine compliance
+// ─── Referral Pipeline Follow-Up Derivations ─────────────────────────────────
 function buildReferralItems(careRequests, t) {
   if (!careRequests || !careRequests.length) return [];
   const today = new Date();
@@ -258,9 +247,7 @@ function buildReferralItems(careRequests, t) {
     const mobile = req.mobile || req.patient_mobile || "";
     const status = (req.status || "").toUpperCase();
 
-    // ── TYPE 1: Referral Check ─────────────────────────────────────────
-    // Trigger: referred 2+ days ago AND status is still SUBMITTED/PENDING
-    // (means hospital hasn't confirmed patient arrived)
+    // 1. Referral Arrival Verification (Referred 2+ days ago and still pending)
     if (
       daysSinceReferral >= 2 &&
       (status === "SUBMITTED" || status === "PENDING" || status === "PENDING_PHC")
@@ -273,8 +260,7 @@ function buildReferralItems(careRequests, t) {
         village: req.village || "Shirwal",
         type: "referralCheck",
         label: t.referralCheck,
-        detail: t.referralCheckDetail.replace("{n}", daysSinceReferral) + ` · ${hospital}`,
-        subDetail: `${t.referredTo}: ${hospital} · ${t.daysAgoReferred.replace ? daysSinceReferral + " " + t.daysAgoReferred : ""}`,
+        detail: t.referralCheckDetail.replace("{n}", daysSinceReferral),
         urgencyDays: daysSinceReferral >= 5 ? -2 : daysSinceReferral >= 3 ? 0 : 1,
         actionLabel: t.verifyArrival,
         referralId: req.id,
@@ -282,17 +268,14 @@ function buildReferralItems(careRequests, t) {
       });
     }
 
-    // ── TYPE 2: Post-Treatment Recovery ───────────────────────────────
-    // Trigger: hospital/doctor marked status = COMPLETED
-    // ASHA must do a home visit to check recovery
+    // 2. Post-Treatment Home Recovery (Hospital completed care)
     if (status === "COMPLETED" || status === "ACCEPTED") {
       const completedAt = req.completed_at || req.updated_at;
       const daysSinceCompletion = completedAt
         ? Math.floor((today - new Date(completedAt)) / 86400000)
         : 1;
 
-      // Only show for 10 days after completion
-      if (daysSinceCompletion <= 10 && daysSinceCompletion >= 0) {
+      if (daysSinceCompletion <= 14 && daysSinceCompletion >= 0) {
         items.push({
           id: `post-treat-${req.id}`,
           patientId: req.patient_id,
@@ -301,7 +284,7 @@ function buildReferralItems(careRequests, t) {
           village: req.village || "Shirwal",
           type: "postTreatment",
           label: t.postTreatment,
-          detail: `${t.postTreatmentDetail} · ${hospital}`,
+          detail: t.postTreatmentDetail,
           urgencyDays: daysSinceCompletion <= 1 ? 0 : daysSinceCompletion >= 4 ? -1 : 1,
           actionLabel: t.checkRecovery,
           referralId: req.id,
@@ -314,7 +297,7 @@ function buildReferralItems(careRequests, t) {
   return items;
 }
 
-// ─── Demo data (only shown when no real data at all) ──────────────────────
+// ─── Default Village Baseline (Sector 4) ────────────────────────────────────
 function getDemoItems(t) {
   return [
     {
@@ -322,18 +305,9 @@ function getDemoItems(t) {
       patientId: "P001", patientName: "Ramesh Patil",
       mobile: "+91 97123-45678", village: "Shirwal",
       type: "referralCheck", label: t.referralCheck,
-      detail: t.referralCheckDetail.replace("{n}", "3") + " · PHC Shirwal",
+      detail: t.referralCheckDetail.replace("{n}", "3"),
       urgencyDays: 0,
-      actionLabel: t.verifyArrival, hospital: "PHC Shirwal",
-    },
-    {
-      id: "demo-post-1",
-      patientId: "P004", patientName: "Sunita More",
-      mobile: "+91 91234-56789", village: "Shirwal",
-      type: "postTreatment", label: t.postTreatment,
-      detail: t.postTreatmentDetail + " · District Hospital Satara",
-      urgencyDays: -1,
-      actionLabel: t.checkRecovery, hospital: "District Hospital",
+      actionLabel: t.verifyArrival, hospital: "Primary Health Centre (PHC) - Shirwal",
     },
     {
       id: "demo-anc-1",
@@ -342,6 +316,15 @@ function getDemoItems(t) {
       type: "anc", label: t.ancDue,
       detail: `ANC-3 • 31 ${t.weeks}`,
       urgencyDays: -1,
+    },
+    {
+      id: "demo-post-1",
+      patientId: "P004", patientName: "Sunita More",
+      mobile: "+91 91234-56789", village: "Shirwal",
+      type: "postTreatment", label: t.postTreatment,
+      detail: t.postTreatmentDetail,
+      urgencyDays: -1,
+      actionLabel: t.checkRecovery, hospital: "Satara District Civil Hospital",
     },
     {
       id: "demo-hr-1",
@@ -362,16 +345,8 @@ function getDemoItems(t) {
   ];
 }
 
-// ─── Urgency pill ──────────────────────────────────────────────────────────
-function UrgencyPill({ band, t }) {
-  if (band === "overdue")  return <span className="text-[10px] font-black bg-red-600 text-white px-2 py-0.5 rounded-full">🔴 {t.overdue}</span>;
-  if (band === "dueToday") return <span className="text-[10px] font-black bg-amber-400 text-white px-2 py-0.5 rounded-full">🟡 {t.dueToday}</span>;
-  return <span className="text-[10px] font-black bg-emerald-500 text-white px-2 py-0.5 rounded-full">🟢 {t.upcoming}</span>;
-}
-
 const FILTER_TABS = ["all", "overdue", "dueToday", "upcoming", "done"];
 
-// ─── Main Component ────────────────────────────────────────────────────────
 export default function FollowUpTracker({ patients, onLogVisit }) {
   const lang = localStorage.getItem("radvault_asha_lang") || "en";
   const t = T[lang] || T.en;
@@ -387,7 +362,6 @@ export default function FollowUpTracker({ patients, onLogVisit }) {
     } catch { return new Set(); }
   });
 
-  // ── Fetch care_requests from Supabase (the referral pipeline) ────────────
   const fetchCareRequests = async () => {
     try {
       setLoadingReferrals(true);
@@ -398,7 +372,7 @@ export default function FollowUpTracker({ patients, onLogVisit }) {
 
       if (data && !error) setCareRequests(data);
     } catch (err) {
-      console.warn("[FollowUpTracker] Could not load care_requests:", err);
+      console.warn("[FollowUpTracker] Care requests sync notice:", err);
     } finally {
       setLoadingReferrals(false);
     }
@@ -407,7 +381,6 @@ export default function FollowUpTracker({ patients, onLogVisit }) {
   useEffect(() => {
     fetchCareRequests();
 
-    // Real-time: if hospital updates a referral status, Follow-Up auto-updates
     const channel = supabase
       .channel("followup_care_requests_sync")
       .on("postgres_changes", { event: "*", schema: "public", table: "care_requests" }, () => {
@@ -418,21 +391,16 @@ export default function FollowUpTracker({ patients, onLogVisit }) {
     return () => supabase.removeChannel(channel);
   }, []);
 
-  // ── Combine routine + referral pipeline items ────────────────────────────
   const allItems = useMemo(() => {
     const routine  = buildRoutineItems(patients || [], t);
     const referral = buildReferralItems(careRequests, t);
-    const combined = [...referral, ...routine]; // referral items listed first
+    const combined = [...referral, ...routine];
 
-    // If nothing real, show demo
     if (combined.length === 0) return getDemoItems(t);
-
-    // Sort: most overdue first
     combined.sort((a, b) => a.urgencyDays - b.urgencyDays);
     return combined;
   }, [patients, careRequests, lang]);
 
-  // ── Filter logic ──────────────────────────────────────────────────────────
   const visibleItems = useMemo(() => {
     if (activeFilter === "done") return allItems.filter(it => completedSet.has(it.id));
     const pending = allItems.filter(it => !completedSet.has(it.id));
@@ -446,7 +414,6 @@ export default function FollowUpTracker({ patients, onLogVisit }) {
     dueToday: allItems.filter(it => !completedSet.has(it.id) && getUrgencyBand(it) === "dueToday").length,
     upcoming: allItems.filter(it => !completedSet.has(it.id) && getUrgencyBand(it) === "upcoming").length,
     done:     completedSet.size,
-    // Referral-specific for the header badge
     referralPending: allItems.filter(it =>
       !completedSet.has(it.id) &&
       (it.type === "referralCheck" || it.type === "postTreatment")
@@ -471,212 +438,233 @@ export default function FollowUpTracker({ patients, onLogVisit }) {
     });
   };
 
-  const tabActive = {
-    all:      "bg-slate-800 text-white",
-    overdue:  "bg-red-600 text-white",
-    dueToday: "bg-amber-500 text-white",
-    upcoming: "bg-emerald-600 text-white",
-    done:     "bg-slate-400 text-white",
-  };
-  const tabInactive = "bg-white text-slate-600 border border-slate-200 hover:border-slate-400";
-
   return (
     <div className="min-h-screen bg-[#F5FBF9] pb-24 font-sans text-slate-800">
 
-      {/* ── Header ─────────────────────────────────────────────────────── */}
-      <div className="bg-white border-b border-[#E2E8F0] px-4 sm:px-6 py-4 sticky top-0 z-20 shadow-sm">
-        <div className="max-w-2xl mx-auto">
-          <div className="flex items-start justify-between gap-2">
+      {/* ── Standard Signal Green Top Bar ── */}
+      <div className="bg-white border-b border-[#E2E8F0] px-4 sm:px-6 py-4 sticky top-0 z-20 shadow-xs">
+        <div className="max-w-3xl mx-auto">
+          <div className="flex items-center justify-between gap-2">
             <div>
-              <h1 className="text-xl font-black text-[#16324F] flex items-center gap-2">
-                <CalendarCheck className="w-5 h-5 text-[#008F83]" />
+              <h1 className="text-xl font-black text-slate-900 flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-[#008F83]" />
                 {t.title}
               </h1>
               <p className="text-xs font-semibold text-slate-500 mt-0.5">{t.subtitle}</p>
             </div>
 
-            <div className="flex flex-col items-end gap-1 shrink-0">
-              {counts.referralPending > 0 && (
-                <span className="text-[11px] font-black bg-blue-600 text-white px-2.5 py-0.5 rounded-full flex items-center gap-1">
-                  <Send className="w-2.5 h-2.5" /> {counts.referralPending} referral
-                </span>
-              )}
-              {counts.overdue > 0 && (
-                <span className="text-[11px] font-black bg-red-600 text-white px-2.5 py-0.5 rounded-full">
-                  {counts.overdue} 🔴
-                </span>
-              )}
+            <div className="flex items-center gap-2">
               <button
                 onClick={fetchCareRequests}
-                className="text-[10px] text-slate-400 hover:text-[#008F83] flex items-center gap-1 mt-0.5"
+                disabled={loadingReferrals}
+                className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 transition-all cursor-pointer flex items-center gap-1 text-xs font-bold"
+                title={t.refresh}
               >
-                {loadingReferrals
-                  ? <Loader2 className="w-3 h-3 animate-spin" />
-                  : <RefreshCw className="w-3 h-3" />
-                }
-                {t.refresh}
+                <RefreshCw className={`w-3.5 h-3.5 ${loadingReferrals ? 'animate-spin text-[#008F83]' : ''}`} />
+                <span className="hidden sm:inline">{t.refresh}</span>
               </button>
+
+              <div className="bg-[#E8F7F3] border border-[#008F83]/30 px-3 py-1.5 rounded-xl text-right">
+                <span className="text-xs font-black text-[#008F83] block">
+                  {counts.all} {lang === 'mr' ? 'प्रलंबित' : lang === 'hi' ? 'लंबित' : 'Pending'}
+                </span>
+              </div>
             </div>
           </div>
 
-          {/* ── Filter Tabs ──────────────────────────────────────────── */}
-          <div className="flex gap-1.5 mt-3 overflow-x-auto pb-0.5 scrollbar-none">
-            {FILTER_TABS.map(f => (
-              <button
-                key={f}
-                onClick={() => setActiveFilter(f)}
-                className={`shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-xl text-[11px] font-black transition-all ${
-                  activeFilter === f ? tabActive[f] : tabInactive
-                }`}
-              >
-                {f === "overdue"  && "🔴 "}
-                {f === "dueToday" && "🟡 "}
-                {f === "upcoming" && "🟢 "}
-                {f === "done"     && "✅ "}
-                {f === "all"      && "📋 "}
-                {t[f]}
-                {counts[f] > 0 && (
-                  <span className={`ml-1 px-1.5 rounded-full text-[10px] font-black ${
-                    activeFilter === f ? "bg-white/25" : "bg-slate-100 text-slate-600"
-                  }`}>{counts[f]}</span>
-                )}
-              </button>
-            ))}
+          {/* ── Clean Filter Tabs (Standard Signal Green theme) ── */}
+          <div className="flex gap-2 mt-4 overflow-x-auto pb-1 scrollbar-none">
+            {FILTER_TABS.map(f => {
+              const active = activeFilter === f;
+              const count = counts[f] || 0;
+              return (
+                <button
+                  key={f}
+                  onClick={() => setActiveFilter(f)}
+                  className={`shrink-0 flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                    active
+                      ? 'bg-[#008F83] text-white shadow-xs'
+                      : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  {f === "overdue"  && <span className="w-2 h-2 rounded-full bg-red-500" />}
+                  {f === "dueToday" && <span className="w-2 h-2 rounded-full bg-amber-400" />}
+                  {f === "upcoming" && <span className="w-2 h-2 rounded-full bg-emerald-400" />}
+                  {f === "done"     && <Check className="w-3.5 h-3.5" />}
+                  <span>{t[f]}</span>
+                  {count > 0 && (
+                    <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                      active ? 'bg-white/25 text-white' : 'bg-slate-100 text-slate-700'
+                    }`}>
+                      {count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
 
-      {/* ── Referral pipeline notice banner ──────────────────────────── */}
+      {/* ── Referral Pipeline Notice (Signal Green Accent) ── */}
       {counts.referralPending > 0 && (
-        <div className="max-w-2xl mx-auto px-4 sm:px-6 pt-4">
-          <div className="bg-blue-50 border border-blue-200 rounded-2xl px-4 py-3 flex items-center gap-3">
-            <AlertTriangle className="w-5 h-5 text-blue-600 shrink-0" />
-            <div>
-              <p className="text-xs font-black text-blue-800">
-                {counts.referralPending} referral follow-up{counts.referralPending > 1 ? "s" : ""} pending
-              </p>
-              <p className="text-[11px] text-blue-600 mt-0.5">
-                Verify that referred patients reached the hospital and are recovering at home.
-              </p>
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 pt-4">
+          <div className="bg-[#E8F7F3] border border-[#008F83]/30 rounded-2xl p-3.5 flex items-center justify-between gap-3 shadow-xs">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-xl bg-[#008F83] text-white flex items-center justify-center shrink-0">
+                <Send className="w-4 h-4" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-black text-[#008F83] truncate">
+                  {counts.referralPending} {lang === 'mr' ? 'रेफरल पाठपुरावा उपलब्ध' : lang === 'hi' ? 'रेफरल फॉलो-अप लंबित' : 'Referral Loop Checks Active'}
+                </p>
+                <p className="text-[11px] text-slate-600 font-medium">
+                  {lang === 'mr'
+                    ? 'रुग्ण रुग्णालयात पोहोचल्याची खात्री करा व डिस्चार्ज नंतर औषध तपासणी करा.'
+                    : lang === 'hi'
+                    ? 'मरीज अस्पताल पहुंचा या नहीं जांचें एवं छुट्टी बाद दवाएं सत्यापित करें।'
+                    : 'Verify patient arrived at PHC and confirm post-discharge medicine recovery.'}
+                </p>
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* ── Cards ────────────────────────────────────────────────────── */}
-      <div className="px-4 sm:px-6 pt-4 space-y-3 max-w-2xl mx-auto">
+      {/* ── Follow-Up Cards List ── */}
+      <div className="px-4 sm:px-6 pt-4 space-y-3 max-w-3xl mx-auto">
         {visibleItems.length === 0 ? (
-          <div className="bg-white rounded-2xl border border-[#E2E8F0] p-10 text-center shadow-sm mt-2">
-            <CheckCircle2 className="w-14 h-14 text-[#008F83] mx-auto mb-3" />
-            <p className="font-extrabold text-[#16324F] text-lg">{t.noItems}</p>
-            <p className="text-sm text-slate-500 mt-1">{t.noItemsSub}</p>
+          <div className="bg-white rounded-2xl border border-[#E2E8F0] p-10 text-center shadow-xs">
+            <CheckCircle2 className="w-12 h-12 text-[#008F83] mx-auto mb-3" />
+            <p className="font-extrabold text-slate-900 text-base">{t.noItems}</p>
+            <p className="text-xs text-slate-500 mt-1">{t.noItemsSub}</p>
           </div>
         ) : (
           visibleItems.map(item => {
-            const cfg      = TYPE_CONFIG[item.type] || TYPE_CONFIG.followup;
-            const TypeIcon = cfg.icon;
-            const isDone   = completedSet.has(item.id);
-            const band     = getUrgencyBand(item);
-            const isReferralType = item.type === "referralCheck" || item.type === "postTreatment";
+            const isDone = completedSet.has(item.id);
+            const band   = getUrgencyBand(item);
+            const IconComponent = TYPE_ICONS[item.type] || Activity;
+            const isUrgent = band === "overdue";
 
             return (
               <div
                 key={item.id}
-                className={`bg-white rounded-2xl border-l-4 ${cfg.border} border border-[#E2E8F0] p-4 sm:p-5 shadow-sm transition-all ${
-                  isDone ? "opacity-50 bg-slate-50" : ""
-                } ${isReferralType ? "ring-1 ring-blue-100" : ""}`}
+                className={`bg-white rounded-2xl border transition-all p-4 sm:p-5 shadow-xs ${
+                  isDone
+                    ? 'opacity-60 bg-slate-50 border-slate-200'
+                    : isUrgent
+                    ? 'border-[#E2E8F0] border-l-4 border-l-red-500'
+                    : 'border-[#E2E8F0] border-l-4 border-l-[#008F83]'
+                }`}
               >
-                {/* Top row */}
-                <div className="flex items-start gap-3">
-                  <div className={`w-11 h-11 rounded-xl ${cfg.bg} flex items-center justify-center shrink-0`}>
-                    <TypeIcon className={`w-5 h-5 ${cfg.text}`} />
+                <div className="flex items-start gap-3.5">
+                  {/* Icon Box in Signal Green Theme */}
+                  <div className="w-11 h-11 rounded-2xl bg-[#E8F7F3] border border-[#008F83]/20 text-[#008F83] flex items-center justify-center shrink-0">
+                    <IconComponent className="w-5 h-5 stroke-[2.2]" />
                   </div>
 
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <p className="font-black text-slate-900 text-base leading-tight">{item.patientName}</p>
-                      {!isDone && <UrgencyPill band={band} t={t} />}
-                      {isDone && (
-                        <span className="text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                    {/* Header line: Name + Urgency indicator */}
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-2">
+                        <p className="font-black text-slate-900 text-base leading-tight">
+                          {item.patientName}
+                        </p>
+                        <span className="text-[10px] font-extrabold bg-slate-100 text-slate-700 px-2 py-0.5 rounded uppercase tracking-wider">
+                          {item.label}
+                        </span>
+                      </div>
+
+                      {!isDone ? (
+                        <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full flex items-center gap-1 ${
+                          band === "overdue"
+                            ? 'bg-red-50 text-red-700 border border-red-200'
+                            : band === "dueToday"
+                            ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                            : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                        }`}>
+                          {band === "overdue" && "🔴 " + t.overdue}
+                          {band === "dueToday" && "🟡 " + t.dueToday}
+                          {band === "upcoming" && "🟢 " + t.upcoming}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-black bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full flex items-center gap-1">
                           <Check className="w-3 h-3" /> {t.completed}
                         </span>
                       )}
                     </div>
 
-                    <div className="flex items-center gap-2 mt-1 flex-wrap">
-                      <span className={`text-[10px] font-black border px-2 py-0.5 rounded-full ${cfg.badge}`}>
-                        {item.label}
+                    {/* Detail text */}
+                    <p className="text-xs text-slate-600 font-medium mt-1.5 leading-relaxed">
+                      {item.detail}
+                    </p>
+
+                    {/* Associated hospital or village */}
+                    <div className="flex items-center gap-3 mt-1.5 text-[11px] text-slate-500 font-semibold flex-wrap">
+                      {item.hospital ? (
+                        <span className="flex items-center gap-1 text-[#008F83] font-bold">
+                          <Hospital className="w-3.5 h-3.5" />
+                          {item.hospital}
+                        </span>
+                      ) : null}
+                      <span className="flex items-center gap-1 text-slate-400">
+                        <MapPin className="w-3 h-3" />
+                        {item.village || "Shirwal"}
                       </span>
                     </div>
 
-                    <p className="text-xs text-slate-500 font-medium mt-1 leading-relaxed">{item.detail}</p>
+                    {/* Action Buttons */}
+                    <div className="flex items-center gap-2 mt-4 flex-wrap">
+                      {!isDone ? (
+                        <>
+                          {/* 1. Mark Done (Standard Signal Green Button) */}
+                          <button
+                            onClick={() => markDone(item.id)}
+                            className="flex items-center gap-1.5 bg-[#008F83] hover:bg-[#007A70] active:scale-95 text-white text-xs font-extrabold px-4 py-2 rounded-xl shadow-xs transition-all cursor-pointer"
+                          >
+                            <Check className="w-3.5 h-3.5 stroke-[3]" />
+                            <span>{t.markDone}</span>
+                          </button>
 
-                    {item.hospital && (
-                      <p className="text-[11px] text-blue-500 font-semibold mt-0.5 flex items-center gap-1">
-                        🏥 {item.hospital}
-                      </p>
-                    )}
+                          {/* 2. Direct 1-Tap Call */}
+                          {item.mobile ? (
+                            <a
+                              href={`tel:${item.mobile}`}
+                              className="flex items-center gap-1.5 bg-[#E8F7F3] hover:bg-[#D4F0E8] active:scale-95 text-[#008F83] border border-[#008F83]/30 text-xs font-extrabold px-3.5 py-2 rounded-xl transition-all cursor-pointer"
+                            >
+                              <Phone className="w-3.5 h-3.5 stroke-[2.5]" />
+                              <span>{t.callPatient}</span>
+                            </a>
+                          ) : null}
 
-                    {!item.hospital && item.village && (
-                      <p className="text-[11px] text-slate-400 font-semibold mt-0.5">📍 {item.village}</p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Action buttons */}
-                <div className="flex gap-2 mt-4 flex-wrap">
-                  {!isDone ? (
-                    <>
-                      {/* Primary: Mark Done */}
-                      <button
-                        onClick={() => markDone(item.id)}
-                        className="flex items-center gap-1.5 bg-[#008F83] hover:bg-[#007A70] active:scale-95 text-white text-xs font-extrabold px-4 py-2.5 rounded-xl shadow-sm transition-all cursor-pointer"
-                      >
-                        <Check className="w-3.5 h-3.5" />
-                        {t.markDone}
-                      </button>
-
-                      {/* Call */}
-                      {item.mobile && (
-                        <a
-                          href={`tel:${item.mobile}`}
-                          className="flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 active:scale-95 border border-emerald-200 text-emerald-800 text-xs font-bold px-3.5 py-2.5 rounded-xl transition-all"
+                          {/* 3. Log Clinical Visit / Open Assessment */}
+                          <button
+                            onClick={() => {
+                              const pt = (patients || []).find(p => p.id === item.patientId) || {
+                                id: item.patientId,
+                                name: item.patientName,
+                                mobile: item.mobile,
+                                status: "red"
+                              };
+                              if (onLogVisit) onLogVisit(pt);
+                            }}
+                            className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 text-xs font-bold px-3.5 py-2 rounded-xl transition-all cursor-pointer"
+                          >
+                            <ArrowRight className="w-3.5 h-3.5" />
+                            <span>{item.actionLabel || t.logVisit}</span>
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          onClick={() => restore(item.id)}
+                          className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-xl border border-slate-200 transition-all cursor-pointer"
                         >
-                          <Phone className="w-3.5 h-3.5" />
-                          {t.callPatient}
-                        </a>
+                          <RefreshCw className="w-3 h-3" />
+                          <span>{t.restore}</span>
+                        </button>
                       )}
-
-                      {/* Log Visit (for referral types it becomes Verify / Log Recovery) */}
-                      <button
-                        onClick={() => {
-                          const pt = (patients || []).find(p => p.id === item.patientId) || {
-                            id: item.patientId,
-                            name: item.patientName,
-                            mobile: item.mobile,
-                            status: "red"
-                          };
-                          if (onLogVisit) onLogVisit(pt);
-                        }}
-                        className={`flex items-center gap-1.5 active:scale-95 border text-xs font-bold px-3.5 py-2.5 rounded-xl transition-all cursor-pointer ${
-                          isReferralType
-                            ? "bg-blue-50 hover:bg-blue-100 border-blue-200 text-blue-800"
-                            : "bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700"
-                        }`}
-                      >
-                        <ArrowRight className="w-3.5 h-3.5" />
-                        {item.actionLabel || t.logVisit}
-                      </button>
-                    </>
-                  ) : (
-                    <button
-                      onClick={() => restore(item.id)}
-                      className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-slate-700 bg-slate-100 hover:bg-slate-200 px-3 py-2 rounded-xl border border-slate-200 transition-all cursor-pointer"
-                    >
-                      <RefreshCw className="w-3 h-3" />
-                      {t.restore}
-                    </button>
-                  )}
+                    </div>
+                  </div>
                 </div>
               </div>
             );

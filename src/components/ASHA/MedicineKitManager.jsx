@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import {
   Package, Plus, Edit2, Trash2, Send, CheckCircle2,
-  Search, X, RefreshCw, FileText, Pill
+  Search, X, RefreshCw, FileText, Pill, Phone, MessageSquare, Hospital
 } from "lucide-react";
 import {
   getMedicines,
@@ -285,6 +285,19 @@ export default function MedicineKitManager({ isFullPage = false, onClose, onStoc
     setTimeout(() => { setShowIndentModal(false); setIndentSuccessMsg(""); }, 2500);
   };
 
+  const generateWhatsAppUrl = () => {
+    const validItems = indentItems.filter(i => (parseInt(i.requested_qty, 10) || 0) > 0);
+    const lines = validItems.map(i => `• ${i.name}: ${i.requested_qty} ${i.unit}`).join('\n');
+    const msg =
+      `*ASHA Drug Restock Indent*\n` +
+      `Worker: Priya Deshmukh (ASHA Sector 4, Shirwal)\n` +
+      `PHC: PHC Shirwal Central Drug Depot\n` +
+      `Date: ${new Date().toLocaleDateString('en-IN')}\n\n` +
+      `*Supplies Requisitioned:*\n${lines || 'Standard emergency replenishment'}\n\n` +
+      `*Notes:* ${indentNotes || 'Please prepare supply for collection.'}`;
+    return `https://wa.me/919422012345?text=${encodeURIComponent(msg)}`;
+  };
+
   const handleOpenHistory = async () => {
     const res = await getMedicineIndents();
     if (res.data) setIndentsHistory(res.data);
@@ -293,11 +306,11 @@ export default function MedicineKitManager({ isFullPage = false, onClose, onStoc
 
   const mainContent = (
     <div className="flex flex-col h-full bg-[#F5FBF9]">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-[#16324F] via-[#008F83] to-[#005B54] text-white px-5 sm:px-7 py-5 flex items-center justify-between flex-shrink-0">
+      {/* Header in Signal Green / Navy */}
+      <div className="bg-gradient-to-r from-[#16324F] via-[#008F83] to-[#007A70] text-white px-5 sm:px-7 py-5 flex items-center justify-between flex-shrink-0">
         <div className="flex items-center gap-3">
           <div className="w-11 h-11 rounded-2xl bg-white/10 flex items-center justify-center">
-            <Pill className="w-6 h-6 text-teal-200" />
+            <Pill className="w-6 h-6 text-white" />
           </div>
           <div>
             <h2 className="text-lg font-black tracking-tight">{t.title}</h2>
@@ -311,7 +324,7 @@ export default function MedicineKitManager({ isFullPage = false, onClose, onStoc
         )}
       </div>
 
-      {/* Metric Ribbon */}
+      {/* Metric Ribbon with Connected PHC Hotline */}
       <div className="bg-white border-b border-slate-200 px-5 sm:px-7 py-3 grid grid-cols-2 sm:grid-cols-4 gap-3 flex-shrink-0">
         <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/80">
           <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">{t.totalMedicines}</p>
@@ -319,18 +332,32 @@ export default function MedicineKitManager({ isFullPage = false, onClose, onStoc
         </div>
         <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/80">
           <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">{t.totalUnits}</p>
-          <p className="text-xl font-black text-teal-700 mt-0.5">{totalUnitsInBag}</p>
+          <p className="text-xl font-black text-[#008F83] mt-0.5">{totalUnitsInBag}</p>
         </div>
         <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/80">
           <p className="text-[10px] font-extrabold text-rose-500 uppercase tracking-wider">{t.lowStockAlerts}</p>
           <p className={"text-xl font-black mt-0.5 " + (lowStockCount > 0 ? "text-rose-600" : "text-slate-700")}>{lowStockCount}</p>
         </div>
-        <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/80 flex items-center justify-between">
-          <div>
-            <p className="text-[10px] font-extrabold text-indigo-500 uppercase tracking-wider">{t.indentsSent}</p>
-            <p className="text-sm font-black text-indigo-700 mt-0.5">PHC Shirwal</p>
+        {/* Connected PHC Depot Card */}
+        <div className="bg-[#E8F7F3] p-2.5 rounded-xl border border-[#008F83]/30 flex items-center justify-between">
+          <div className="min-w-0">
+            <p className="text-[10px] font-black text-[#008F83] uppercase tracking-wider flex items-center gap-1">
+              <Hospital className="w-3 h-3" /> PHC Shirwal Depot
+            </p>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <a
+                href="tel:+919422012345"
+                className="text-xs font-black text-[#008F83] hover:underline flex items-center gap-1"
+                title="Call PHC Pharmacist"
+              >
+                <Phone className="w-3 h-3" /> +91 94220-12345
+              </a>
+            </div>
           </div>
-          <button onClick={handleOpenHistory} className="text-[10px] font-black text-indigo-600 hover:text-indigo-800 bg-indigo-50 px-2 py-1 rounded-lg border border-indigo-100 cursor-pointer">
+          <button
+            onClick={handleOpenHistory}
+            className="text-[10px] font-black text-[#008F83] hover:text-white bg-white hover:bg-[#008F83] px-2 py-1 rounded-lg border border-[#008F83]/30 transition-all cursor-pointer shrink-0"
+          >
             {t.historyBtn}
           </button>
         </div>
@@ -364,7 +391,7 @@ export default function MedicineKitManager({ isFullPage = false, onClose, onStoc
               <button key={cat} onClick={() => setActiveCategory(cat)}
                 className={"px-3 py-1 rounded-xl font-bold whitespace-nowrap transition-all cursor-pointer " + (
                   active
-                    ? (cat === "Low Stock" ? "bg-rose-600 text-white shadow-xs" : "bg-[#16324F] text-white shadow-xs")
+                    ? (cat === "Low Stock" ? "bg-rose-600 text-white shadow-xs" : "bg-[#008F83] text-white shadow-xs")
                     : (cat === "Low Stock" && lowStockCount > 0
                       ? "bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100"
                       : "bg-slate-100 text-slate-600 hover:bg-slate-200")
@@ -464,10 +491,10 @@ export default function MedicineKitManager({ isFullPage = false, onClose, onStoc
 
       {/* Footer */}
       <div className="bg-white border-t border-slate-200 px-5 sm:px-7 py-3.5 flex items-center justify-between gap-3 flex-shrink-0">
-        <button onClick={handleOpenIndentGenerator} className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center gap-2 transition-all cursor-pointer">
+        <button onClick={handleOpenIndentGenerator} className="px-4 py-2.5 bg-[#008F83] hover:bg-[#007A70] text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center gap-2 transition-all cursor-pointer">
           <Send className="w-3.5 h-3.5" />
           <span>{t.submitIndentBtn}</span>
-          {lowStockCount > 0 && <span className="bg-white text-indigo-700 px-1.5 py-0.5 rounded-full text-[10px] font-black ml-0.5">{lowStockCount}</span>}
+          {lowStockCount > 0 && <span className="bg-white text-[#008F83] px-1.5 py-0.5 rounded-full text-[10px] font-black ml-0.5">{lowStockCount}</span>}
         </button>
         {!isFullPage && onClose && (
           <button onClick={onClose} className="px-5 py-2.5 bg-slate-200 hover:bg-slate-300 font-bold text-xs rounded-xl text-slate-700 transition-colors cursor-pointer">
@@ -574,14 +601,14 @@ export default function MedicineKitManager({ isFullPage = false, onClose, onStoc
         </div>
       )}
 
-      {/* Indent Modal */}
+      {/* Indent Modal with Connected PHC Pipeline */}
       {showIndentModal && (
         <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl border border-slate-200 max-h-[90vh] flex flex-col overflow-hidden">
-            <div className="bg-gradient-to-r from-indigo-700 to-[#16324F] text-white px-6 py-4 flex justify-between items-center">
+            <div className="bg-gradient-to-r from-[#16324F] to-[#008F83] text-white px-6 py-4 flex justify-between items-center">
               <div>
-                <h3 className="font-black text-sm flex items-center gap-2"><Send className="w-4 h-4 text-indigo-300" /> {t.indentTitle}</h3>
-                <p className="text-xs text-indigo-200">{t.indentSubtitle}</p>
+                <h3 className="font-black text-sm flex items-center gap-2"><Send className="w-4 h-4 text-teal-200" /> {t.indentTitle}</h3>
+                <p className="text-xs text-teal-100">{t.indentSubtitle}</p>
               </div>
               <button onClick={() => setShowIndentModal(false)} className="text-white/80 hover:text-white cursor-pointer"><X className="w-4 h-4" /></button>
             </div>
@@ -592,6 +619,43 @@ export default function MedicineKitManager({ isFullPage = false, onClose, onStoc
                   <span>{indentSuccessMsg}</span>
                 </div>
               )}
+
+              {/* Connected PHC Drug Depot Contact Ribbon */}
+              <div className="bg-[#E8F7F3] border border-[#008F83]/30 rounded-2xl p-3.5 space-y-2">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <Hospital className="w-4 h-4 text-[#008F83]" />
+                    <div>
+                      <p className="font-black text-slate-900 text-xs">Primary Health Centre (PHC) - Shirwal Central Drug Depot</p>
+                      <p className="text-[11px] text-slate-600">Store In-Charge: <b>Shri. S. K. Jadhav</b> (Pharmacist) • Sector 4 Supply Hub</p>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-black bg-[#008F83] text-white px-2 py-0.5 rounded-full">
+                    🟢 Depot Connected
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <a
+                    href="tel:+919422012345"
+                    className="flex items-center gap-1.5 bg-white text-[#008F83] border border-[#008F83]/30 hover:bg-[#008F83] hover:text-white px-3 py-1.5 rounded-xl font-black text-xs transition-all cursor-pointer shadow-xs"
+                  >
+                    <Phone className="w-3.5 h-3.5 stroke-[2.5]" />
+                    <span>Call Storekeeper (+91 94220-12345)</span>
+                  </a>
+
+                  <a
+                    href={generateWhatsAppUrl()}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-xl font-black text-xs transition-all cursor-pointer shadow-xs"
+                  >
+                    <MessageSquare className="w-3.5 h-3.5" />
+                    <span>Send via WhatsApp</span>
+                  </a>
+                </div>
+              </div>
+
               <div className="border border-slate-200 rounded-2xl overflow-hidden">
                 <table className="w-full text-xs">
                   <thead className="bg-slate-100 text-slate-700 font-bold">
@@ -613,7 +677,7 @@ export default function MedicineKitManager({ isFullPage = false, onClose, onStoc
                           <div className="inline-flex items-center gap-1">
                             <input type="number" min="0" value={item.requested_qty}
                               onChange={(e) => { const val = parseInt(e.target.value, 10) || 0; setIndentItems(prev => prev.map((it, i) => i === idx ? { ...it, requested_qty: val } : it)); }}
-                              className="w-20 border border-slate-200 rounded-lg px-2 py-1 text-right font-black text-indigo-700 focus:outline-none focus:border-indigo-500" />
+                              className="w-20 border border-slate-200 rounded-lg px-2 py-1 text-right font-black text-[#008F83] focus:outline-none focus:border-[#008F83]" />
                             <span className="text-[10px] text-slate-400 font-bold">{item.unit}</span>
                           </div>
                         </td>
@@ -625,12 +689,12 @@ export default function MedicineKitManager({ isFullPage = false, onClose, onStoc
               <div>
                 <label className="block font-bold text-slate-700 mb-1">{t.ashaNotes}</label>
                 <textarea rows="3" placeholder={t.notesPlaceholder} value={indentNotes} onChange={e => setIndentNotes(e.target.value)}
-                  className="w-full border border-slate-200 rounded-xl p-3 text-xs font-medium text-slate-800 focus:outline-none focus:border-indigo-500" />
+                  className="w-full border border-slate-200 rounded-xl p-3 text-xs font-medium text-slate-800 focus:outline-none focus:border-[#008F83]" />
               </div>
             </div>
             <div className="bg-slate-50 border-t border-slate-200 p-4 flex justify-between items-center">
               <button type="button" onClick={() => setShowIndentModal(false)} className="px-4 py-2 bg-slate-200 hover:bg-slate-300 font-bold rounded-xl text-slate-700 cursor-pointer">{t.cancel}</button>
-              <button type="button" disabled={isSubmittingIndent} onClick={handleDispatchIndent} className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold rounded-xl shadow-xs flex items-center gap-2 cursor-pointer disabled:opacity-50">
+              <button type="button" disabled={isSubmittingIndent} onClick={handleDispatchIndent} className="px-5 py-2.5 bg-[#008F83] hover:bg-[#007A70] text-white font-extrabold rounded-xl shadow-xs flex items-center gap-2 cursor-pointer disabled:opacity-50">
                 <Send className="w-3.5 h-3.5" />
                 <span>{isSubmittingIndent ? "Dispatching..." : t.dispatchIndentBtn}</span>
               </button>
@@ -639,12 +703,12 @@ export default function MedicineKitManager({ isFullPage = false, onClose, onStoc
         </div>
       )}
 
-      {/* History Modal */}
+      {/* History Modal in Signal Green Theme */}
       {showHistoryModal && (
         <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg border border-slate-200 max-h-[85vh] flex flex-col overflow-hidden">
-            <div className="bg-slate-900 text-white px-6 py-4 flex justify-between items-center">
-              <h3 className="font-black text-sm flex items-center gap-2"><FileText className="w-4 h-4 text-teal-400" /> Dispatched Indent Log</h3>
+            <div className="bg-[#16324F] text-white px-6 py-4 flex justify-between items-center">
+              <h3 className="font-black text-sm flex items-center gap-2"><FileText className="w-4 h-4 text-[#008F83]" /> Dispatched Indent Log</h3>
               <button onClick={() => setShowHistoryModal(false)} className="text-white/80 hover:text-white cursor-pointer"><X className="w-4 h-4" /></button>
             </div>
             <div className="p-5 space-y-3 overflow-y-auto text-xs flex-1">
@@ -661,7 +725,7 @@ export default function MedicineKitManager({ isFullPage = false, onClose, onStoc
                         <p className="font-black text-slate-900 text-sm">Indent to {ind.phc_name || "PHC Shirwal"}</p>
                         <p className="text-[10px] text-slate-500 mt-0.5">{new Date(ind.created_at || Date.now()).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</p>
                       </div>
-                      <span className="text-[9px] font-black bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded-full uppercase">{ind.status || "SUBMITTED"}</span>
+                      <span className="text-[9px] font-black bg-[#E8F7F3] text-[#008F83] border border-[#008F83]/30 px-2 py-0.5 rounded-full uppercase">{ind.status || "SUBMITTED"}</span>
                     </div>
                     <div className="bg-white p-2.5 rounded-xl border border-slate-100">
                       <p className="font-extrabold text-[11px] text-slate-700 mb-1">Items ({ind.items?.length || 0}):</p>
@@ -669,7 +733,7 @@ export default function MedicineKitManager({ isFullPage = false, onClose, onStoc
                         {ind.items?.map((it, i) => (
                           <li key={i} className="flex justify-between">
                             <span>• {it.name || it.name_en}</span>
-                            <b className="text-indigo-700">+{it.requested_qty} {it.unit}</b>
+                            <b className="text-[#008F83]">+{it.requested_qty} {it.unit}</b>
                           </li>
                         ))}
                       </ul>
