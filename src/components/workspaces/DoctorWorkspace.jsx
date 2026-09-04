@@ -296,6 +296,7 @@ export default function DoctorWorkspace({
               status: mappedStatus,
               symptoms: c.reason,
               ai_note: c.asha_notes,
+              slot_preference: c.slot_preference,
               created_at: c.created_at,
               isCareRequest: true
             };
@@ -1132,6 +1133,11 @@ export default function DoctorWorkspace({
                               {ref.doctor_assigned && (
                                 <span className="text-[10px] font-bold text-[#800000] bg-[#FDF2F2] px-2 py-0.5 rounded border border-[#800000]/20">
                                   🩺 {ref.doctor_assigned}
+                                </span>
+                              )}
+                              {(ref.slot_preference || ref.ai_note?.includes('TOKEN:')) && (
+                                <span className="text-[10px] font-black text-[#008F83] bg-[#E8F7F3] px-2 py-0.5 rounded border border-[#008F83]/30 font-mono">
+                                  🎟️ {ref.slot_preference || `Token #${ref.ai_note?.match(/TOKEN:\s*([^|]+)/i)?.[1]?.trim()}`}
                                 </span>
                               )}
                             </div>

@@ -216,26 +216,65 @@ export async function saveVitalsReading(payload) {
  * falls back to patient_name match so the list is never blank.
  */
 export async function getCareRequests(patientId, patientName = null) {
-  // Primary query by UUID
-  const { data: byId, error } = await supabase
-    .from('care_requests')
-    .select('*')
-    .eq('patient_id', patientId)
-    .order('created_at', { ascending: false });
+  let combined = [];
 
-  if (error) return { data: [], error };
-  if (byId && byId.length > 0) return { data: byId, error: null };
+  // 1. Primary query care_requests by patient_id
+  try {
+    const { data: byId } = await supabase
+      .from('care_requests')
+      .select('*')
+      .eq('patient_id', patientId)
+      .order('created_at', { ascending: false });
 
-  // Fallback: query by patient_name if UUID match returned nothing
-  if (!patientName) return { data: [], error: null };
+    if (byId && byId.length > 0) {
+      combined.push(...byId);
+    } else if (patientName) {
+      // Fallback: query care_requests by patient_name if UUID match returned nothing
+      const { data: byName } = await supabase
+        .from('care_requests')
+        .select('*')
+        .ilike('patient_name', patientName)
+        .order('created_at', { ascending: false });
+      if (byName && byName.length > 0) combined.push(...byName);
+    }
+  } catch (err) {
+    console.warn('[ashaService] care_requests fetch notice:', err.message);
+  }
 
-  const { data: byName, error: nameErr } = await supabase
-    .from('care_requests')
-    .select('*')
-    .ilike('patient_name', patientName)
-    .order('created_at', { ascending: false });
+  // 2. Also check referrals table for any records created directly there
+  try {
+    const { data: refData } = await supabase
+      .from('referrals')
+      .select('*')
+      .eq('patient_id', patientId)
+      .order('created_at', { ascending: false });
 
-  return { data: byName || [], error: nameErr };
+    if (refData && refData.length > 0) {
+      const existingIds = new Set(combined.map(c => c.id));
+      for (const r of refData) {
+        if (!existingIds.has(r.id)) {
+          combined.push({
+            id: r.id,
+            patient_id: r.patient_id,
+            patient_name: r.patient_name,
+            source: r.source || 'ASHA_REFERRED',
+            created_by: r.created_by,
+            facility: r.destination_hospital,
+            department: r.destination_department,
+            slot_preference: r.slot_preference,
+            doctor_assigned: r.doctor_assigned,
+            priority: r.priority,
+            reason: r.symptoms || r.ai_note,
+            asha_notes: r.ai_note,
+            status: r.status === 'Accepted' ? 'ACCEPTED' : r.status,
+            created_at: r.created_at
+          });
+        }
+      }
+    }
+  } catch (_) {}
+
+  return { data: combined, error: null };
 }
 
 
@@ -1141,55 +1180,79 @@ export async function assignStaffTokenAndSlot(payload) {
   } = payload;
 
   const notesString = `TOKEN:${tokenNumber} | SLOT:${arrivalSlot} | ROOM:${room} | INSTRUCTION:${instructions}`;
+  const slotPreference = `Token #${tokenNumber} · ${arrivalSlot}`;
+  const targetId = careRequestId || referralId;
 
-  // 1. Update care_requests if careRequestId exists or by patientId
+  // 1. Update care_requests by targetId (direct row ID)
   let updatedCareReq = null;
-  if (careRequestId) {
-    const { data } = await supabase
-      .from('care_requests')
-      .update({
-        status: 'ACCEPTED',
-        slot_preference: `Token #${tokenNumber} · ${arrivalSlot}`,
-        doctor_assigned: `${doctorAssigned} (${room})`,
-        asha_notes: notesString,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', careRequestId)
-      .select()
-      .maybeSingle();
-    updatedCareReq = data;
-  } else if (patientId) {
-    const { data } = await supabase
-      .from('care_requests')
-      .update({
-        status: 'ACCEPTED',
-        slot_preference: `Token #${tokenNumber} · ${arrivalSlot}`,
-        doctor_assigned: `${doctorAssigned} (${room})`,
-        asha_notes: notesString,
-        updated_at: new Date().toISOString()
-      })
-      .eq('patient_id', patientId)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .select()
-      .maybeSingle();
-    updatedCareReq = data;
+  if (targetId) {
+    try {
+      const { data } = await supabase
+        .from('care_requests')
+        .update({
+          status: 'ACCEPTED',
+          slot_preference: slotPreference,
+          doctor_assigned: `${doctorAssigned} (${room})`,
+          asha_notes: notesString,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', targetId)
+        .select()
+        .maybeSingle();
+      updatedCareReq = data;
+    } catch (e) {
+      console.warn('[ashaService] care_requests update by id notice:', e.message);
+    }
   }
 
-  // 2. Update referrals if referralId exists
-  if (referralId) {
-    await supabase
-      .from('referrals')
-      .update({
-        status: 'Accepted',
-        doctor_assigned: `${doctorAssigned} (${room})`,
-        ai_note: notesString
-      })
-      .eq('id', referralId);
+  // 2. Also update care_requests by patientId (if provided)
+  if (patientId) {
+    try {
+      const { data } = await supabase
+        .from('care_requests')
+        .update({
+          status: 'ACCEPTED',
+          slot_preference: slotPreference,
+          doctor_assigned: `${doctorAssigned} (${room})`,
+          asha_notes: notesString,
+          updated_at: new Date().toISOString()
+        })
+        .eq('patient_id', patientId)
+        .select()
+        .maybeSingle();
+      if (!updatedCareReq) updatedCareReq = data;
+    } catch (e) {
+      console.warn('[ashaService] care_requests update by patientId notice:', e.message);
+    }
   }
 
-  return { success: true, updatedCareReq };
+  // 3. Also update referrals table by targetId and patientId
+  try {
+    if (targetId) {
+      await supabase
+        .from('referrals')
+        .update({
+          status: 'Accepted',
+          doctor_assigned: `${doctorAssigned} (${room})`,
+          ai_note: notesString
+        })
+        .eq('id', targetId);
+    }
+    if (patientId) {
+      await supabase
+        .from('referrals')
+        .update({
+          status: 'Accepted',
+          doctor_assigned: `${doctorAssigned} (${room})`,
+          ai_note: notesString
+        })
+        .eq('patient_id', patientId);
+    }
+  } catch (_) {}
+
+  return { success: true, updatedCareReq, tokenNumber, arrivalSlot };
 }
+
 
 /**
  * Fetch all teleconsult sessions for a patient.

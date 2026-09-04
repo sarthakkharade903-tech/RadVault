@@ -210,8 +210,19 @@ export default function HospitalStaffWorkspace({
 
   const handleOpenTokenModal = (ref) => {
     const randomToken = `SHIR-OPD-0${Math.floor(10 + Math.random() * 89)}`;
-    setAssignTokenNum(randomToken);
-    setAssignSlot('10:30 AM – 11:00 AM');
+    const existingToken =
+      ref.slot_preference?.match(/Token\s*#?([A-Z0-9-]+)/i)?.[1]?.trim() ||
+      ref.ai_note?.match(/TOKEN:\s*([^|]+)/i)?.[1]?.trim() ||
+      ref.asha_notes?.match(/TOKEN:\s*([^|]+)/i)?.[1]?.trim() ||
+      randomToken;
+    const existingSlot =
+      (ref.slot_preference?.includes('·') ? ref.slot_preference.split('·')[1]?.trim() : null) ||
+      ref.ai_note?.match(/SLOT:\s*([^|]+)/i)?.[1]?.trim() ||
+      ref.asha_notes?.match(/SLOT:\s*([^|]+)/i)?.[1]?.trim() ||
+      '10:30 AM – 11:00 AM';
+
+    setAssignTokenNum(existingToken);
+    setAssignSlot(existingSlot);
     setAssignRoom('Counter 2 · General OPD');
     setAssignDoctor('Dr. Arvind Kulkarni (Medical Officer)');
     setAssignInstruction('Report directly to Counter 2 with this token for priority triage.');
@@ -224,6 +235,7 @@ export default function HospitalStaffWorkspace({
     try {
       if (!isDemoMode) {
         await assignStaffTokenAndSlot({
+          careRequestId: showTokenModal.id,
           referralId: showTokenModal.id,
           patientId: showTokenModal.patient_id,
           tokenNumber: assignTokenNum,
@@ -235,25 +247,31 @@ export default function HospitalStaffWorkspace({
       }
 
       const assignedNote = `TOKEN:${assignTokenNum} | SLOT:${assignSlot} | ROOM:${assignRoom} | INSTRUCTION:${assignInstruction}`;
+      const slotPref = `Token #${assignTokenNum} · ${assignSlot}`;
 
-      setReferrals(prev => prev.map(r => r.id === showTokenModal.id ? {
+      setReferrals(prev => prev.map(r => (r.id === showTokenModal.id || (r.patient_id && r.patient_id === showTokenModal.patient_id)) ? {
         ...r,
         status: 'Accepted',
         doctor_assigned: `${assignDoctor} (${assignRoom})`,
-        ai_note: assignedNote
+        ai_note: assignedNote,
+        asha_notes: assignedNote,
+        slot_preference: slotPref
       } : r));
 
-      if (selectedReferral && selectedReferral.id === showTokenModal.id) {
+      if (selectedReferral && (selectedReferral.id === showTokenModal.id || (selectedReferral.patient_id && selectedReferral.patient_id === showTokenModal.patient_id))) {
         setSelectedReferral(prev => ({
           ...prev,
           status: 'Accepted',
           doctor_assigned: `${assignDoctor} (${assignRoom})`,
-          ai_note: assignedNote
+          ai_note: assignedNote,
+          asha_notes: assignedNote,
+          slot_preference: slotPref
         }));
       }
 
       showToast(`✓ Official Token #${assignTokenNum} & slot ${assignSlot} assigned to ${showTokenModal.patient_name}.`);
       setShowTokenModal(null);
+      loadSupabaseData(true);
     } catch (err) {
       setError(`Failed to assign token: ${err.message}`);
     } finally {
@@ -357,18 +375,84 @@ export default function HospitalStaffWorkspace({
       setDoctors((doctorsData && doctorsData.length > 0) ? doctorsData : fallbackDoctors);
 
 
-      // 4. Fetch Scoped Referrals
-      const { data: refData, error: refErr } = await supabase
-        .from('referrals')
-        .select('*')
-        .or(`destination_facility_id.eq.${resolvedFacilityId},destination_hospital.ilike.%${(resolvedFacilityName || 'Shrirampur').split(' ')[0]}%`)
-        .order('created_at', { ascending: false });
+      // 4. Fetch Referrals & Care Requests
+      let rawRefs = [];
+      try {
+        const { data: refData } = await supabase
+          .from('referrals')
+          .select('*')
+          .or(`destination_facility_id.eq.${resolvedFacilityId},destination_hospital.ilike.%${(resolvedFacilityName || 'Shrirampur').split(' ')[0]}%`)
+          .order('created_at', { ascending: false });
 
-      if (refErr) throw refErr;
+        if (refData && refData.length > 0) {
+          rawRefs = refData;
+        }
+      } catch (rErr) {
+        console.warn('[HospitalStaff] referrals fetch warning:', rErr.message);
+      }
+
+      // Also fetch from care_requests (which stores ASHA referrals, patient OPD bookings, etc.)
+      let careRefs = [];
+      try {
+        const { data: careData } = await supabase
+          .from('care_requests')
+          .select('*')
+          .neq('source', 'TELECONSULT')
+          .order('created_at', { ascending: false });
+
+        if (careData && careData.length > 0) {
+          careRefs = careData.map(c => {
+            const isHigh = c.priority === 'URGENT' || c.priority === 'HIGH' || c.priority === 'RED';
+            const isMedium = c.priority === 'MEDIUM' || c.priority === 'ORANGE';
+            const mappedPriority = isHigh ? 'HIGH' : isMedium ? 'ORANGE' : 'GREEN';
+            const priorityLabel = isHigh ? '🔴 Emergency / Immediate Attention' : isMedium ? '🟡 Urgent / Within 24 Hours' : '🟢 Routine / Local Care';
+
+            const hasToken = !!(c.asha_notes?.includes('TOKEN:') || c.slot_preference?.toLowerCase().includes('token'));
+            let mappedStatus = (c.status === 'COMPLETED') ? 'Completed'
+              : (c.status === 'ACCEPTED' || hasToken) ? 'Accepted'
+              : c.status === 'Arrived' ? 'Arrived'
+              : c.status === 'Assigned' ? 'Assigned'
+              : 'Pending';
+
+            return {
+              id: c.id,
+              patient_id: c.patient_id,
+              patient_name: c.patient_name || 'Patient',
+              created_by: c.created_by || (c.source === 'PATIENT_DIRECT' ? 'Direct Patient Booking' : 'ASHA Field Referral'),
+              source: c.source || 'ASHA',
+              destination_hospital: c.facility || resolvedFacilityName,
+              destination_department: c.department || 'General Medicine & OPD',
+              doctor_assigned: c.doctor_assigned || null,
+              priority: mappedPriority,
+              priority_label: priorityLabel,
+              status: mappedStatus,
+              symptoms: c.reason,
+              ai_note: c.asha_notes,
+              asha_notes: c.asha_notes,
+              slot_preference: c.slot_preference,
+              created_at: c.created_at,
+              isCareRequest: true
+            };
+          });
+        }
+      } catch (cErr) {
+        console.warn('[HospitalStaff] care_requests fetch notice:', cErr.message);
+      }
+
+      // Combine both sources (deduplicating by id)
+      const existingRefIds = new Set(rawRefs.map(r => r.id));
+      const combinedRefs = [
+        ...rawRefs,
+        ...careRefs.filter(c => !existingRefIds.has(c.id))
+      ];
+
+      // Fallback to demo if completely empty and demoDataEnabled
+      if (combinedRefs.length === 0 && demoDataEnabled) {
+        combinedRefs.push(...INITIAL_DEMO_REFERRALS);
+      }
 
       // 5. Enrich referrals with patients' human-readable unified_id (MH-P-xxxxx)
-      const rawRefs = refData || [];
-      const patientIds = Array.from(new Set(rawRefs.map(r => r.patient_id).filter(Boolean)));
+      const patientIds = Array.from(new Set(combinedRefs.map(r => r.patient_id).filter(Boolean)));
       
       let patientsMap = {};
       if (patientIds.length > 0) {
@@ -388,10 +472,11 @@ export default function HospitalStaffWorkspace({
         }
       }
 
-      const enrichedRefs = rawRefs.map(r => {
+      const enrichedRefs = combinedRefs.map(r => {
         const linkedPatient = patientsMap[r.patient_id];
         return {
           ...r,
+          patient_name: r.patient_name || linkedPatient?.full_name || 'Patient',
           patient_unified_id: linkedPatient?.unified_id || (r.patient_id && !r.patient_id.includes('-') ? r.patient_id : null),
           patient_phone: linkedPatient?.phone_number || r.vitals?.phone || null,
           patient_age: linkedPatient?.age || null,
@@ -417,18 +502,25 @@ export default function HospitalStaffWorkspace({
     loadSupabaseData(false);
 
     if (!isDemoMode) {
-      const channel = supabase.channel('staff_referrals_live')
+      const channel1 = supabase.channel('staff_referrals_live')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'referrals' }, () => {
+          loadSupabaseData(true);
+        })
+        .subscribe();
+
+      const channel2 = supabase.channel('staff_care_requests_live')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'care_requests' }, () => {
           loadSupabaseData(true);
         })
         .subscribe();
 
       const interval = setInterval(() => {
         loadSupabaseData(true);
-      }, 30000);
+      }, 4000);
 
       return () => {
-        supabase.removeChannel(channel);
+        supabase.removeChannel(channel1);
+        supabase.removeChannel(channel2);
         clearInterval(interval);
       };
     }
@@ -457,16 +549,20 @@ export default function HospitalStaffWorkspace({
     }
 
     try {
-      const { error: err } = await supabase
+      await supabase
         .from('referrals')
         .update({ status: 'Accepted' })
         .eq('id', refId);
 
-      if (err) throw err;
+      await supabase
+        .from('care_requests')
+        .update({ status: 'ACCEPTED', updated_at: new Date().toISOString() })
+        .eq('id', refId);
       
       setReferrals(prev => prev.map(r => r.id === refId ? { ...r, status: 'Accepted' } : r));
       setSelectedReferral(prev => (prev && prev.id === refId ? { ...prev, status: 'Accepted' } : prev));
       showToast('✓ Referral accepted successfully.');
+      loadSupabaseData(true);
     } catch (err) {
       setError(`Failed to accept referral: ${err.message}`);
     }
@@ -482,16 +578,20 @@ export default function HospitalStaffWorkspace({
     }
 
     try {
-      const { error: err } = await supabase
+      await supabase
         .from('referrals')
         .update({ status: 'Arrived' })
         .eq('id', refId);
 
-      if (err) throw err;
+      await supabase
+        .from('care_requests')
+        .update({ status: 'ACCEPTED', updated_at: new Date().toISOString() })
+        .eq('id', refId);
 
       setReferrals(prev => prev.map(r => r.id === refId ? { ...r, status: 'Arrived' } : r));
       setSelectedReferral(prev => (prev && prev.id === refId ? { ...prev, status: 'Arrived' } : prev));
       showToast('✓ Patient marked as arrived.');
+      loadSupabaseData(true);
     } catch (err) {
       setError(`Failed to mark arrival: ${err.message}`);
     }
@@ -509,15 +609,13 @@ export default function HospitalStaffWorkspace({
 
     try {
       // 1. Update referrals
-      const { error: err } = await supabase
+      await supabase
         .from('referrals')
         .update({ doctor_assigned: doctorName, status: 'Assigned' })
         .eq('id', refId);
 
-      if (err) console.warn('[HospitalStaff] update referrals notice:', err.message);
-
       // 2. Also update care_requests so patient & doctor see it
-      try {
+      if (refId) {
         await supabase
           .from('care_requests')
           .update({
@@ -525,17 +623,29 @@ export default function HospitalStaffWorkspace({
             status: 'ACCEPTED',
             updated_at: new Date().toISOString()
           })
-          .or(`id.eq.${refId},patient_id.eq.${showDoctorRouteModal?.patient_id || ''}`);
-      } catch (_) {}
+          .eq('id', refId);
+      }
+      if (showDoctorRouteModal?.patient_id) {
+        await supabase
+          .from('care_requests')
+          .update({
+            doctor_assigned: doctorName,
+            status: 'ACCEPTED',
+            updated_at: new Date().toISOString()
+          })
+          .eq('patient_id', showDoctorRouteModal.patient_id);
+      }
 
       setReferrals(prev => prev.map(r => r.id === refId ? { ...r, doctor_assigned: doctorName, status: 'Assigned' } : r));
       setSelectedReferral(prev => (prev && prev.id === refId ? { ...prev, doctor_assigned: doctorName, status: 'Assigned' } : prev));
       setShowDoctorRouteModal(null);
       showToast(`✓ Scoped referral updated with assigned specialist: ${doctorName}`);
+      loadSupabaseData(true);
     } catch (err) {
       setError(`Failed to assign specialist: ${err.message}`);
     }
   };
+
 
 
   // Memos for metrics
@@ -776,6 +886,12 @@ export default function HospitalStaffWorkspace({
                             <span className={`text-[9px] font-black px-1.5 py-0.2 rounded ${priorityBg}`}>
                               {ref.priority}
                             </span>
+                            {(ref.slot_preference?.includes('Token') || ref.ai_note?.includes('TOKEN:')) && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-black text-[#008F83] bg-[#E8F7F3] border border-[#008F83]/30 px-2 py-0.5 rounded-md font-mono shadow-2xs">
+                                <Ticket className="w-3 h-3" />
+                                {ref.slot_preference || `Token #${ref.ai_note?.match(/TOKEN:\s*([^|]+)/i)?.[1]?.trim()}`}
+                              </span>
+                            )}
                             {ref.patient_phone && (
                               <a 
                                 href={`tel:${ref.patient_phone}`} 
@@ -804,18 +920,29 @@ export default function HospitalStaffWorkspace({
                             <span>Clinical Case</span>
                           </button>
                           
-                          {ref.status === 'Pending' && (
+                          {ref.status !== 'Completed' && ref.status !== 'COMPLETED' && (
                             <button
                               type="button"
                               onClick={() => handleOpenTokenModal(ref)}
                               className="px-3.5 py-1.5 bg-[#FF9933] hover:bg-[#e68a2e] text-slate-950 font-black text-[11px] rounded-lg transition-colors cursor-pointer flex items-center gap-1 shadow-2xs"
+                              title="Assign Queue Token & Exact Arrival Slot"
                             >
                               <Ticket className="w-3 h-3" />
-                              <span>Assign Token & Slot</span>
+                              <span>{ref.slot_preference?.includes('Token') || ref.ai_note?.includes('TOKEN:') ? 'Edit Token' : 'Assign Token & Slot'}</span>
                             </button>
                           )}
 
-                          {ref.status === 'Accepted' && (
+                          {ref.status === 'Pending' && (
+                            <button
+                              type="button"
+                              onClick={() => handleAcceptReferral(ref.id)}
+                              className="px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white font-black text-[11px] rounded-lg transition-colors cursor-pointer"
+                            >
+                              Accept
+                            </button>
+                          )}
+
+                          {(ref.status === 'Accepted' || ref.status === 'Pending') && (
                             <button
                               type="button"
                               onClick={() => handleMarkArrived(ref.id)}
@@ -825,7 +952,7 @@ export default function HospitalStaffWorkspace({
                             </button>
                           )}
 
-                          {ref.status === 'Arrived' && (
+                          {(ref.status === 'Arrived' || ref.status === 'Accepted') && (
                             <button
                               type="button"
                               onClick={() => setShowDoctorRouteModal(ref)}
@@ -993,13 +1120,22 @@ export default function HospitalStaffWorkspace({
                       className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3"
                       onClick={(e) => e.stopPropagation()}
                     >
-                      {ref.doctor_assigned && (
-                        <div className="text-[10px] font-bold text-slate-500 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-lg">
-                          🩺 Specialist Assigned: <span className="text-slate-900">{ref.doctor_assigned}</span>
-                        </div>
-                      )}
-                      
-                      {!ref.doctor_assigned && <div className="text-[10px] italic text-slate-400">No clinician assigned yet</div>}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {(ref.slot_preference?.includes('Token') || ref.ai_note?.includes('TOKEN:')) && (
+                          <div className="inline-flex items-center gap-1.5 text-xs font-black text-[#008F83] bg-[#E8F7F3] border border-[#008F83]/30 px-2.5 py-1 rounded-lg font-mono">
+                            <Ticket className="w-3.5 h-3.5" />
+                            <span>{ref.slot_preference || `Token #${ref.ai_note?.match(/TOKEN:\s*([^|]+)/i)?.[1]?.trim()}`}</span>
+                          </div>
+                        )}
+
+                        {ref.doctor_assigned && (
+                          <div className="text-[10px] font-bold text-slate-500 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-lg">
+                            🩺 Specialist Assigned: <span className="text-slate-900">{ref.doctor_assigned}</span>
+                          </div>
+                        )}
+                        
+                        {!ref.doctor_assigned && <div className="text-[10px] italic text-slate-400">No clinician assigned yet</div>}
+                      </div>
 
                       <div className="flex items-center gap-2 ml-auto shrink-0">
                         <button
@@ -1012,18 +1148,28 @@ export default function HospitalStaffWorkspace({
                           <span>Clinical Case</span>
                         </button>
 
-                        {ref.status === 'Pending' && (
+                        {ref.status !== 'Completed' && ref.status !== 'COMPLETED' && (
                           <button
                             type="button"
                             onClick={() => handleOpenTokenModal(ref)}
                             className="px-4 py-1.5 bg-[#FF9933] hover:bg-[#e68a2e] text-slate-950 font-black text-xs rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs"
                           >
                             <Ticket className="w-3.5 h-3.5" />
-                            <span>Assign Token & Slot</span>
+                            <span>{ref.slot_preference?.includes('Token') || ref.ai_note?.includes('TOKEN:') ? 'Update Token & Slot' : 'Assign Token & Slot'}</span>
                           </button>
                         )}
 
-                        {ref.status === 'Accepted' && (
+                        {ref.status === 'Pending' && (
+                          <button
+                            type="button"
+                            onClick={() => handleAcceptReferral(ref.id)}
+                            className="px-3.5 py-1.5 bg-teal-600 hover:bg-teal-700 text-white font-black text-xs rounded-xl transition-colors cursor-pointer"
+                          >
+                            Accept
+                          </button>
+                        )}
+
+                        {(ref.status === 'Accepted' || ref.status === 'Pending') && (
                           <button
                             type="button"
                             onClick={() => handleMarkArrived(ref.id)}
@@ -1033,7 +1179,7 @@ export default function HospitalStaffWorkspace({
                           </button>
                         )}
 
-                        {ref.status === 'Arrived' && (
+                        {(ref.status === 'Arrived' || ref.status === 'Accepted') && (
                           <button
                             type="button"
                             onClick={() => setShowDoctorRouteModal(ref)}
@@ -1454,14 +1600,14 @@ export default function HospitalStaffWorkspace({
                 </div>
 
                 <div className="flex items-center gap-2">
-                  {selectedReferral.status === 'Pending' && (
+                  {selectedReferral.status !== 'Completed' && selectedReferral.status !== 'COMPLETED' && (
                     <button
                       type="button"
                       onClick={() => handleOpenTokenModal(selectedReferral)}
                       className="px-4 py-2 bg-[#FF9933] hover:bg-[#e68a2e] text-slate-950 font-black text-xs rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
                     >
                       <Ticket className="w-4 h-4" />
-                      <span>Assign Token & Arrival Slot</span>
+                      <span>{selectedReferral.slot_preference?.includes('Token') || selectedReferral.ai_note?.includes('TOKEN:') ? 'Update Token & Arrival Slot' : 'Assign Token & Arrival Slot'}</span>
                     </button>
                   )}
 
@@ -1638,6 +1784,18 @@ export default function HospitalStaffWorkspace({
                       <span>{slot}</span>
                     </button>
                   ))}
+                </div>
+
+                {/* Custom / Exact Time Slot Input */}
+                <div className="flex items-center gap-2 pt-2">
+                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider shrink-0">Exact Slot:</span>
+                  <input
+                    type="text"
+                    value={assignSlot}
+                    onChange={e => setAssignSlot(e.target.value)}
+                    placeholder="e.g. 10:30 AM – 11:00 AM"
+                    className="flex-1 p-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs text-slate-900 focus:outline-none focus:border-[#008F83]"
+                  />
                 </div>
               </div>
 

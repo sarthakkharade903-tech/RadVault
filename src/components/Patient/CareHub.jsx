@@ -190,50 +190,98 @@ function ReferralCard({ req, lang, onViewRx }) {
         )}
 
         {/* Confirmed Token & Arrival Slot Pass */}
-        {req.status === 'ACCEPTED' && (
-          <div className="mt-3 p-3 bg-gradient-to-r from-[#E8F7F3] to-emerald-50 border border-[#008F83]/40 rounded-2xl space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Ticket className="w-4 h-4 text-[#008F83]" />
-                <span className="text-[10px] font-black uppercase text-[#008F83] tracking-wider">
-                  Verified Digital OPD Pass
-                </span>
+        {(() => {
+          const hasToken = !!(
+            req.asha_notes?.includes('TOKEN:') ||
+            req.slot_preference?.toLowerCase().includes('token') ||
+            req.reason?.toLowerCase().includes('token')
+          );
+          const isScheduled =
+            req.status === 'ACCEPTED' ||
+            req.status === 'Accepted' ||
+            req.status === 'Assigned' ||
+            req.status === 'Arrived' ||
+            hasToken;
+
+          if (!isScheduled && !hasToken) {
+            return (
+              <div className="mt-2.5 p-2.5 bg-amber-50/90 border border-amber-200 rounded-xl flex items-center gap-2 text-xs font-semibold text-amber-900">
+                <Clock className="w-4 h-4 text-amber-600 shrink-0" />
+                <span>Awaiting PHC reception staff to assign your official queue token & staggered arrival time.</span>
               </div>
-              <span className="text-[11px] font-black bg-[#008F83] text-white px-2.5 py-0.5 rounded-md font-mono shadow-2xs">
-                {req.asha_notes?.match(/TOKEN:\s*([^|]+)/i)?.[1]?.trim() || req.reason?.match(/Token:\s*([^\]|]+)/i)?.[1]?.trim() || 'TOKEN ASSIGNED'}
-              </span>
+            );
+          }
+
+          const tokenNum =
+            req.asha_notes?.match(/TOKEN:\s*([^|]+)/i)?.[1]?.trim() ||
+            req.slot_preference?.match(/Token\s*#?([A-Z0-9-]+)/i)?.[1]?.trim() ||
+            req.reason?.match(/Token:\s*([^\]|]+)/i)?.[1]?.trim() ||
+            'SHIR-OPD-042';
+
+          const slotTime =
+            req.asha_notes?.match(/SLOT:\s*([^|]+)/i)?.[1]?.trim() ||
+            (req.slot_preference?.includes('·') ? req.slot_preference.split('·')[1]?.trim() : req.slot_preference) ||
+            '10:30 AM – 11:00 AM';
+
+          const roomCounter =
+            req.asha_notes?.match(/ROOM:\s*([^|]+)/i)?.[1]?.trim() ||
+            (req.doctor_assigned?.includes('(') ? req.doctor_assigned.match(/\(([^)]+)\)/)?.[1]?.trim() : req.doctor_assigned) ||
+            'Counter 2 · General OPD';
+
+          const instruction =
+            req.asha_notes?.match(/INSTRUCTION:\s*([^|]+)/i)?.[1]?.trim() ||
+            'Report directly to your assigned counter with this token for priority triage.';
+
+          return (
+            <div className="mt-3 p-3.5 bg-gradient-to-r from-[#E8F7F3] via-teal-50/40 to-emerald-50 border-2 border-[#008F83]/50 rounded-2xl space-y-2.5 shadow-xs">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-lg bg-[#008F83] text-white flex items-center justify-center shadow-xs">
+                    <Ticket className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-black uppercase text-[#008F83] tracking-wider block">
+                      Verified Digital OPD Pass
+                    </span>
+                    <span className="text-[9px] text-slate-500 font-semibold">Priority Staggered Check-in</span>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className="text-[9px] text-slate-400 font-bold uppercase block">Token Number</span>
+                  <span className="text-xs font-black bg-[#008F83] text-white px-3 py-1 rounded-lg font-mono tracking-wider shadow-2xs">
+                    #{tokenNum}
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-[#008F83]/20">
+                <div className="bg-white/80 p-2 rounded-xl border border-[#008F83]/15">
+                  <span className="text-[9px] text-slate-500 font-bold uppercase block flex items-center gap-1">
+                    <Clock className="w-3 h-3 text-[#008F83]" /> Exact Arrival Window
+                  </span>
+                  <span className="font-black text-slate-900 text-[11px] block mt-0.5">
+                    {slotTime}
+                  </span>
+                </div>
+                <div className="bg-white/80 p-2 rounded-xl border border-[#008F83]/15">
+                  <span className="text-[9px] text-slate-500 font-bold uppercase block flex items-center gap-1">
+                    <Building2 className="w-3 h-3 text-[#008F83]" /> Reporting Counter
+                  </span>
+                  <span className="font-black text-slate-900 text-[11px] block mt-0.5">
+                    {roomCounter}
+                  </span>
+                </div>
+              </div>
+
+              {instruction && (
+                <div className="text-[11px] text-emerald-950 font-semibold bg-white/90 p-2.5 rounded-xl border border-emerald-200/70 flex items-start gap-1.5">
+                  <span className="shrink-0 text-xs">💡</span>
+                  <span className="leading-snug">{instruction}</span>
+                </div>
+              )}
             </div>
-
-            <div className="grid grid-cols-2 gap-2 text-xs pt-1 border-t border-[#008F83]/20">
-              <div>
-                <span className="text-[9px] text-slate-500 font-bold uppercase block">Staggered Arrival Window</span>
-                <span className="font-black text-slate-900">
-                  {req.asha_notes?.match(/SLOT:\s*([^|]+)/i)?.[1]?.trim() || req.slot_preference || '10:30 AM – 11:00 AM'}
-                </span>
-              </div>
-              <div>
-                <span className="text-[9px] text-slate-500 font-bold uppercase block">Reporting Counter</span>
-                <span className="font-black text-slate-900">
-                  {req.asha_notes?.match(/ROOM:\s*([^|]+)/i)?.[1]?.trim() || req.doctor_assigned || 'Counter 2 · General OPD'}
-                </span>
-              </div>
-            </div>
-
-            {req.asha_notes?.match(/INSTRUCTION:\s*([^|]+)/i)?.[1]?.trim() && (
-              <p className="text-[11px] text-emerald-950 font-semibold bg-white/90 p-2 rounded-xl border border-emerald-200/60">
-                💡 {req.asha_notes.match(/INSTRUCTION:\s*([^|]+)/i)[1].trim()}
-              </p>
-            )}
-          </div>
-        )}
-
-        {/* If still waiting for staff token assignment */}
-        {req.status === 'SUBMITTED' && (
-          <div className="mt-2.5 p-2.5 bg-amber-50/90 border border-amber-200 rounded-xl flex items-center gap-2 text-xs font-semibold text-amber-900">
-            <Clock className="w-4 h-4 text-amber-600 shrink-0" />
-            <span>Awaiting PHC reception staff to assign your official queue token & staggered arrival time.</span>
-          </div>
-        )}
+          );
+        })()}
 
 
 
@@ -1268,31 +1316,37 @@ export default function CareHub({ member }) {
   const [selectedRxReq, setSelectedRxReq] = useState(null);
   const [activeFilter, setActiveFilter] = useState("ALL"); // 'ALL' | 'ASHA' | 'DIRECT' | 'TELE'
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (isSilent = false) => {
     if (!member?.id) return;
-    setLoading(true);
+    if (!isSilent) setLoading(true);
     const { data } = await getCareRequests(member.id, member?.name);
     setRequests(data || []);
-    setLoading(false);
+    if (!isSilent) setLoading(false);
   }, [member?.id, member?.name]);
 
   useEffect(() => {
-    load();
+    load(false);
 
-    // Live subscription for care_requests
+    // 1. Live subscription for care_requests
     const channel = supabase
       .channel(`care_requests_sync_${member?.id || "general"}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "care_requests" },
         () => {
-          load();
+          load(true);
         }
       )
       .subscribe();
 
+    // 2. Guaranteed polling fallback (every 3 seconds) for instant token updates
+    const pollInterval = setInterval(() => {
+      load(true);
+    }, 3000);
+
     return () => {
       supabase.removeChannel(channel);
+      clearInterval(pollInterval);
     };
   }, [load, member?.id]);
 
