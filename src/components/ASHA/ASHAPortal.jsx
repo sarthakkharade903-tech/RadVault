@@ -22,7 +22,7 @@ const NAV = [
 ];
 const MAIN_SCREENS = ["home","village","refer","followup","activity","medicine"];
 
-export default function ASHAPortal({ onBack }) {
+export default function ASHAPortal({ onBack, demoMode = false }) {
   const [screen, setScreen]               = useState("home");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [patients, setPatients]           = useState([]);
@@ -148,6 +148,7 @@ export default function ASHAPortal({ onBack }) {
           <ASHAHome
             patients={patients}
             loading={loading}
+            demoMode={demoMode}
             onRefresh={loadData}
             onNavigate={setScreen}
             onOpenAddFamily={() => { setEditingFamily(null); setScreen("add_family"); }}
@@ -169,11 +170,13 @@ export default function ASHAPortal({ onBack }) {
           <ReferralsDashboard
             initialTab={referralInitialTab}
             onBack={() => setScreen("home")}
+            demoMode={demoMode}
           />
         )}
         {screen === "followup" && (
           <FollowUpTracker
             patients={patients}
+            demoMode={demoMode}
             onLogVisit={(p) => {
               setLogVisitPatient(p);
               setLogVisitReturnScreen("followup");

@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { supabase, ensureRoleAuth } from './supabase';
 
 // â”€â”€ ABHA ID Generator â”€â”€
 // Generates a mock 14-digit ABHA number in the format XX-XXXX-XXXX-XXXX
@@ -626,3 +626,172 @@ export async function getMedicineIndents() {
     return { data: [], error: null };
   }
 }
+
+// ── Clinical Patients Bridge (added by samir1) ──
+/**
+ * Ensure a village_patient also exists in the clinical `patients` table.
+ * Creates a minimal record if one does not exist.
+ */
+export async function ensureClinicalPatient(patient) {
+  if (!patient || !patient.id) return null;
+
+  // 1. Check if patient already exists in patients table by exact ID
+  const { data: existing } = await supabase
+    .from('patients')
+    .select('id')
+    .eq('id', patient.id)
+    .maybeSingle();
+
+  if (existing) return existing;
+
+  // 2. Try to find by ABHA ID or mobile
+  if (patient.abha_id || patient.mobile) {
+    const { data: byAbha } = await supabase
+      .from('patients')
+      .select('id')
+      .or(
+        [
+          patient.abha_id ? `abha_id.eq.${patient.abha_id}` : null,
+          patient.mobile ? `mobile.eq.${patient.mobile}` : null
+        ].filter(Boolean).join(',')
+      )
+      .maybeSingle();
+
+    if (byAbha) return byAbha;
+  }
+
+  // 3. Create a new record
+  const payload = {
+    id: patient.id,
+    full_name: patient.name || 'Village Resident',
+    date_of_birth: patient.dob || null,
+    gender: patient.gender || 'Unknown',
+    mobile: patient.mobile || null,
+    abha_id: patient.abha_id || null,
+    blood_group: patient.blood_group || null,
+    village: patient.village || null,
+    created_at: new Date().toISOString(),
+  };
+
+  const { data: created, error } = await supabase
+    .from('patients')
+    .insert([payload])
+    .select('id')
+    .single();
+
+  if (error) {
+    console.warn('[ashaService] ensureClinicalPatient insert error:', error.message);
+    return null;
+  }
+
+  return created;
+}
+
+/**
+ * Fetch all pending doctor follow-ups for village patients.
+ * Looks in encounters with follow_up_recommended_date set and not completed.
+ */
+export async function getDoctorFollowUps() {
+  try {
+    await ensureRoleAuth('asha');
+
+    const { data, error } = await supabase
+      .from('encounters')
+      .select(`
+        id,
+        patient_id,
+        follow_up_recommended_date,
+        follow_up_completed,
+        chief_complaint,
+        assessment,
+        referrals ( id, destination_hospital, priority ),
+        patients ( id, full_name )
+      `)
+      .eq('follow_up_completed', false)
+      .not('follow_up_recommended_date', 'is', null)
+      .order('follow_up_recommended_date', { ascending: true });
+
+    if (error) {
+      console.warn('[ashaService] getDoctorFollowUps error:', error.message);
+      return { data: [], error };
+    }
+
+    let formatted = [];
+    if (data && data.length > 0) {
+      formatted = data.map(c => {
+        const detail = [c.chief_complaint, c.assessment].filter(Boolean).join(' — ');
+        return {
+          id: c.id,
+          encounterId: c.id,
+          patient_id: c.patient_id,
+          patientId: c.patient_id,
+          patients: c.patients,
+          patientName: c.patients?.full_name || 'Village Resident',
+          follow_up_date: c.follow_up_recommended_date,
+          follow_up_reason: detail || 'Doctor specialist follow-up visit required.',
+          priority: c.referrals?.priority || 'HIGH',
+          hospital: c.referrals?.destination_hospital || 'Shrirampur Primary Health Centre'
+        };
+      });
+    } else {
+      // Check consultations table as fallback
+      const { data: consData } = await supabase
+        .from('consultations')
+        .select(`
+          id,
+          patient_id,
+          follow_up_recommended_date,
+          clinical_assessment,
+          diagnosis,
+          treatment_advice,
+          referrals ( id, destination_hospital, priority ),
+          patients ( id, full_name )
+        `)
+        .not('follow_up_recommended_date', 'is', null)
+        .order('follow_up_recommended_date', { ascending: true });
+
+      if (consData && consData.length > 0) {
+        formatted = consData.map(c => {
+          const detail = [c.diagnosis, c.treatment_advice].filter(Boolean).join(' — ');
+          return {
+            id: c.id,
+            encounterId: c.id,
+            patient_id: c.patient_id,
+            patientId: c.patient_id,
+            patients: c.patients,
+            patientName: c.patients?.full_name || 'Village Resident',
+            follow_up_date: c.follow_up_recommended_date,
+            follow_up_reason: detail || 'Doctor specialist follow-up visit required.',
+            priority: c.referrals?.priority || 'HIGH',
+            hospital: c.referrals?.destination_hospital || 'Shrirampur Primary Health Centre'
+          };
+        });
+      }
+    }
+    return { data: formatted, error: null };
+  } catch (err) {
+    console.error('[ashaService] getDoctorFollowUps error:', err);
+    return { data: [], error: err };
+  }
+}
+
+/**
+ * Mark a follow-up encounter or consultation as completed in Supabase.
+ */
+export async function completeFollowUp(encounterOrConsultId, resolutionNote = '') {
+  await ensureRoleAuth('asha');
+  try {
+    await supabase
+      .from('encounters')
+      .update({
+        follow_up_completed: true,
+        follow_up_completed_at: new Date().toISOString(),
+        follow_up_resolution_note: resolutionNote || 'Home visit completed by ASHA worker'
+      })
+      .eq('id', encounterOrConsultId);
+  } catch (e) {
+    console.warn('[ashaService] completeFollowUp encounter update skipped:', e);
+  }
+
+  return { success: true, error: null };
+}

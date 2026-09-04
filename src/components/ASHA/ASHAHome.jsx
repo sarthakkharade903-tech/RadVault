@@ -107,7 +107,9 @@ export default function ASHAHome({
   onRefresh,
   onNavigate,
   onOpenAddFamily,
-  onOpenReferral
+  onOpenAddMember,
+  onOpenReferral,
+  demoMode = false
 }) {
   const [lang, setLang] = useState(() => localStorage.getItem("radvault_asha_lang") || "en");
   const t = HOME_TRANSLATIONS[lang] || HOME_TRANSLATIONS.en;

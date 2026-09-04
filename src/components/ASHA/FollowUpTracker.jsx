@@ -5,6 +5,7 @@ import {
   Send, Loader2, Hospital, MapPin
 } from "lucide-react";
 import { supabase } from "../../services/supabase";
+import { getDoctorFollowUps, completeFollowUp } from "../../services/ashaService";
 
 // ─── Single-Language Clean Translations (Read from global lang) ───────────
 const T = {
@@ -347,12 +348,13 @@ function getDemoItems(t) {
 
 const FILTER_TABS = ["all", "overdue", "dueToday", "upcoming", "done"];
 
-export default function FollowUpTracker({ patients, onLogVisit }) {
+export default function FollowUpTracker({ patients, onLogVisit, onEditPatient, demoMode = false }) {
   const lang = localStorage.getItem("radvault_asha_lang") || "en";
   const t = T[lang] || T.en;
 
   const [activeFilter, setActiveFilter] = useState("all");
   const [careRequests, setCareRequests] = useState([]);
+  const [doctorFollowUps, setDoctorFollowUps] = useState([]);
   const [loadingReferrals, setLoadingReferrals] = useState(true);
 
   const [completedSet, setCompletedSet] = useState(() => {
@@ -365,12 +367,17 @@ export default function FollowUpTracker({ patients, onLogVisit }) {
   const fetchCareRequests = async () => {
     try {
       setLoadingReferrals(true);
-      const { data, error } = await supabase
-        .from("care_requests")
-        .select("*")
-        .order("created_at", { ascending: false });
+      const [careRes, docRes] = await Promise.allSettled([
+        supabase.from("care_requests").select("*").order("created_at", { ascending: false }),
+        getDoctorFollowUps()
+      ]);
 
-      if (data && !error) setCareRequests(data);
+      if (careRes.status === 'fulfilled' && careRes.value.data) {
+        setCareRequests(careRes.value.data);
+      }
+      if (docRes.status === 'fulfilled' && docRes.value?.data) {
+        setDoctorFollowUps(docRes.value.data);
+      }
     } catch (err) {
       console.warn("[FollowUpTracker] Care requests sync notice:", err);
     } finally {
@@ -386,6 +393,9 @@ export default function FollowUpTracker({ patients, onLogVisit }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "care_requests" }, () => {
         fetchCareRequests();
       })
+      .on("postgres_changes", { event: "*", schema: "public", table: "consultations" }, () => {
+        fetchCareRequests();
+      })
       .subscribe();
 
     return () => supabase.removeChannel(channel);
@@ -394,12 +404,33 @@ export default function FollowUpTracker({ patients, onLogVisit }) {
   const allItems = useMemo(() => {
     const routine  = buildRoutineItems(patients || [], t);
     const referral = buildReferralItems(careRequests, t);
-    const combined = [...referral, ...routine];
+
+    const docItems = (doctorFollowUps || []).map(item => {
+      const followUpDate = item.follow_up_date ? new Date(item.follow_up_date) : new Date();
+      const daysDiff = Math.floor((followUpDate - new Date()) / 86400000);
+      return {
+        id: `doc-followup-${item.id}`,
+        encounterId: item.encounterId || item.id,
+        patientId: item.patientId || item.patient_id,
+        patientName: item.patientName,
+        mobile: item.mobile || "",
+        village: item.village || "Shirwal",
+        type: "doctorFollowUp",
+        label: `Specialist Follow-Up: ${item.follow_up_date ? new Date(item.follow_up_date).toLocaleDateString('en-IN') : 'Scheduled'}`,
+        detail: item.follow_up_reason || "Doctor specialist recommended follow-up visit.",
+        urgencyDays: daysDiff <= 0 ? (daysDiff < 0 ? -2 : 0) : 1,
+        actionLabel: t.logVisit,
+        hospital: item.hospital || "PHC",
+        isDoctorFollowUp: true,
+      };
+    });
+
+    const combined = [...referral, ...docItems, ...routine];
 
     if (combined.length === 0) return getDemoItems(t);
     combined.sort((a, b) => a.urgencyDays - b.urgencyDays);
     return combined;
-  }, [patients, careRequests, lang]);
+  }, [patients, careRequests, doctorFollowUps, lang]);
 
   const visibleItems = useMemo(() => {
     if (activeFilter === "done") return allItems.filter(it => completedSet.has(it.id));
@@ -416,11 +447,15 @@ export default function FollowUpTracker({ patients, onLogVisit }) {
     done:     completedSet.size,
     referralPending: allItems.filter(it =>
       !completedSet.has(it.id) &&
-      (it.type === "referralCheck" || it.type === "postTreatment")
+      (it.type === "referralCheck" || it.type === "postTreatment" || it.type === "doctorFollowUp")
     ).length,
   }), [allItems, completedSet]);
 
-  const markDone = (id) => {
+  const markDone = async (id) => {
+    const it = allItems.find(x => x.id === id);
+    if (it && it.isDoctorFollowUp) {
+      await completeFollowUp(it.encounterId);
+    }
     setCompletedSet(prev => {
       const next = new Set(prev);
       next.add(id);

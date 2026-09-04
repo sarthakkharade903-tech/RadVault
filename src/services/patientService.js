@@ -30,7 +30,7 @@ export async function getVitals(patientId) {
   }
 
   const { data, error } = await supabase
-    .from('vitals')
+    .from('vitals_history')
     .select('*')
     .eq('patient_id', patientId)
     .order('recorded_at', { ascending: false });

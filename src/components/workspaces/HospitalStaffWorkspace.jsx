@@ -19,7 +19,7 @@ import {
   ExternalLink,
   Sparkles
 } from 'lucide-react';
-import { supabase } from '../../services/supabase';
+import { supabase, ensureRoleAuth } from '../../services/supabase';
 
 // Canonical Referral Status constants
 const REFERRAL_STATUS = {
@@ -31,10 +31,6 @@ const REFERRAL_STATUS = {
   CANCELLED: 'Cancelled'
 };
 
-const DEFAULT_STAFF_CREDS = {
-  email: 'myanawar5243d@gmail.com',
-  password: 'Samir@135'
-};
 
 // Initial Demo/Mock Data for standalone testing in Demo Mode
 const DEMO_DOCTORS = [
@@ -114,7 +110,6 @@ const INITIAL_DEMO_REFERRALS = [
 ];
 
 export default function HospitalStaffWorkspace({ 
-  user: propUser = null,
   isDemoMode = false,
   demoDataEnabled = true,
   onBack,
@@ -142,42 +137,36 @@ export default function HospitalStaffWorkspace({
   const [showDoctorRouteModal, setShowDoctorRouteModal] = useState(null); // holds referral object
 
   // Fetch real data from Supabase
-  const loadSupabaseData = useCallback(async () => {
-    setLoading(true);
+  const loadSupabaseData = useCallback(async (isSilent = false) => {
+    if (!isSilent) setLoading(true);
     setError('');
 
+    if (isDemoMode) {
+      setStaffProfile({
+        name: 'Sagar Deshpande (Operations Desk)',
+        phc_name: 'Shrirampur Primary Health Centre'
+      });
+      setFacility({
+        id: 'f1111111-1111-1111-1111-111111111111',
+        name: 'Shrirampur Primary Health Centre',
+        district: 'Ahmednagar'
+      });
+      setDoctors(DEMO_DOCTORS);
+      setReferrals(demoDataEnabled ? INITIAL_DEMO_REFERRALS : []);
+      if (!isSilent) setLoading(false);
+      return;
+    }
+
     try {
-      let activeUser = propUser;
+      // 1. Ensure authenticated session for Hospital Receptionist
+      await ensureRoleAuth('reception');
+      const { data: { user: activeUser } } = await supabase.auth.getUser();
+
       if (!activeUser) {
-        const { data: { user: currentUser } } = await supabase.auth.getUser();
-        if (currentUser && currentUser.email === DEFAULT_STAFF_CREDS.email) {
-          activeUser = currentUser;
-        }
-      }
-      if (!activeUser && !isDemoMode) {
-        const { data: authData, error: authErr } = await supabase.auth.signInWithPassword(DEFAULT_STAFF_CREDS);
-        if (!authErr && authData?.user) {
-          activeUser = authData.user;
-        }
+        throw new Error('Authentication failed for Hospital Reception staff. Please check Supabase credentials.');
       }
 
-      if (!activeUser || isDemoMode) {
-        setStaffProfile({
-          name: 'Sagar Deshpande (Operations Desk)',
-          phc_name: 'Shrirampur Primary Health Centre'
-        });
-        setFacility({
-          id: 'f1111111-1111-1111-1111-111111111111',
-          name: 'Shrirampur Primary Health Centre',
-          district: 'Ahmednagar'
-        });
-        setDoctors(DEMO_DOCTORS);
-        setReferrals(demoDataEnabled ? INITIAL_DEMO_REFERRALS : []);
-        setLoading(false);
-        return;
-      }
-
-      // 1. Fetch Hospital Staff Profile and Facility
+      // 2. Fetch Hospital Staff Profile and Facility
       const { data: staffData, error: staffErr } = await supabase
         .from('hospital_staff')
         .select('*, facilities(*)')
@@ -192,14 +181,14 @@ export default function HospitalStaffWorkspace({
       let resolvedStaffName = staffData?.name;
 
       if (!staffData) {
-        // Graceful fallback for staff accounts without a direct hospital_staff row
-        console.warn('[RADVAULT] No direct hospital_staff row for user. Querying default facility...');
-        const { data: defaultFac } = await supabase
+        const { data: defaultFac, error: facErr } = await supabase
           .from('facilities')
           .select('*')
           .order('name', { ascending: true })
           .limit(1)
           .maybeSingle();
+
+        if (facErr) throw facErr;
 
         if (defaultFac) {
           resolvedFacilityId = defaultFac.id;
@@ -225,7 +214,7 @@ export default function HospitalStaffWorkspace({
         district: resolvedFacilityDistrict || 'District'
       });
 
-      // 2. Fetch Scoped Doctors for this Facility
+      // 3. Fetch Scoped Doctors for this Facility
       const { data: doctorsData, error: docErr } = await supabase
         .from('doctors')
         .select('*')
@@ -234,16 +223,16 @@ export default function HospitalStaffWorkspace({
       if (docErr) throw docErr;
       setDoctors(doctorsData || []);
 
-      // 3. Fetch Scoped Referrals (matching by facility_id OR destination hospital name)
+      // 4. Fetch Scoped Referrals
       const { data: refData, error: refErr } = await supabase
         .from('referrals')
         .select('*')
-        .or(`destination_facility_id.eq.${resolvedFacilityId},destination_hospital.ilike.%${resolvedFacilityName.split(' ')[0]}%`)
+        .or(`destination_facility_id.eq.${resolvedFacilityId},destination_hospital.ilike.%${(resolvedFacilityName || 'Shrirampur').split(' ')[0]}%`)
         .order('created_at', { ascending: false });
 
       if (refErr) throw refErr;
 
-      // 4. Enrich referrals with patients' human-readable unified_id (MH-P-xxxxx)
+      // 5. Enrich referrals with patients' human-readable unified_id (MH-P-xxxxx)
       const rawRefs = refData || [];
       const patientIds = Array.from(new Set(rawRefs.map(r => r.patient_id).filter(Boolean)));
       
@@ -277,59 +266,32 @@ export default function HospitalStaffWorkspace({
         };
       });
 
-      console.log(`[RADVAULT][PHC_REFERRAL_LOAD] User: ${activeUser?.id}, Facility: ${resolvedFacilityId} (${resolvedFacilityName}), Referrals: ${enrichedRefs.length}`);
       setReferrals(enrichedRefs);
 
     } catch (err) {
       console.error('[RADVAULT][PHC_REFERRAL_LOAD] Data load error:', err.message);
-      setError('Unable to load referrals and facility data. Please check network and retry.');
+      setError(`Unable to load live referrals: ${err.message}`);
       setReferrals([]);
+      setDoctors([]);
     } finally {
-      setLoading(false);
+      if (!isSilent) setLoading(false);
     }
-  }, [propUser, isDemoMode, demoDataEnabled]);
+  }, [isDemoMode, demoDataEnabled]);
 
   // Load Initial Data & Real-time subscription
   useEffect(() => {
-    if (isDemoMode) {
-      if (demoDataEnabled) {
-        setStaffProfile({
-          name: 'Sagar Deshpande (Operations Desk)',
-          phc_name: 'Shrirampur Primary Health Centre'
-        });
-        setFacility({
-          id: 'f1111111-1111-1111-1111-111111111111',
-          name: 'Shrirampur Primary Health Centre',
-          district: 'Ahmednagar'
-        });
-        setDoctors(DEMO_DOCTORS);
-        setReferrals(INITIAL_DEMO_REFERRALS);
-      } else {
-        setStaffProfile({
-          name: 'Demo Staff Desk',
-          phc_name: 'Prototype Workspace'
-        });
-        setFacility({
-          id: 'demo-fac',
-          name: 'Prototype Health Centre',
-          district: 'Maharashtra'
-        });
-        setDoctors(DEMO_DOCTORS);
-        setReferrals([]);
-      }
-      setLoading(false);
-    } else {
-      loadSupabaseData();
+    loadSupabaseData(false);
 
+    if (!isDemoMode) {
       const channel = supabase.channel('staff_referrals_live')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'referrals' }, () => {
-          loadSupabaseData();
+          loadSupabaseData(true);
         })
         .subscribe();
 
       const interval = setInterval(() => {
-        loadSupabaseData();
-      }, 15000);
+        loadSupabaseData(true);
+      }, 30000);
 
       return () => {
         supabase.removeChannel(channel);
@@ -345,15 +307,8 @@ export default function HospitalStaffWorkspace({
   };
 
   const handleRefresh = async () => {
-    if (isDemoMode) {
-      if (demoDataEnabled) {
-        setReferrals(INITIAL_DEMO_REFERRALS);
-      }
-      showToast('✓ Demo referrals queue refreshed.');
-      return;
-    }
     await loadSupabaseData();
-    showToast('✓ Live referrals queue updated.');
+    showToast(isDemoMode ? '✓ Demo referrals queue refreshed.' : '✓ Live referrals queue updated.');
   };
 
   // ─── STATUS TRANSITIONS ───
@@ -532,9 +487,17 @@ export default function HospitalStaffWorkspace({
       </div>
 
       {error && (
-        <div className="p-4 bg-rose-50 border border-rose-200 text-xs text-rose-700 font-bold rounded-2xl flex items-start gap-2.5">
-          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-          <div>{error}</div>
+        <div className="p-4 bg-rose-50 border border-rose-200 text-xs text-rose-700 font-bold rounded-2xl flex items-center justify-between gap-2.5">
+          <div className="flex items-start gap-2.5">
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+            <div>{error}</div>
+          </div>
+          <button
+            onClick={handleRefresh}
+            className="px-3 py-1 bg-rose-100 hover:bg-rose-200 text-rose-800 rounded-lg text-xs font-bold transition-colors cursor-pointer shrink-0"
+          >
+            Retry
+          </button>
         </div>
       )}
 

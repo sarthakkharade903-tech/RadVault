@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { UserCircle2, Search, Loader2, Plus, UserPlus, Heart, Baby, Shield } from 'lucide-react';
+import { UserCircle2, Search, Loader2, Plus, UserPlus, Heart, Baby, Shield, AlertTriangle, RefreshCw } from 'lucide-react';
 import { getVillagePatients } from '../../../services/ashaService';
 
 const FALLBACK_PATIENTS = [
@@ -9,40 +9,51 @@ const FALLBACK_PATIENTS = [
   { id: 'e9c11104-46d0-4b4d-8df0-9d9ce11a6a73', name: 'Ramesh Patil', gender: 'Male', age_years: 42, relation_to_head: 'Self', village: 'Shirwal' }
 ];
 
-export default function PatientSelectScreen({ onSelect, onSelectPatient }) {
+export default function PatientSelectScreen({ onSelect, onSelectPatient, demoMode = false }) {
   const handleSelection = onSelectPatient || onSelect;
 
   const [patients, setPatients] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [customName, setCustomName] = useState('');
-  const [showAddCustom, setShowAddCustom] = useState(false);
+
+  const loadPatients = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const { data, error: fetchErr } = await getVillagePatients();
+      if (fetchErr) throw fetchErr;
+      if (data && data.length > 0) {
+        setPatients(data);
+      } else if (demoMode) {
+        setPatients(FALLBACK_PATIENTS);
+      } else {
+        setPatients([]);
+      }
+    } catch (e) {
+      console.error("Error loading village patients:", e);
+      if (demoMode) {
+        setPatients(FALLBACK_PATIENTS);
+      } else {
+        setError(`Failed to load registered patients: ${e.message || 'Database error'}`);
+        setPatients([]);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    async function load() {
-      try {
-        const { data } = await getVillagePatients();
-        if (data && data.length > 0) {
-          setPatients(data);
-        } else {
-          setPatients(FALLBACK_PATIENTS);
-        }
-      } catch (e) {
-        console.warn("Using fallback patients:", e);
-        setPatients(FALLBACK_PATIENTS);
-      } finally {
-        setLoading(false);
-      }
-    }
-    load();
-  }, []);
+    loadPatients();
+  }, [demoMode]);
 
   const filtered = patients.filter(p => p.name?.toLowerCase().includes(search.toLowerCase()));
 
   const handleSelectCustom = () => {
     if (!customName.trim()) return;
     const newPat = {
-      id: `pat-${Date.now()}`,
+      id: crypto.randomUUID(),
       name: customName.trim(),
       gender: 'Other',
       age_years: 30,
@@ -93,6 +104,21 @@ export default function PatientSelectScreen({ onSelect, onSelectPatient }) {
           <span>Refer</span>
         </button>
       </div>
+
+      {error && (
+        <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" />
+            <span>{error}</span>
+          </div>
+          <button
+            onClick={loadPatients}
+            className="px-2.5 py-1 bg-red-100 hover:bg-red-200 text-red-800 rounded-lg font-bold flex items-center gap-1 cursor-pointer transition-colors"
+          >
+            <RefreshCw className="w-3 h-3" /> Retry
+          </button>
+        </div>
+      )}
 
       {loading ? (
         <div className="py-8 flex justify-center">

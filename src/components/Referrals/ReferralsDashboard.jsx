@@ -4,7 +4,7 @@ import TriageForm from './TriageForm';
 import { supabase } from '../../services/supabase';
 import { Plus, ListFilter, Handshake, CheckCircle2, ArrowLeft } from 'lucide-react';
 
-export default function ReferralsDashboard({ onBack, initialTab = 'list' }) {
+export default function ReferralsDashboard({ onBack, initialTab = 'list', demoMode = false }) {
   const [activeTab, setActiveTab] = useState(initialTab || 'list'); // 'new' | 'list'
   const [referrals, setReferrals] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -178,6 +178,7 @@ export default function ReferralsDashboard({ onBack, initialTab = 'list' }) {
           <TriageForm
             onSubmit={handleNewReferral}
             onCancel={() => setActiveTab('list')}
+            demoMode={demoMode}
           />
         ) : (
           <ReferralList
