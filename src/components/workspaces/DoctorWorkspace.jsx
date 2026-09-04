@@ -503,7 +503,7 @@ export default function DoctorWorkspace({
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3">
-        <Loader2 className="w-9 h-9 animate-spin text-[#800000]" />
+        <Loader2 className="w-9 h-9 animate-spin text-[#7C3AED]" />
         <p className="text-xs font-black text-slate-500 uppercase tracking-widest">Loading Clinical Specialist Workspace...</p>
       </div>
     );
@@ -525,7 +525,7 @@ export default function DoctorWorkspace({
               </button>
             )}
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-xl bg-[#FDF2F2] border border-[#800000]/30 flex items-center justify-center text-[#800000] font-black text-sm">
+              <div className="w-8 h-8 rounded-xl bg-[#F5F3FF] border border-[#7C3AED]/30 flex items-center justify-center text-[#7C3AED] font-black text-sm">
                 🩺
               </div>
               <div>
@@ -538,14 +538,14 @@ export default function DoctorWorkspace({
           <div className="flex items-center gap-3">
             <div className="hidden sm:flex flex-col text-right">
               <span className="text-xs font-black text-slate-900">{doctorProfile?.name || 'Dr. Arvind Kulkarni'}</span>
-              <span className="text-[10px] font-bold text-[#800000]">{doctorProfile?.facility_name || 'Shrirampur PHC'}</span>
+              <span className="text-[10px] font-bold text-[#7C3AED]">{doctorProfile?.facility_name || 'Shrirampur PHC'}</span>
             </div>
             <button
               onClick={loadDoctorDbData}
               className="p-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-slate-600 transition-colors cursor-pointer"
               title="Refresh Clinical Queue"
             >
-              <RefreshCw className="w-4 h-4 text-[#800000]" />
+              <RefreshCw className="w-4 h-4 text-[#7C3AED]" />
             </button>
           </div>
         </div>
@@ -562,7 +562,7 @@ export default function DoctorWorkspace({
           <div className="space-y-6">
             <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="flex items-start gap-4">
-                <div className="w-14 h-14 bg-[#FDF2F2] border border-[#800000]/30 rounded-2xl flex items-center justify-center text-2xl shrink-0 shadow-inner">
+                <div className="w-14 h-14 bg-[#F5F3FF] border border-[#7C3AED]/30 rounded-2xl flex items-center justify-center text-2xl shrink-0 shadow-inner">
                   🩺
                 </div>
                 <div>
@@ -577,7 +577,7 @@ export default function DoctorWorkspace({
                   <p className="text-xs text-slate-500 font-bold mt-1 flex items-center gap-2 flex-wrap">
                     <span>📍 {doctorProfile?.facility_name || 'Shrirampur Primary Health Centre'}</span>
                     <span>·</span>
-                    <span className="text-[#800000]">{doctorProfile?.specialty || 'General Medicine'}</span>
+                    <span className="text-[#7C3AED]">{doctorProfile?.specialty || 'General Medicine'}</span>
                   </p>
                 </div>
               </div>
@@ -585,7 +585,7 @@ export default function DoctorWorkspace({
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => { setActiveTab('cases'); setQueueFilter('Active'); }}
-                  className="px-4 py-2 bg-[#800000] hover:bg-[#660000] text-white font-black text-xs rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
+                  className="px-4 py-2 bg-[#7C3AED] hover:bg-[#6D28D9] text-white font-black text-xs rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
                 >
                   <Inbox className="w-4 h-4" />
                   <span>Assigned Cases ({counts.waiting})</span>
@@ -621,7 +621,7 @@ export default function DoctorWorkspace({
                   }}
                   className={`px-4 py-2 font-black border-b-2 transition-colors cursor-pointer ${
                     activeTab === tab.key
-                      ? 'border-[#800000] text-[#800000]'
+                      ? 'border-[#7C3AED] text-[#7C3AED]'
                       : 'border-transparent text-slate-500 hover:text-slate-900'
                   }`}
                 >
@@ -635,7 +635,7 @@ export default function DoctorWorkspace({
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div 
                     onClick={() => { setActiveTab('cases'); setQueueFilter('Active'); }}
-                    className="p-5 bg-white border border-slate-200 hover:border-[#800000]/60 rounded-2xl cursor-pointer transition-colors space-y-1 shadow-2xs"
+                    className="p-5 bg-white border border-slate-200 hover:border-[#7C3AED]/60 rounded-2xl cursor-pointer transition-colors space-y-1 shadow-2xs"
                   >
                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Assigned / Waiting</span>
                     <div className="flex items-baseline gap-2">
@@ -671,7 +671,7 @@ export default function DoctorWorkspace({
                   <div className="bg-slate-900 text-white rounded-3xl p-6 border border-slate-800 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-5">
                     <div className="space-y-2">
                       <div className="flex items-center gap-2">
-                        <span className="text-[9px] uppercase font-black tracking-wider bg-[#800000] text-rose-100 px-2.5 py-0.5 rounded-full border border-[#800000]/50 animate-pulse">
+                        <span className="text-[9px] uppercase font-black tracking-wider bg-[#7C3AED] text-purple-100 px-2.5 py-0.5 rounded-full border border-[#7C3AED]/50 animate-pulse">
                           ⚡ Immediate Case Ready
                         </span>
                         <span className="text-xs font-bold text-slate-400">Status: {nextPatient.status}</span>
@@ -691,7 +691,7 @@ export default function DoctorWorkspace({
 
                     <button
                       onClick={() => handleOpenCase(nextPatient)}
-                      className="px-6 py-3 bg-[#800000] hover:bg-[#660000] text-white font-black text-xs rounded-2xl shadow-lg transition-transform active:scale-95 flex items-center justify-center gap-2 cursor-pointer shrink-0"
+                      className="px-6 py-3 bg-[#7C3AED] hover:bg-[#6D28D9] text-white font-black text-xs rounded-2xl shadow-lg transition-transform active:scale-95 flex items-center justify-center gap-2 cursor-pointer shrink-0"
                     >
                       <Stethoscope className="w-4 h-4" />
                       <span>Open Clinical Case</span>
@@ -738,7 +738,7 @@ export default function DoctorWorkspace({
                               {ref.status !== 'Completed' ? (
                                 <button
                                   onClick={() => handleOpenCase(ref)}
-                                  className="px-4 py-1.5 bg-[#800000] hover:bg-[#660000] text-white font-black text-xs rounded-xl transition-colors cursor-pointer flex items-center gap-1"
+                                  className="px-4 py-1.5 bg-[#7C3AED] hover:bg-[#6D28D9] text-white font-black text-xs rounded-xl transition-colors cursor-pointer flex items-center gap-1"
                                 >
                                   <Stethoscope className="w-3.5 h-3.5" />
                                   <span>Open Case</span>
@@ -775,7 +775,7 @@ export default function DoctorWorkspace({
                         onClick={() => setQueueFilter(btn.key)}
                         className={`px-3.5 py-1.5 rounded-xl font-extrabold text-xs shrink-0 transition-colors cursor-pointer ${
                           queueFilter === btn.key
-                            ? 'bg-[#800000] text-white shadow-xs'
+                            ? 'bg-[#7C3AED] text-white shadow-xs'
                             : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
                         }`}
                       >
@@ -791,7 +791,7 @@ export default function DoctorWorkspace({
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       placeholder="Search by patient, ID, doctor..."
-                      className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 outline-none focus:border-[#800000]"
+                      className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 outline-none focus:border-[#7C3AED]"
                     />
                   </div>
                 </div>
@@ -819,7 +819,7 @@ export default function DoctorWorkspace({
                                 {ref.priority_label || ref.priority}
                               </span>
                               {ref.doctor_assigned && (
-                                <span className="text-[10px] font-bold text-[#800000] bg-[#FDF2F2] px-2 py-0.5 rounded border border-[#800000]/20">
+                                <span className="text-[10px] font-bold text-[#7C3AED] bg-[#F5F3FF] px-2 py-0.5 rounded border border-[#7C3AED]/20">
                                   🩺 {ref.doctor_assigned}
                                 </span>
                               )}
@@ -857,7 +857,7 @@ export default function DoctorWorkspace({
                             {ref.status !== 'Completed' ? (
                               <button
                                 onClick={() => handleOpenCase(ref)}
-                                className="px-4 py-2 bg-[#800000] hover:bg-[#660000] text-white font-black text-xs rounded-xl transition-colors cursor-pointer ml-auto flex items-center gap-1.5"
+                                className="px-4 py-2 bg-[#7C3AED] hover:bg-[#6D28D9] text-white font-black text-xs rounded-xl transition-colors cursor-pointer ml-auto flex items-center gap-1.5"
                               >
                                 <Stethoscope className="w-3.5 h-3.5" />
                                 <span>Open Clinical Case</span>
@@ -888,7 +888,7 @@ export default function DoctorWorkspace({
             <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-2xs flex items-start justify-between gap-4">
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-[9px] uppercase font-black tracking-wider bg-[#800000] text-rose-100 px-2.5 py-0.5 rounded">
+                  <span className="text-[9px] uppercase font-black tracking-wider bg-[#7C3AED] text-purple-100 px-2.5 py-0.5 rounded">
                     Clinical Examination Mode
                   </span>
                   <span className="text-xs font-mono text-slate-400 font-bold">Case ID: {activeCase.id}</span>
@@ -901,7 +901,7 @@ export default function DoctorWorkspace({
                   </span>
                 </div>
                 <h2 className="text-lg font-black text-slate-900 mt-1.5">{activeCase.patient_name}</h2>
-                <p className="text-xs text-[#800000] font-bold mt-0.5">
+                <p className="text-xs text-[#7C3AED] font-bold mt-0.5">
                   {activeCase.destination_department} Specialist Consultation · Assigned: {activeCase.doctor_assigned || doctorProfile?.name}
                 </p>
               </div>
@@ -938,7 +938,7 @@ export default function DoctorWorkspace({
               </div>
               <div className="h-0.5 bg-slate-200 flex-1 min-w-[20px]" />
               <div className="flex items-center gap-2 shrink-0 text-slate-900">
-                <span className="w-5 h-5 rounded-full bg-[#800000] text-white flex items-center justify-center text-[10px] animate-pulse">3</span>
+                <span className="w-5 h-5 rounded-full bg-[#7C3AED] text-white flex items-center justify-center text-[10px] animate-pulse">3</span>
                 <span>Doctor Consultation</span>
               </div>
               <div className="h-0.5 bg-slate-200 flex-1 min-w-[20px]" />
@@ -1011,7 +1011,7 @@ export default function DoctorWorkspace({
                   
                   {historyLoading ? (
                     <div className="py-6 text-center text-xs text-slate-400 font-medium flex items-center justify-center gap-2">
-                      <Loader2 className="w-4 h-4 animate-spin text-[#800000]" />
+                      <Loader2 className="w-4 h-4 animate-spin text-[#7C3AED]" />
                       <span>Loading longitudinal health timeline...</span>
                     </div>
                   ) : !hasConsent ? (
@@ -1079,7 +1079,7 @@ export default function DoctorWorkspace({
                           onClick={() => setConsultationMode('IN_PERSON')}
                           className={`p-3 rounded-xl border text-xs font-extrabold flex items-center justify-center gap-2 transition-all cursor-pointer ${
                             consultationMode === 'IN_PERSON'
-                              ? 'bg-white border-[#800000] text-[#800000] shadow-xs'
+                              ? 'bg-white border-[#7C3AED] text-[#7C3AED] shadow-xs'
                               : 'bg-slate-100/70 border-transparent text-slate-500 hover:bg-white'
                           }`}
                         >
@@ -1092,7 +1092,7 @@ export default function DoctorWorkspace({
                           onClick={() => setConsultationMode('TELECONSULTATION')}
                           className={`p-3 rounded-xl border text-xs font-extrabold flex items-center justify-center gap-2 transition-all cursor-pointer ${
                             consultationMode === 'TELECONSULTATION'
-                              ? 'bg-white border-[#800000] text-[#800000] shadow-xs'
+                              ? 'bg-white border-[#7C3AED] text-[#7C3AED] shadow-xs'
                               : 'bg-slate-100/70 border-transparent text-slate-500 hover:bg-white'
                           }`}
                         >
@@ -1111,7 +1111,7 @@ export default function DoctorWorkspace({
                         value={clinicalAssessment}
                         onChange={(e) => setClinicalAssessment(e.target.value)}
                         placeholder="e.g. Chest clear on auscultation, regular heart sounds S1S2 present, no pedal edema, abdominal examination soft non-tender..."
-                        className="w-full border border-slate-200 rounded-xl p-3 text-xs font-medium text-slate-900 bg-white outline-none focus:border-[#800000] leading-relaxed"
+                        className="w-full border border-slate-200 rounded-xl p-3 text-xs font-medium text-slate-900 bg-white outline-none focus:border-[#7C3AED] leading-relaxed"
                       />
                     </div>
 
@@ -1124,7 +1124,7 @@ export default function DoctorWorkspace({
                         value={diagnosis}
                         onChange={(e) => setDiagnosis(e.target.value)}
                         placeholder="e.g. Acute Upper Respiratory Tract Infection / Mild Bronchitis"
-                        className="w-full border border-slate-200 rounded-xl p-3 text-xs font-bold text-slate-900 bg-white outline-none focus:border-[#800000]"
+                        className="w-full border border-slate-200 rounded-xl p-3 text-xs font-bold text-slate-900 bg-white outline-none focus:border-[#7C3AED]"
                       />
                     </div>
 
@@ -1137,7 +1137,7 @@ export default function DoctorWorkspace({
                         value={treatmentAdvice}
                         onChange={(e) => setTreatmentAdvice(e.target.value)}
                         placeholder="e.g. Adequate hydration, warm saline gargles, steam inhalation, rest for 3 days. Return immediately if high fever or breathlessness occurs."
-                        className="w-full border border-slate-200 rounded-xl p-3 text-xs font-medium text-slate-900 bg-white outline-none focus:border-[#800000] leading-relaxed"
+                        className="w-full border border-slate-200 rounded-xl p-3 text-xs font-medium text-slate-900 bg-white outline-none focus:border-[#7C3AED] leading-relaxed"
                       />
                     </div>
 
@@ -1233,7 +1233,7 @@ export default function DoctorWorkspace({
 
                     <div className="space-y-3 bg-slate-50/60 p-4 border border-slate-200 rounded-2xl">
                       <div className="flex items-center justify-between">
-                        <label className="text-xs font-black uppercase text-[#800000] tracking-wide block">
+                        <label className="text-xs font-black uppercase text-[#7C3AED] tracking-wide block">
                           Frontline ASHA Follow-Up Loop
                         </label>
                         <span className="text-[10px] uppercase font-bold text-slate-400">
@@ -1279,7 +1279,7 @@ export default function DoctorWorkspace({
                         }
                         setShowSignModal(true);
                       }}
-                      className="px-6 py-2.5 bg-[#800000] hover:bg-[#660000] text-white font-black text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition-transform active:scale-95 cursor-pointer"
+                      className="px-6 py-2.5 bg-[#7C3AED] hover:bg-[#6D28D9] text-white font-black text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition-transform active:scale-95 cursor-pointer"
                     >
                       <CheckCircle className="w-4 h-4" />
                       <span>Sign Consultation</span>
@@ -1344,7 +1344,7 @@ export default function DoctorWorkspace({
 
               {followUpDate && (
                 <div className="pt-2.5">
-                  <span className="text-[10px] text-[#800000] block font-black uppercase">ASHA Home Visit Follow-up</span>
+                  <span className="text-[10px] text-[#7C3AED] block font-black uppercase">ASHA Home Visit Follow-up</span>
                   <span className="text-slate-900">Scheduled for {new Date(followUpDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
                 </div>
               )}
@@ -1362,7 +1362,7 @@ export default function DoctorWorkspace({
               <button
                 type="button"
                 onClick={handleSignConsultation}
-                className="px-5 py-2.5 bg-[#800000] hover:bg-[#660000] text-white font-black text-xs rounded-xl shadow-xs cursor-pointer transition-colors"
+                className="px-5 py-2.5 bg-[#7C3AED] hover:bg-[#6D28D9] text-white font-black text-xs rounded-xl shadow-xs cursor-pointer transition-colors"
               >
                 Sign & Finalize
               </button>
