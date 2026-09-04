@@ -228,38 +228,59 @@ export async function getCareRequests(patientId) {
 export async function createCareRequest(payload) {
   // Ensure ASHA worker is authenticated for Supabase RLS
   try {
-    const { data: { user: currentUser } } = await supabase.auth.getUser();
-    if (!currentUser || currentUser.email !== 'somu5243d@gmail.com') {
-      await supabase.auth.signInWithPassword({
-        email: 'somu5243d@gmail.com',
-        password: 'Samir@7498'
-      });
-    }
+    await ensureRoleAuth('asha');
   } catch (authErr) {
     console.warn('[ashaService] Auth check warning:', authErr);
   }
 
+  // 1. Sanitize payload strictly for care_requests table columns
+  // care_requests table has ONLY: id, patient_id, patient_name, source, created_by, facility, department, slot_preference, appointment_date, doctor_assigned, priority, reason, asha_notes, status, created_at, updated_at, completed_at
+  const careRequestRecord = {
+    patient_id: payload.patient_id || null,
+    patient_name: payload.patient_name || 'Village Patient',
+    source: payload.source || 'ASHA_REFERRED',
+    created_by: payload.created_by || 'ASHA Worker (Priya Deshmukh)',
+    facility: payload.facility || payload.destination_hospital || 'Primary Health Centre',
+    department: payload.department || 'General Medicine',
+    slot_preference: payload.slot_preference || null,
+    appointment_date: payload.appointment_date || null,
+    doctor_assigned: payload.doctor_assigned || null,
+    priority: payload.priority || 'ROUTINE',
+    reason: payload.reason || payload.asha_notes || 'Referred for specialist evaluation',
+    asha_notes: payload.asha_notes || payload.reason || '',
+    status: 'SUBMITTED',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  };
+
   const { data, error } = await supabase
     .from('care_requests')
-    .insert([{ ...payload, status: 'SUBMITTED', created_at: new Date().toISOString(), updated_at: new Date().toISOString() }])
+    .insert([careRequestRecord])
     .select()
     .single();
 
-  // Also bridge to public.referrals for Hospital Staff & Doctor specialist pipeline
+  if (error) {
+    console.error('[ashaService] care_requests insert error:', error);
+  }
+
+  // 2. Also bridge to public.referrals for Hospital Staff & Doctor specialist pipeline
   try {
     const isHigh = payload.priority === 'URGENT' || payload.priority === 'HIGH' || payload.priority === 'RED';
     const isMedium = payload.priority === 'MEDIUM' || payload.priority === 'ORANGE';
     const normalizedPriority = isHigh ? 'HIGH' : isMedium ? 'ORANGE' : 'GREEN';
     const priorityLabel = isHigh ? '🔴 Emergency / Immediate Attention' : isMedium ? '🟡 Urgent / Within 24 Hours' : '🟢 Routine / Local Care';
 
-    const facilityId = payload.destination_facility_id || 'f1111111-1111-1111-1111-111111111111';
-    const hospitalName = payload.facility || 'Shrirampur Primary Health Centre';
+    const isValidUuid = (val) => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+    const facilityId = (payload.destination_facility_id && isValidUuid(payload.destination_facility_id))
+      ? payload.destination_facility_id
+      : 'f1111111-1111-1111-1111-111111111111';
+    const hospitalName = payload.facility || payload.destination_hospital || 'Shrirampur Primary Health Centre';
 
     // Bridge patient_id to public.patients table to satisfy RLS foreign-key/village policy
     let targetPatientId = payload.patient_id;
     let patientFound = false;
 
-    if (targetPatientId) {
+    if (targetPatientId && isValidUuid(targetPatientId)) {
       const { data: ptById } = await supabase
         .from('patients')
         .select('id, unified_id')
@@ -268,6 +289,8 @@ export async function createCareRequest(payload) {
       if (ptById) {
         patientFound = true;
       }
+    } else {
+      targetPatientId = null;
     }
 
     if (!patientFound) {
@@ -288,7 +311,7 @@ export async function createCareRequest(payload) {
         const newPatientPayload = {
           unified_id: newUnifiedId,
           full_name: payload.patient_name || 'Village Resident',
-          age: payload.age || 30,
+          age: Number(payload.age) || 30,
           gender: payload.gender || 'Unknown',
           blood_group: payload.blood_group || null,
           phone_number: payload.phone || '9876543210',
@@ -311,7 +334,7 @@ export async function createCareRequest(payload) {
     const referralData = {
       patient_id: targetPatientId,
       patient_name: payload.patient_name || 'Village Patient',
-      created_by: payload.created_by || 'ASHA Worker (Sunita Deshmukh)',
+      created_by: payload.created_by || 'ASHA Worker (Priya Deshmukh)',
       destination_hospital: hospitalName,
       destination_facility_id: facilityId,
       destination_department: payload.department || 'General Medicine',
@@ -319,14 +342,18 @@ export async function createCareRequest(payload) {
       priority: normalizedPriority,
       priority_label: priorityLabel,
       status: 'Pending',
-      symptoms: payload.reason || payload.asha_notes || 'Referred by frontline ASHA',
+      symptoms: payload.reason || payload.asha_notes || 'Referred by frontline ASHA for medical care',
       vitals: payload.vitals || null,
       ai_note: payload.ai_note || payload.reason || null
     };
 
-    await supabase
+    const { error: refInsertErr } = await supabase
       .from('referrals')
       .insert([referralData]);
+
+    if (refInsertErr) {
+      console.warn('[ashaService] Referral bridge insert notice:', refInsertErr.message);
+    }
   } catch (bridgeErr) {
     console.warn('[ashaService] Referral bridge notice:', bridgeErr);
   }
