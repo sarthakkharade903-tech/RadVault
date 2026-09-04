@@ -538,7 +538,7 @@ export default function ASHAHome({
 
             {/* Drug Kit Stock */}
             <button
-              onClick={() => setActiveModal('drug_kit')}
+              onClick={() => onNavigate('medicine')}
               className="p-4 bg-indigo-50 hover:bg-indigo-100/80 border border-indigo-200 rounded-2xl flex items-center justify-between gap-3.5 transition-all text-left cursor-pointer group"
             >
               <div className="flex items-center gap-3.5">
@@ -950,14 +950,6 @@ export default function ASHAHome({
             </div>
           </div>
         </div>
-      )}
-
-      {/* ── MODAL: DRUG KIT INVENTORY & PHC INDENTS ── */}
-      {activeModal === 'drug_kit' && (
-        <MedicineKitManager
-          onClose={() => setActiveModal(null)}
-          onStockUpdated={(updated) => setMedicinesList(updated)}
-        />
       )}
 
     </div>

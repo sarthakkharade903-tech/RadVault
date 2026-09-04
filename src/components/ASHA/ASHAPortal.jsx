@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Home, Users, Send, AlertTriangle, BarChart2, ChevronLeft, UserCircle2 } from "lucide-react";
+import { Home, Users, Send, AlertTriangle, BarChart2, ChevronLeft, UserCircle2, Menu, X, Pill } from "lucide-react";
 import ASHAHome from "./ASHAHome";
 import MyVillage from "./MyVillage";
 import AddFamilyForm from "./AddFamilyForm";
@@ -9,19 +9,22 @@ import FollowUpTracker from "./FollowUpTracker";
 import ActivityTracker from "./ActivityTracker";
 import ReferralsDashboard from "../Referrals/ReferralsDashboard";
 import ASHAVisitLogger from "./ASHAVisitLogger";
+import MedicineKitManager from "./MedicineKitManager";
 import { getVillagePatients, getFamilies } from "../../services/ashaService";
 
 const NAV = [
-  { key: "home",     label: "Home",      Icon: Home },
-  { key: "village",  label: "Village",   Icon: Users },
-  { key: "refer",    label: "Refer",     Icon: Send },
-  { key: "followup", label: "Follow-Up", Icon: AlertTriangle },
-  { key: "activity", label: "Activity",  Icon: BarChart2 },
+  { key: "home",     label: "Home",         Icon: Home },
+  { key: "village",  label: "Village",      Icon: Users },
+  { key: "refer",    label: "Refer",        Icon: Send },
+  { key: "followup", label: "Follow-Up",    Icon: AlertTriangle },
+  { key: "activity", label: "Activity",     Icon: BarChart2 },
+  { key: "medicine", label: "Medicine Kit", Icon: Pill },
 ];
-const MAIN_SCREENS = ["home","village","refer","followup","activity"];
+const MAIN_SCREENS = ["home","village","refer","followup","activity","medicine"];
 
 export default function ASHAPortal({ onBack }) {
   const [screen, setScreen]               = useState("home");
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [patients, setPatients]           = useState([]);
   const [families, setFamilies]           = useState([]);
   const [loading, setLoading]             = useState(true);
@@ -46,19 +49,101 @@ export default function ASHAPortal({ onBack }) {
   const showNav = MAIN_SCREENS.includes(screen);
 
   return (
-    <div className="h-[100dvh] w-full overflow-hidden bg-[#F5FBF9] flex flex-col font-sans">
-      {/* ── Top Bar (Polished) ── */}
-      <div className="bg-white border-b border-[#E2E8F0] px-4 py-3 flex items-center justify-between flex-shrink-0 sticky top-0 z-40">
-        <button onClick={onBack} className="flex items-center gap-1.5 text-xs text-[#64748B] hover:text-[#008F83] font-bold transition-colors">
-          <ChevronLeft className="w-4 h-4" /> Portals
-        </button>
+    <div className="h-[100dvh] w-full overflow-hidden bg-[#F5FBF9] flex flex-col md:flex-row font-sans">
+      
+      {/* ── Mobile Top Bar ── */}
+      <header className="md:hidden bg-white border-b border-[#E2E8F0] px-4 py-3 flex items-center justify-between shrink-0 sticky top-0 z-40">
+        <div className="flex items-center gap-2.5">
+          <button
+            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+            className="p-1.5 rounded-lg text-[#64748B] hover:bg-slate-100 transition-colors"
+          >
+            {isSidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          </button>
+          <span className="font-black text-sm text-[#008F83]">ASHA Portal</span>
+        </div>
         <div className="flex items-center gap-2 bg-[#E8F7F3] px-3 py-1.5 rounded-full border border-[#008F83]/20">
           <UserCircle2 className="w-4 h-4 text-[#008F83]" />
-          <span className="text-[11px] font-bold text-[#008F83] tracking-wide uppercase">Priya D.</span>
+          <span className="text-[10px] font-bold text-[#008F83] tracking-wide uppercase">Priya D.</span>
         </div>
-      </div>
+      </header>
 
-      <div className="flex-1 overflow-y-auto">
+      {/* ── Column Slider / Sidebar ── */}
+      <aside
+        className={`fixed md:sticky top-0 left-0 h-[100dvh] w-64 bg-white border-r border-[#E2E8F0] flex flex-col justify-between z-50 transition-transform duration-200 ease-in-out md:translate-x-0 ${
+          isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
+        } ${!showNav ? 'hidden md:flex' : ''}`}
+      >
+        <div className="p-5 flex flex-col h-full">
+          {/* Logo & Brand Header */}
+          <div className="flex items-center justify-between mb-8">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-[#008F83] text-white flex items-center justify-center font-black text-base shadow-xs">
+                R
+              </div>
+              <div>
+                <div className="font-black text-base leading-tight text-slate-900">RadVault</div>
+                <div className="text-[10px] font-extrabold text-[#008F83] uppercase tracking-wider">
+                  ASHA Care
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => setIsSidebarOpen(false)}
+              className="md:hidden p-1.5 rounded-lg text-slate-400 hover:text-slate-700"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Primary Navigation Menu */}
+          <nav className="flex-1 space-y-1">
+            {NAV.map(({ key, label, Icon }) => {
+              const active = screen === key;
+              return (
+                <button
+                  key={key}
+                  onClick={() => {
+                    if (key === "refer") setReferralInitialTab("list");
+                    setScreen(key);
+                    setIsSidebarOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-bold text-xs transition-all ${
+                    active
+                      ? 'bg-[#008F83] text-white shadow-xs'
+                      : 'text-slate-600 hover:bg-slate-50 hover:text-[#008F83]'
+                  }`}
+                >
+                  <Icon className={`w-4 h-4 ${active ? 'text-white' : 'text-slate-400'}`} strokeWidth={active ? 2.5 : 2} />
+                  <span>{label}</span>
+                </button>
+              );
+            })}
+          </nav>
+
+          {/* Sidebar Footer */}
+          <div className="mt-auto pt-4 border-t border-slate-100 space-y-3">
+             <div className="flex items-center gap-3 px-2 mb-2">
+                <div className="w-8 h-8 rounded-full bg-[#E8F7F3] border border-[#008F83]/20 flex items-center justify-center text-sm font-bold text-[#008F83] shrink-0">
+                  <UserCircle2 className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs font-black text-slate-900 truncate">Priya Deshmukh</div>
+                  <div className="text-[10px] text-slate-400 font-medium truncate">Sector 4 · ASHA</div>
+                </div>
+              </div>
+            <button
+              onClick={onBack}
+              className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-[#64748B] hover:bg-slate-50 transition-colors border border-slate-200"
+            >
+              <ChevronLeft className="w-4 h-4" /> Exit to Portals
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      {/* ── Main Content Area ── */}
+      <main className="flex-1 overflow-y-auto h-full w-full">
         {screen === "home"    && (
           <ASHAHome
             patients={patients}
@@ -102,6 +187,8 @@ export default function ASHAPortal({ onBack }) {
           />
         )}
         {screen === "activity" && <ActivityTracker patients={patients} />}
+        {screen === "medicine" && <MedicineKitManager isFullPage={true} />}
+
         {screen === "add_family" && (
           <AddFamilyForm
             family={editingFamily}
@@ -146,31 +233,7 @@ export default function ASHAPortal({ onBack }) {
             onSaved={() => { loadData(); setScreen(logVisitReturnScreen || "manage_family"); }}
           />
         )}
-      </div>
-
-      {/* ── Bottom Nav (Tactile & Clean) ── */}
-      {showNav && (
-        <nav className="bg-white border-t border-[#E2E8F0] px-2 pb-safe pt-2 flex-shrink-0 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.02)]">
-          <div className="flex items-center justify-around max-w-md mx-auto">
-            {NAV.map(({ key, label, Icon }) => {
-              const active = screen === key;
-              return (
-                <button
-                  key={key}
-                  onClick={() => {
-                    if (key === "refer") setReferralInitialTab("list");
-                    setScreen(key);
-                  }}
-                  className={"flex flex-col items-center justify-center gap-1 min-w-[64px] py-1.5 rounded-2xl transition-all " + (active ? "bg-[#E8F7F3]" : "hover:bg-gray-50")}
-                >
-                  <Icon className={"w-5 h-5 " + (active ? "text-[#008F83]" : "text-[#64748B]")} strokeWidth={active ? 2.5 : 2} />
-                  <span className={"text-[10px] font-bold tracking-tight " + (active ? "text-[#008F83]" : "text-[#64748B]")}>{label}</span>
-                </button>
-              );
-            })}
-          </div>
-        </nav>
-      )}
+      </main>
     </div>
   );
 }
