@@ -1,9 +1,10 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Phone, ClipboardList, CheckCircle2, AlertTriangle, Check,
-  User, MapPin, ArrowRight, ShieldAlert, Sparkles, Heart, Baby
+  User, MapPin, ArrowRight, ShieldAlert, Sparkles, Heart, Baby,
+  Loader2, RefreshCw
 } from "lucide-react";
-import { computeDueList } from "../../services/ashaService";
+import { computeDueList, getDoctorFollowUps, completeFollowUp } from "../../services/ashaService";
 
 // ─── Single-Language Dictionaries (No Mixed Text) ─────────
 const FOLLOWUP_TRANSLATIONS = {
@@ -57,9 +58,13 @@ const FOLLOWUP_TRANSLATIONS = {
   }
 };
 
-export default function FollowUpTracker({ patients, onEditPatient, onLogVisit }) {
+export default function FollowUpTracker({ patients, onEditPatient, onLogVisit, demoMode = false }) {
   const lang = localStorage.getItem("radvault_asha_lang") || "en";
   const t = FOLLOWUP_TRANSLATIONS[lang] || FOLLOWUP_TRANSLATIONS.en;
+
+  const [doctorFollowUps, setDoctorFollowUps] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const [completedSet, setCompletedSet] = useState(() => {
     try {
@@ -70,9 +75,41 @@ export default function FollowUpTracker({ patients, onEditPatient, onLogVisit })
     }
   });
 
+  const loadDoctorFollowUps = useCallback(async (isSilent = false) => {
+    if (demoMode) return;
+    if (!isSilent) setLoading(true);
+    setError('');
+    try {
+      const { data, error: err } = await getDoctorFollowUps();
+      if (err) throw err;
+      // getDoctorFollowUps now returns pre-formatted consultation objects
+      const mapped = (data || []).map(item => ({
+        id: item.id,
+        encounterId: item.id,
+        patientId: item.patientId || item.patient_id,
+        patientName: item.patientName || item.patients?.full_name || 'Village Patient',
+        label: `Specialist Follow-Up: ${item.follow_up_date ? new Date(item.follow_up_date).toLocaleDateString('en-IN') : 'Scheduled'}`,
+        detail: item.follow_up_reason || 'Specialist consultation follow-up required.',
+        mobile: item.patients?.phone_number || '',
+        isDoctorFollowUp: true,
+        priority: item.priority || 'HIGH'
+      }));
+      setDoctorFollowUps(mapped);
+    } catch (err) {
+      console.error('[FollowUpTracker] Failed to load follow-ups:', err);
+      setError(`Unable to load doctor follow-ups from Supabase: ${err.message}`);
+    } finally {
+      if (!isSilent) setLoading(false);
+    }
+  }, [demoMode]);
+
+  useEffect(() => {
+    loadDoctorFollowUps(false);
+  }, [loadDoctorFollowUps]);
+
   const rawItems = computeDueList(patients).filter(d => d.urgent);
 
-  // Default high-risk residents
+  // Default high-risk residents used ONLY in Demo ON mode
   const defaultItems = [
     {
       patientId: 'P002',
@@ -91,19 +128,41 @@ export default function FollowUpTracker({ patients, onEditPatient, onLogVisit })
     }
   ];
 
-  const items = rawItems.length > 0 ? rawItems : defaultItems;
+  // In Demo OFF: strict combination of real doctor follow-ups and real village survey items
+  // In Demo ON: fallback to defaultItems if empty
+  const items = demoMode
+    ? (rawItems.length > 0 ? rawItems : defaultItems)
+    : [...doctorFollowUps, ...rawItems];
 
-  const handleMarkVisited = (patientId) => {
+  const handleMarkVisited = async (item) => {
+    const pId = typeof item === 'object' ? item.patientId : item;
+    const encId = typeof item === 'object' ? item.encounterId : null;
+
+    if (encId && !demoMode) {
+      try {
+        await completeFollowUp(encId, 'Follow-up visit completed by ASHA worker.');
+      } catch (e) {
+        console.error('Failed to complete follow up in DB:', e);
+      }
+    }
+
     setCompletedSet(prev => {
       const next = new Set(prev);
-      if (patientId) {
-        next.add(patientId);
-        next.add(`task-${patientId}`);
-        next.add(`db-task-${patientId}`);
+      if (pId) {
+        next.add(pId);
+        next.add(`task-${pId}`);
+      }
+      if (encId) {
+        next.add(encId);
+        next.add(`enc-${encId}`);
       }
       localStorage.setItem("radvault_completed_tasks", JSON.stringify(Array.from(next)));
       return next;
     });
+
+    if (encId) {
+      setDoctorFollowUps(prev => prev.filter(f => f.encounterId !== encId));
+    }
   };
 
   return (
@@ -123,7 +182,26 @@ export default function FollowUpTracker({ patients, onEditPatient, onLogVisit })
       </div>
 
       <div className="px-4 sm:px-6 pt-5 space-y-3.5 max-w-3xl mx-auto">
-        {items.length === 0 ? (
+        {error && (
+          <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" />
+              <span>{error}</span>
+            </div>
+            <button
+              onClick={loadDoctorFollowUps}
+              className="px-2.5 py-1 bg-red-100 hover:bg-red-200 text-red-800 rounded-lg font-bold flex items-center gap-1 cursor-pointer"
+            >
+              <RefreshCw className="w-3 h-3" /> Retry
+            </button>
+          </div>
+        )}
+
+        {loading ? (
+          <div className="py-12 flex justify-center">
+            <Loader2 className="w-7 h-7 text-[#008F83] animate-spin" />
+          </div>
+        ) : items.length === 0 ? (
           <div className="bg-white rounded-2xl border border-[#E2E8F0] p-10 text-center shadow-xs">
             <CheckCircle2 className="w-12 h-12 text-[#008F83] mx-auto mb-3" />
             <p className="font-extrabold text-[#16324F] text-base">{t.allClearTitle}</p>
@@ -132,11 +210,11 @@ export default function FollowUpTracker({ patients, onEditPatient, onLogVisit })
         ) : (
           items.map((item, i) => {
             const patient = patients.find(p => p.id === item.patientId);
-            const isVisited = completedSet.has(item.patientId) || completedSet.has(`task-${item.patientId}`);
+            const isVisited = completedSet.has(item.patientId) || completedSet.has(item.encounterId) || completedSet.has(`task-${item.patientId}`);
 
             return (
               <div
-                key={i}
+                key={item.id || i}
                 className={`bg-white rounded-2xl border p-4 sm:p-5 shadow-xs transition-all ${
                   isVisited
                     ? 'border-slate-200 opacity-60 bg-slate-50'
@@ -153,6 +231,11 @@ export default function FollowUpTracker({ patients, onEditPatient, onLogVisit })
                         {item.is_pregnant && (
                           <span className="text-[10px] font-bold bg-rose-50 text-rose-700 px-2 py-0.5 rounded border border-rose-200 flex items-center gap-1">
                             <Heart className="w-3 h-3" /> ANC
+                          </span>
+                        )}
+                        {item.isDoctorFollowUp && (
+                          <span className="text-[10px] font-extrabold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded border border-indigo-200">
+                            SPECIALIST RX
                           </span>
                         )}
                       </div>
@@ -178,7 +261,7 @@ export default function FollowUpTracker({ patients, onEditPatient, onLogVisit })
                             onClick={() => {
                               if (onLogVisit && patient) onLogVisit(patient);
                               else if (onEditPatient && patient) onEditPatient(patient);
-                              else handleMarkVisited(item.patientId);
+                              else handleMarkVisited(item);
                             }}
                             className="flex items-center gap-1.5 bg-[#008F83] hover:bg-[#007A70] text-white text-xs font-extrabold px-4 py-2 rounded-xl shadow-xs transition-colors cursor-pointer"
                           >
@@ -187,7 +270,7 @@ export default function FollowUpTracker({ patients, onEditPatient, onLogVisit })
                           </button>
                           
                           <button
-                            onClick={() => handleMarkVisited(item.patientId)}
+                            onClick={() => handleMarkVisited(item)}
                             className="flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold px-3.5 py-2 rounded-xl border border-emerald-200 transition-colors cursor-pointer"
                           >
                             <Check className="w-3.5 h-3.5" />

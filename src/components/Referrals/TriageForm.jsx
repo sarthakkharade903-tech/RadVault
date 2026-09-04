@@ -14,6 +14,7 @@ import EmergencyScreen from './screens/EmergencyScreen';
 import { DEPARTMENTS, HOSPITALS } from '../../data/mockReferrals';
 import { createCareRequest } from '../../services/ashaService';
 import { fetchGovHospitals, getCurrentLocation } from '../../services/locationService';
+import { supabase, ensureRoleAuth } from '../../services/supabase';
 
 // ─── Single-Language Dictionaries (No Mixed Text) ─────────
 const TRIAGE_TRANSLATIONS = {
@@ -146,7 +147,7 @@ function localTriage(patientType, answers) {
   };
 }
 
-export default function TriageForm({ onSubmit, onCancel }) {
+export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
   const lang = localStorage.getItem("radvault_asha_lang") || "en";
   const t = TRIAGE_TRANSLATIONS[lang] || TRIAGE_TRANSLATIONS.en;
 
@@ -159,8 +160,13 @@ export default function TriageForm({ onSubmit, onCancel }) {
   // AI & Triage State
   const [aiResult, setAiResult] = useState(null);
 
-  // Routing State
-  const [hospital, setHospital] = useState(HOSPITALS[0]);
+  // Routing State - default to Shrirampur PHC where reception and doctor operate
+  const [hospital, setHospital] = useState('Shrirampur Primary Health Centre');
+  const [selectedFacility, setSelectedFacility] = useState({
+    id: 'f1111111-1111-1111-1111-111111111111',
+    name: 'Shrirampur Primary Health Centre'
+  });
+  const [facilitiesList, setFacilitiesList] = useState([]);
   const [department, setDepartment] = useState(DEPARTMENTS[0]);
   const [isJsyClaim, setIsJsyClaim] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -169,6 +175,30 @@ export default function TriageForm({ onSubmit, onCancel }) {
   // Hospital Search Dropdown
   const [hospSearch, setHospSearch] = useState('');
   const [showHospDropdown, setShowHospDropdown] = useState(false);
+
+  // Load real facilities from Supabase
+  useEffect(() => {
+    let isMounted = true;
+    async function loadFacilities() {
+      try {
+        await ensureRoleAuth('asha');
+        const { data, error } = await supabase
+          .from('facilities')
+          .select('id, name, district')
+          .order('name');
+        if (!error && data && data.length > 0 && isMounted) {
+          setFacilitiesList(data);
+          const defaultFac = data.find(f => f.name.toLowerCase().includes('shrirampur')) || data[0];
+          setHospital(defaultFac.name);
+          setSelectedFacility(defaultFac);
+        }
+      } catch (e) {
+        console.warn('[TriageForm] Error loading facilities:', e);
+      }
+    }
+    loadFacilities();
+    return () => { isMounted = false; };
+  }, []);
 
   // ── Real Audio Recording State ──
   const [isRecording, setIsRecording] = useState(false);
@@ -299,28 +329,71 @@ export default function TriageForm({ onSubmit, onCancel }) {
     let ashaNotes = voiceNotes.trim() || aiResult?.note || 'ASHA referral initiated';
     if (isJsyClaim) ashaNotes += " [ASHA Accompanying Patient - JSY Escort]";
 
-    // Ensure valid patient_id (fallback to existing or valid UUID)
-    const patientId = patient?.id || 'b6f81101-46d0-4b4d-8df0-9d9ce11a6a70';
-    const patientName = patient?.name || 'Rekha Bai';
+    // Ensure valid patient_id (strictly required in Demo OFF mode)
+    const patientId = patient?.id || (demoMode ? 'b6f81101-46d0-4b4d-8df0-9d9ce11a6a70' : null);
+    const patientName = patient?.name || (demoMode ? 'Rekha Bai' : null);
+
+    if (!patientId || !patientName) {
+      setRouteError("Please select a registered patient before dispatching referral.");
+      setIsSubmitting(false);
+      return;
+    }
+
+    const patientVitals = {
+      bp: intakeAnswers?.bp || patient?.vitals?.bp || patient?.bp || '',
+      pulse: intakeAnswers?.pulse || patient?.vitals?.pulse || patient?.pulse || '',
+      spo2: intakeAnswers?.spo2 || patient?.vitals?.spo2 || patient?.spo2 || '',
+      temp: intakeAnswers?.temp || patient?.vitals?.temp || patient?.temp || '',
+      weight: intakeAnswers?.weight || patient?.vitals?.weight || patient?.weight || '',
+      height: intakeAnswers?.height || patient?.vitals?.height || patient?.height || '',
+      blood_sugar: intakeAnswers?.blood_sugar || patient?.vitals?.blood_sugar || patient?.blood_sugar || ''
+    };
+
+    const destinationFacilityId = selectedFacility?.id
+      || (facilitiesList.find(f => f.name === hospital)?.id)
+      || 'f1111111-1111-1111-1111-111111111111';
 
     const payload = {
       patient_id: patientId,
       patient_name: patientName,
+      age: patient?.age_years || patient?.age || 30,
+      gender: patient?.gender || 'Other',
+      blood_group: patient?.blood_group || null,
+      phone: patient?.mobile || patient?.phone || '9876543210',
       source: 'ASHA_REFERRED',
       created_by: 'ASHA Worker (Priya Deshmukh)',
-      facility: hospital,
-      department: department,
+      facility: hospital || 'Shrirampur Primary Health Centre',
+      destination_hospital: hospital || 'Shrirampur Primary Health Centre',
+      destination_facility_id: destinationFacilityId,
+      department: department || 'General Medicine',
       priority: finalPriority,
       reason: ashaNotes,
-      asha_notes: ashaNotes
+      asha_notes: ashaNotes,
+      vitals: patientVitals
     };
 
     const { data, error } = await createCareRequest(payload);
     setIsSubmitting(false);
 
     if (error) {
-      setRouteError(error.message);
+      console.error('[TriageForm] Referral dispatch error:', error);
+      setRouteError(error.message || 'Failed to dispatch referral to hospital database.');
       return;
+    }
+
+    if (data?.id) {
+      try {
+        const { data: verified } = await supabase
+          .from('referrals')
+          .select('id, status, destination_hospital')
+          .eq('id', data.id)
+          .maybeSingle();
+        if (verified) {
+          console.log('[TriageForm] Referral verified in Supabase referrals:', verified.id);
+        }
+      } catch (vErr) {
+        console.warn('[TriageForm] Referral verification warning:', vErr);
+      }
     }
 
     // Persist completed task status in localStorage
@@ -365,7 +438,7 @@ export default function TriageForm({ onSubmit, onCancel }) {
         {/* STEP -1: Select Patient */}
         {step === -1 && (
           <div className="bg-white border border-[#E2E8F0] rounded-2xl p-5 shadow-xs">
-            <PatientSelectScreen onSelectPatient={handlePatientSelected} />
+            <PatientSelectScreen onSelectPatient={handlePatientSelected} demoMode={demoMode} />
           </div>
         )}
 
@@ -531,12 +604,25 @@ export default function TriageForm({ onSubmit, onCancel }) {
               </label>
               <select
                 value={hospital}
-                onChange={e => setHospital(e.target.value)}
+                onChange={e => {
+                  const val = e.target.value;
+                  setHospital(val);
+                  const matched = facilitiesList.find(f => f.name === val);
+                  if (matched) setSelectedFacility(matched);
+                }}
                 className="w-full border border-[#E2E8F0] rounded-xl px-4 py-3 text-sm font-bold text-[#16324F] bg-white focus:outline-none focus:border-[#008F83] cursor-pointer"
               >
-                {HOSPITALS.map(h => (
-                  <option key={h} value={h}>{h}</option>
-                ))}
+                {facilitiesList.length > 0 ? (
+                  facilitiesList.map(f => (
+                    <option key={f.id} value={f.name}>
+                      {f.name} ({f.district})
+                    </option>
+                  ))
+                ) : (
+                  HOSPITALS.map(h => (
+                    <option key={h} value={h}>{h}</option>
+                  ))
+                )}
               </select>
             </div>
 

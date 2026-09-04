@@ -6,7 +6,6 @@ import {
   Search,
   Loader2,
   X,
-  Plus,
   Trash2,
   Save,
   CheckCircle,
@@ -16,13 +15,9 @@ import {
   Building2,
   Activity
 } from 'lucide-react';
-import { supabase } from '../../services/supabase';
+import { supabase, ensureRoleAuth } from '../../services/supabase';
 import { getPatientTimeline } from '../../services/patientService';
 
-const DEFAULT_DOCTOR_CREDS = {
-  email: 'samir5243d@gmail.com',
-  password: 'Samir@8806'
-};
 
 const DEMO_DOCTOR_PROFILE = {
   id: 'd3333333-3333-3333-3333-333333333333',
@@ -84,8 +79,7 @@ const INITIAL_DEMO_REFERRALS = [
 ];
 
 export default function DoctorWorkspace({
-  user: initialUser = null,
-  isDemoMode: initialDemoMode = false,
+  isDemoMode = false,
   demoDataEnabled = true,
   onBack,
   goHome,
@@ -133,48 +127,45 @@ export default function DoctorWorkspace({
 
   const getDraftKey = (refId) => `radvault_doctor_draft_${refId}`;
 
-  const loadDoctorDbData = useCallback(async () => {
+  const loadDoctorDbData = useCallback(async (isSilent = false) => {
     try {
-      setLoading(true);
+      if (!isSilent) setLoading(true);
       setError('');
 
-      let user = initialUser;
-      if (!user) {
-        const { data: { user: currentUser } } = await supabase.auth.getUser();
-        if (currentUser && currentUser.email === DEFAULT_DOCTOR_CREDS.email) {
-          user = currentUser;
-        }
-      }
-
-      if (!user) {
-        const { data: authData, error: authErr } = await supabase.auth.signInWithPassword(DEFAULT_DOCTOR_CREDS);
-        if (!authErr && authData?.user) {
-          user = authData.user;
-        }
-      }
-
-      if (!user) {
+      if (isDemoMode) {
         setDoctorProfile(DEMO_DOCTOR_PROFILE);
-        setReferrals(INITIAL_DEMO_REFERRALS);
-        setLoading(false);
+        setReferrals(demoDataEnabled ? INITIAL_DEMO_REFERRALS : []);
+        if (!isSilent) setLoading(false);
         return;
+      }
+
+      // Live Supabase Authentication
+      await ensureRoleAuth('doctor');
+      const { data: { user: activeUser } } = await supabase.auth.getUser();
+
+      if (!activeUser) {
+        throw new Error('Authentication failed for Doctor portal. Please check Supabase credentials.');
       }
 
       const { data: docData, error: docErr } = await supabase
         .from('doctors')
         .select('id, name, specialty, facility_id, facilities(name)')
-        .eq('user_id', user.id)
+        .eq('user_id', activeUser.id)
         .maybeSingle();
 
       if (docErr) throw docErr;
 
-      const resolvedDoctor = docData ? {
+      if (!docData) {
+        throw new Error(`Doctor profile not found in database for authenticated user ${activeUser.email}.`);
+      }
+
+      const resolvedDoctor = {
         id: docData.id,
         name: docData.name,
         specialty: docData.specialty,
         facility_id: docData.facility_id,
-        facility_name: docData.facilities?.name || 'Assigned Facility'
-      } : DEMO_DOCTOR_PROFILE;
+        facility_name: docData.facilities?.name || 'Shrirampur Primary Health Centre'
+      };
 
       setDoctorProfile(resolvedDoctor);
 
@@ -223,26 +214,26 @@ export default function DoctorWorkspace({
 
     } catch (err) {
       console.error('[RadVault Doctor] Fetch error:', err.message);
-      setError('Unable to load queue and clinic data. Using local cache.');
-      setDoctorProfile(DEMO_DOCTOR_PROFILE);
-      setReferrals(INITIAL_DEMO_REFERRALS);
+      setError(`Unable to load queue and clinic data: ${err.message}`);
+      setDoctorProfile(null);
+      setReferrals([]);
     } finally {
-      setLoading(false);
+      if (!isSilent) setLoading(false);
     }
-  }, [initialUser]);
+  }, [isDemoMode, demoDataEnabled]);
 
   useEffect(() => {
-    loadDoctorDbData();
+    loadDoctorDbData(false);
 
     const channel = supabase.channel('doctor_referrals_live')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'referrals' }, () => {
-        loadDoctorDbData();
+        loadDoctorDbData(true);
       })
       .subscribe();
 
     const interval = setInterval(() => {
-      loadDoctorDbData();
-    }, 15000);
+      loadDoctorDbData(true);
+    }, 30000);
 
     return () => {
       supabase.removeChannel(channel);
@@ -422,14 +413,14 @@ export default function DoctorWorkspace({
         follow_up_recommended_date: followUpDate || null
       };
 
+      // Upsert consultation — surface any real errors
       const { error: consErr } = await supabase
         .from('consultations')
         .upsert([consultationPayload], { onConflict: 'referral_id' });
 
-      if (consErr) {
-        console.warn('Consultation save warning:', consErr.message);
-      }
+      if (consErr) throw consErr;
 
+      // Mark referral as Completed
       const { error: refErr } = await supabase
         .from('referrals')
         .update({ status: 'Completed' })
@@ -437,21 +428,7 @@ export default function DoctorWorkspace({
 
       if (refErr) throw refErr;
 
-      if (followUpDate) {
-        try {
-          await supabase
-            .from('encounters')
-            .update({
-              follow_up_date: followUpDate,
-              follow_up_reason: formattedFollowUpReason,
-              follow_up_completed: false
-            })
-            .eq('referral_id', activeCase.id);
-        } catch (e) {
-          console.warn('Encounter update skipped:', e);
-        }
-      }
-
+      // Sync care_request status to COMPLETED
       try {
         await supabase
           .from('care_requests')
@@ -461,12 +438,12 @@ export default function DoctorWorkspace({
           })
           .eq('patient_id', activeCase.patient_id);
       } catch (e) {
-        console.warn('Care request sync skipped:', e);
+        console.warn('[RadVault Doctor] Care request sync skipped:', e.message);
       }
 
       setReferrals(prev => prev.map(r => r.id === activeCase.id ? { ...r, status: 'Completed' } : r));
       localStorage.removeItem(getDraftKey(activeCase.id));
-      showToast(`✓ Consultation signed (${consultationMode === 'TELECONSULTATION' ? 'Teleconsultation' : 'In-Person'}). Synced to care registry.`);
+      showToast(`✓ Consultation signed (${consultationMode === 'TELECONSULTATION' ? 'Teleconsultation' : 'In-Person'}). Follow-up note: "${formattedFollowUpReason.slice(0, 80)}..."`);
       handleCloseCase();
 
     } catch (err) {
@@ -617,9 +594,17 @@ export default function DoctorWorkspace({
             </div>
 
             {error && (
-              <div className="p-4 bg-rose-50 border border-rose-200 text-xs text-rose-700 font-bold rounded-2xl flex items-start gap-2.5">
-                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                <div>{error}</div>
+              <div className="p-4 bg-rose-50 border border-rose-200 text-xs text-rose-700 font-bold rounded-2xl flex items-center justify-between gap-2.5">
+                <div className="flex items-start gap-2.5">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <div>{error}</div>
+                </div>
+                <button
+                  onClick={loadDoctorDbData}
+                  className="px-3 py-1 bg-rose-100 hover:bg-rose-200 text-rose-800 rounded-lg text-xs font-bold transition-colors cursor-pointer shrink-0"
+                >
+                  Retry
+                </button>
               </div>
             )}
 

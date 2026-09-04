@@ -1,53 +1,64 @@
 import React, { useState, useEffect } from 'react';
 import ReferralList from './ReferralList';
 import TriageForm from './TriageForm';
-import { supabase } from '../../services/supabase';
-import { Plus, ListFilter, Handshake, CheckCircle2, ArrowLeft } from 'lucide-react';
+import { supabase, ensureRoleAuth } from '../../services/supabase';
+import { Plus, ListFilter, CheckCircle2, AlertTriangle } from 'lucide-react';
 
-export default function ReferralsDashboard({ onBack }) {
+export default function ReferralsDashboard({ onBack, demoMode = false }) {
   // Default to true so the referral form is OPEN IMMEDIATELY without extra clicks!
   const [activeTab, setActiveTab] = useState('new'); // 'new' | 'list'
   const [referrals, setReferrals] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
   const lang = localStorage.getItem("radvault_asha_lang") || "en";
 
-  const fetchReferrals = async () => {
+  const fetchReferrals = async (isSilent = false) => {
+    if (!isSilent) setLoading(true);
+    setLoadError('');
     try {
+      if (!demoMode) {
+        await ensureRoleAuth('asha');
+      }
+
       const { data, error } = await supabase
         .from('care_requests')
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (data && data.length > 0) {
-        const mapped = data.map(d => ({
-          id: d.id,
-          patientName: d.patient_name || 'Village Resident',
-          patientId: d.patient_id ? String(d.patient_id).slice(0, 8).toUpperCase() : 'ABHA-PAT',
-          createdBy: d.created_by || 'ASHA Worker',
-          department: d.department || 'General Medicine & OPD',
-          hospital: d.facility || 'PHC Shirwal',
-          doctor: d.doctor_assigned || 'On-Duty Medical Officer',
-          priority: d.priority === 'URGENT' ? 'RED' : d.priority === 'HIGH' ? 'ORANGE' : 'GREEN',
-          status: d.status === 'COMPLETED' ? 'Completed' : d.status === 'ACCEPTED' ? 'Accepted' : 'Pending',
-          aiNote: d.reason || d.asha_notes || 'Referred for specialist medical care',
-          is_pregnant: d.department?.toLowerCase().includes('maternity') || d.department?.toLowerCase().includes('anc'),
-          createdAt: new Date(d.created_at || Date.now()).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
-        }));
-        setReferrals(mapped);
-      }
+      if (error) throw error;
+
+      const mapped = (data || []).map(d => ({
+        id: d.id,
+        patientName: d.patient_name || 'Village Resident',
+        patientId: d.patient_id ? String(d.patient_id).slice(0, 8).toUpperCase() : 'ABHA-PAT',
+        createdBy: d.created_by || 'ASHA Worker',
+        department: d.department || 'General Medicine & OPD',
+        hospital: d.facility || 'Shrirampur Primary Health Centre',
+        doctor: d.doctor_assigned || 'On-Duty Medical Officer',
+        priority: d.priority === 'URGENT' ? 'RED' : d.priority === 'HIGH' ? 'ORANGE' : 'GREEN',
+        status: d.status === 'COMPLETED' ? 'Completed' : d.status === 'ACCEPTED' ? 'Accepted' : 'Pending',
+        aiNote: d.reason || d.asha_notes || 'Referred for specialist medical care',
+        is_pregnant: d.department?.toLowerCase().includes('maternity') || d.department?.toLowerCase().includes('anc'),
+        createdAt: new Date(d.created_at || Date.now()).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+      }));
+      setReferrals(mapped);
     } catch (err) {
-      console.warn("Could not load care_requests:", err);
+      console.error("Could not load care_requests:", err);
+      setLoadError(err.message || 'Unable to load referrals list.');
+      setReferrals([]);
+    } finally {
+      if (!isSilent) setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchReferrals();
+    fetchReferrals(false);
 
     const channel = supabase.channel('care_requests_live_sync')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'care_requests' }, () => {
-        fetchReferrals();
+        fetchReferrals(true);
       })
       .subscribe();
 
@@ -63,7 +74,7 @@ export default function ReferralsDashboard({ onBack }) {
       patientId: newReferralData.patient_id ? String(newReferralData.patient_id).slice(0, 8).toUpperCase() : 'ABHA-PAT',
       createdBy: newReferralData.created_by || 'ASHA Worker',
       department: newReferralData.department || 'General Medicine & OPD',
-      hospital: newReferralData.facility || 'PHC Shirwal',
+      hospital: newReferralData.facility || newReferralData.destination_hospital || 'Shrirampur Primary Health Centre',
       doctor: newReferralData.doctor_assigned || 'On-Duty Medical Officer',
       priority: newReferralData.priority === 'URGENT' ? 'RED' : 'GREEN',
       status: 'Pending',
@@ -173,6 +184,7 @@ export default function ReferralsDashboard({ onBack }) {
           <TriageForm
             onSubmit={handleNewReferral}
             onCancel={() => setActiveTab('list')}
+            demoMode={demoMode}
           />
         ) : (
           <ReferralList

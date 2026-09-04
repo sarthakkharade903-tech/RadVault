@@ -20,7 +20,7 @@ const NAV = [
 ];
 const MAIN_SCREENS = ["home","village","refer","followup","activity"];
 
-export default function ASHAPortal({ onBack }) {
+export default function ASHAPortal({ onBack, demoMode = false }) {
   const [screen, setScreen]               = useState("home");
   const [patients, setPatients]           = useState([]);
   const [families, setFamilies]           = useState([]);
@@ -61,6 +61,7 @@ export default function ASHAPortal({ onBack }) {
           <ASHAHome
             patients={patients}
             loading={loading}
+            demoMode={demoMode}
             onNavigate={setScreen}
             onOpenAddFamily={() => { setEditingFamily(null); setScreen("add_family"); }}
             onOpenAddMember={() => { setAddMemberFamily(null); setEditingPatient(null); setScreen("add_member"); }}
@@ -77,8 +78,8 @@ export default function ASHAPortal({ onBack }) {
             onAddMember={(fam) => { setAddMemberFamily(fam); setEditingPatient(null); setScreen("add_member"); }}
           />
         )}
-        {screen === "refer"    && <ReferralsDashboard onBack={() => setScreen("home")} />}
-        {screen === "followup" && <FollowUpTracker patients={patients} onEditPatient={p => { setEditingPatient(p); setSelectedFamily(p.families || null); setScreen("edit_member"); }} />}
+        {screen === "refer"    && <ReferralsDashboard onBack={() => setScreen("home")} demoMode={demoMode} />}
+        {screen === "followup" && <FollowUpTracker patients={patients} demoMode={demoMode} onEditPatient={p => { setEditingPatient(p); setSelectedFamily(p.families || null); setScreen("edit_member"); }} />}
         {screen === "activity" && <ActivityTracker patients={patients} />}
         {screen === "add_family" && (
           <AddFamilyForm

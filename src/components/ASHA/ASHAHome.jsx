@@ -135,7 +135,8 @@ export default function ASHAHome({
   onOpenAddFamily,
   onOpenAddMember,
   onOpenLogVisit,
-  onOpenReferral
+  onOpenReferral,
+  demoMode = false
 }) {
   // Language State
   const [lang, setLang] = useState(() => localStorage.getItem("radvault_asha_lang") || "en");
@@ -267,8 +268,8 @@ export default function ASHAHome({
         phone: '+91 98000-00000'
       }));
     }
-    return defaultTasks;
-  }, [rawDueList, lang]);
+    return demoMode ? defaultTasks : [];
+  }, [rawDueList, lang, demoMode]);
 
   const handleManualSync = () => {
     setSyncedToast(true);
@@ -283,39 +284,42 @@ export default function ASHAHome({
   const maternalPatients = useMemo(() => {
     const list = patients.filter(p => p.is_pregnant);
     if (list.length > 0) return list;
+    if (!demoMode) return [];
     return [
       { id: 'm1', name: 'Rekha Bai', nameLocal: lang === 'mr' ? 'रेखा बाई' : lang === 'hi' ? 'रेखा बाई' : 'Rekha Bai', age: 22, lmp: '10-Feb-2026', ancDone: 2, status: 'red', danger: 'Severe Anemia (Hb 8.2), Swollen Feet', village: 'Koregaon' },
       { id: 'm2', name: 'Pooja Jadhav', nameLocal: lang === 'mr' ? 'पूजा जाधव' : lang === 'hi' ? 'पूजा जाधव' : 'Pooja Jadhav', age: 25, lmp: '14-May-2026', ancDone: 1, status: 'green', danger: 'None (Healthy)', village: 'Wai' }
     ];
-  }, [patients, lang]);
+  }, [patients, lang, demoMode]);
 
   const childPatients = useMemo(() => {
     const list = patients.filter(p => p.is_child || (p.age_years && p.age_years <= 5));
     if (list.length > 0) return list;
+    if (!demoMode) return [];
     return [
       { id: 'c1', name: 'Aarav Patil', nameLocal: lang === 'mr' ? 'आरव पाटील' : lang === 'hi' ? 'आरव पाटिल' : 'Aarav Patil', ageMonths: 9, gender: 'Male', weight: '8.2 kg', status: 'green', dueVaccine: 'Measles-Rubella (MR-1)', village: 'Koregaon' },
       { id: 'c2', name: 'Ananya Shinde', nameLocal: lang === 'mr' ? 'अनन्या शिंदे' : lang === 'hi' ? 'अनन्या शिंदे' : 'Ananya Shinde', ageMonths: 30, gender: 'Female', weight: '10.5 kg', status: 'yellow', dueVaccine: 'DPT Booster 1', village: 'Wai' }
     ];
-  }, [patients, lang]);
+  }, [patients, lang, demoMode]);
 
   const highRiskPatients = useMemo(() => {
     const list = patients.filter(p => p.status === 'red');
     if (list.length > 0) return list;
+    if (!demoMode) return [];
     return [
       { id: 'hr1', name: 'Rekha Bai', nameLocal: lang === 'mr' ? 'रेखा बाई' : lang === 'hi' ? 'रेखा बाई' : 'Rekha Bai', age: 22, condition: 'High Risk Pregnancy (Hb 8.2, Pedal Edema)', village: 'Koregaon', phone: '+91 98234-11029' },
       { id: 'hr2', name: 'Ramesh Patil', nameLocal: lang === 'mr' ? 'रमेश पाटील' : lang === 'hi' ? 'रमेश पाटिल' : 'Ramesh Patil', age: 54, condition: 'Severe Productive Cough, High Fever & SpO2 92%', village: 'Koregaon', phone: '+91 98451-88310' }
     ];
-  }, [patients, lang]);
+  }, [patients, lang, demoMode]);
 
   // Census list for the Village Census Modal
   const censusList = useMemo(() => {
-    const base = patients.length > 0 ? patients : [
+    const base = patients.length > 0 ? patients : (demoMode ? [
       { id: 'P001', name: 'Ramesh Patil', age_years: 54, gender: 'Male', blood_group: 'B+', village: 'Koregaon', abha_id: '91-4829-1029-4820', status: 'red', family_head: 'Ramesh Patil' },
       { id: 'P002', name: 'Rekha Bai', age_years: 22, gender: 'Female', blood_group: 'O+', village: 'Koregaon', abha_id: '91-4829-1029-4821', status: 'red', family_head: 'Ramesh Patil' },
       { id: 'P003', name: 'Aarav Patil', age_years: 1, gender: 'Male', blood_group: 'B+', village: 'Koregaon', abha_id: '91-4829-1029-4822', status: 'green', family_head: 'Ramesh Patil' },
       { id: 'P004', name: 'Sunita Shinde', age_years: 42, gender: 'Female', blood_group: 'O+', village: 'Wai', abha_id: '91-5512-8821-9930', status: 'green', family_head: 'Sanjay Shinde' },
       { id: 'P005', name: 'Vikram Jadhav', age_years: 61, gender: 'Male', blood_group: 'A+', village: 'Karad', abha_id: '91-7719-2041-3319', status: 'yellow', family_head: 'Vikram Jadhav' }
-    ];
+    ] : []);
 
     if (!censusSearch.trim()) return base;
     return base.filter(p =>

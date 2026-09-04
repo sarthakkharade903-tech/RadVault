@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { HeartPulse, Leaf, Users, Building2, ArrowRight, Stethoscope } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { HeartPulse, Leaf, Users, Building2, ArrowRight, Stethoscope, Database, Sparkles } from "lucide-react";
 import ASHAPortal from "./components/ASHA/ASHAPortal";
 import PatientLogin from "./components/Patient/PatientLogin";
 import FamilyDashboard from "./components/Patient/FamilyDashboard";
@@ -8,6 +8,7 @@ import illusFamily from "./assets/illus_family.jpg";
 import illusHospital from "./assets/illus_hospital.jpg";
 import HospitalStaffWorkspace from './components/workspaces/HospitalStaffWorkspace';
 import DoctorWorkspace from './components/workspaces/DoctorWorkspace';
+import { ensureRoleAuth } from './services/supabase';
 
 const PORTALS = [
   {
@@ -211,12 +212,19 @@ function App() {
     const saved = localStorage.getItem("radvault_family_auth");
     return saved ? JSON.parse(saved) : null;
   });
+  const [demoMode, setDemoMode] = useState(() => {
+    return localStorage.getItem("radvault_demo_mode") === "true";
+  });
 
-  React.useEffect(() => {
+  useEffect(() => {
     localStorage.setItem("radvault_portal", activePortal);
   }, [activePortal]);
 
-  React.useEffect(() => {
+  useEffect(() => {
+    localStorage.setItem("radvault_demo_mode", String(demoMode));
+  }, [demoMode]);
+
+  useEffect(() => {
     if (familyAuthData) {
       localStorage.setItem("radvault_family_auth", JSON.stringify(familyAuthData));
     } else {
@@ -224,21 +232,94 @@ function App() {
     }
   }, [familyAuthData]);
 
+  // Clean role authentication on portal switch in Live Supabase mode
+  useEffect(() => {
+    if (demoMode) return;
+    if (activePortal === "asha") {
+      ensureRoleAuth("asha");
+    } else if (activePortal === "reception") {
+      ensureRoleAuth("reception");
+    } else if (activePortal === "doctor") {
+      ensureRoleAuth("doctor");
+    }
+  }, [activePortal, demoMode]);
+
   const goHome = () => setActivePortal("home");
 
-  if (activePortal === "asha") return <ASHAPortal onBack={goHome} />;
-  if (activePortal === "patient") {
-    if (!familyAuthData) return <PatientLogin onLoggedIn={setFamilyAuthData} onBack={goHome} />;
-    return <FamilyDashboard family={familyAuthData.family} members={familyAuthData.members} onLogout={() => setFamilyAuthData(null)} onBack={goHome} />;
-  }
-  if (activePortal === "reception") {
-    return <HospitalStaffWorkspace onBack={goHome} goHome={goHome} />;
-  }
-  if (activePortal === "doctor") {
-    return <DoctorWorkspace onBack={goHome} goHome={goHome} />;
-  }
+  return (
+    <div className="min-h-screen flex flex-col font-sans">
+      {/* ── Global Mode Bar: Always visible across all portals ── */}
+      <div className="w-full bg-slate-900 text-white px-4 py-2 flex flex-wrap items-center justify-between text-xs border-b border-slate-800 z-50 sticky top-0 shadow-sm">
+        <div className="flex items-center gap-2 sm:gap-2.5">
+          <span className="font-extrabold tracking-wider text-teal-400 uppercase text-[10px]">RADVAULT</span>
+          <span className="text-slate-500">•</span>
+          <span className="flex items-center gap-1.5 font-bold">
+            <span className={`w-2 h-2 rounded-full ${demoMode ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'}`} />
+            {demoMode ? (
+              <span className="text-amber-300 font-bold">DEMO MODE (Sample Data Active)</span>
+            ) : (
+              <span className="text-emerald-400 font-bold">LIVE SUPABASE (Demo Mode OFF — 100% Real DB)</span>
+            )}
+          </span>
+        </div>
 
-  return <LandingPage onSelectPortal={setActivePortal} />;
+        <div className="flex items-center gap-3 mt-1 sm:mt-0">
+          <button
+            onClick={() => setDemoMode(prev => !prev)}
+            className={`px-3 py-1 rounded-full font-bold text-[11px] transition-all flex items-center gap-1.5 cursor-pointer border ${
+              demoMode
+                ? 'bg-amber-500/20 text-amber-300 border-amber-400/50 hover:bg-amber-500/30'
+                : 'bg-emerald-500/20 text-emerald-300 border-emerald-400/50 hover:bg-emerald-500/30'
+            }`}
+          >
+            {demoMode ? <Sparkles className="w-3.5 h-3.5" /> : <Database className="w-3.5 h-3.5" />}
+            <span>{demoMode ? "Switch to Live DB (Demo OFF)" : "Switch to Demo Mode"}</span>
+          </button>
+
+          {activePortal !== "home" && (
+            <button
+              onClick={goHome}
+              className="text-slate-400 hover:text-white font-semibold text-[11px] underline ml-1 cursor-pointer"
+            >
+              All Portals
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="flex-1">
+        {activePortal === "asha" && (
+          <ASHAPortal onBack={goHome} demoMode={demoMode} />
+        )}
+        {activePortal === "patient" && (
+          !familyAuthData ? (
+            <PatientLogin onLoggedIn={setFamilyAuthData} onBack={goHome} />
+          ) : (
+            <FamilyDashboard family={familyAuthData.family} members={familyAuthData.members} onLogout={() => setFamilyAuthData(null)} onBack={goHome} />
+          )
+        )}
+        {activePortal === "reception" && (
+          <HospitalStaffWorkspace
+            onBack={goHome}
+            goHome={goHome}
+            isDemoMode={demoMode}
+            demoDataEnabled={demoMode}
+          />
+        )}
+        {activePortal === "doctor" && (
+          <DoctorWorkspace
+            onBack={goHome}
+            goHome={goHome}
+            isDemoMode={demoMode}
+            demoDataEnabled={demoMode}
+          />
+        )}
+        {activePortal === "home" && (
+          <LandingPage onSelectPortal={setActivePortal} />
+        )}
+      </div>
+    </div>
+  );
 }
 
 export default App;
