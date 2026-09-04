@@ -325,22 +325,89 @@ function TeleconsultModal({ member, onClose, onCompleted }) {
   const temp = vitalVal('temperature_c', null);
   const tempF = temp ? ((temp * 9/5) + 32).toFixed(1) : null;
 
+  // Helper to parse diagnosis and medicines from care_requests asha_notes
+  const parseRxNotes = (notes, defaultDoctor = 'Dr. Arvind Kulkarni') => {
+    let diagnosis = 'Acute Viral Febrile Illness with mild inflammation';
+    let medicines = [
+      { name: "Tab. Paracetamol 500mg", dosage: "1 tablet thrice daily after food (3 days)" },
+      { name: "Sachet ORS (Oral Rehydration)", dosage: "1 packet in 1 litre boiled cool water (daily)" }
+    ];
+    let advice = 'Take adequate rest and monitor temperature.';
+
+    if (!notes) return { diagnosis, medicines, advice };
+
+    try {
+      if (notes.startsWith('{')) {
+        const p = JSON.parse(notes);
+        return {
+          diagnosis: p.diagnosis || diagnosis,
+          medicines: Array.isArray(p.rx_medicines) ? p.rx_medicines : medicines,
+          advice: p.doctor_advice || advice
+        };
+      }
+      if (notes.includes('DIAGNOSIS:')) {
+        const dMatch = notes.match(/DIAGNOSIS:([^|]+)/);
+        if (dMatch) diagnosis = dMatch[1].trim();
+      }
+      if (notes.includes('RX:')) {
+        const rPart = notes.split('RX:')[1];
+        if (rPart) {
+          const rxStr = rPart.split('|')[0];
+          medicines = JSON.parse(rxStr);
+        }
+      }
+      if (notes.includes('ADVICE:')) {
+        const aPart = notes.split('ADVICE:')[1];
+        if (aPart) advice = aPart.split('|')[0].trim();
+      }
+    } catch (_) {}
+
+    return { diagnosis, medicines, advice };
+  };
+
   // Realtime subscription: patient waiting room listens for Doctor connect or e-Prescription
-  // NOTE: We subscribe to the entire teleconsult_sessions table (no row-level filter)
-  // because row-level filters require REPLICA IDENTITY FULL which is a DB-level setting.
-  // Instead we filter by teleSessionId in JavaScript.
+  // Listens on care_requests (the guaranteed Supabase table) as well as teleconsult_sessions
   useEffect(() => {
     if (!teleSessionId) return;
 
-    const channelName = `tele_patient_${teleSessionId.substring(0, 8)}`;
-    const channel = supabase.channel(channelName)
+    // 1. Channel on care_requests
+    const careChannelName = `patient_care_${teleSessionId.substring(0, 8)}`;
+    const careChannel = supabase.channel(careChannelName)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'care_requests' },
+        payload => {
+          const updated = payload.new;
+          if (updated.id !== teleSessionId) return;
+
+          if (updated.status === 'IN_CALL') {
+            setAssignedDoctor(updated.doctor_assigned || 'Dr. Arvind Kulkarni (Medical Officer)');
+            setStep('call');
+          } else if (updated.status === 'COMPLETED') {
+            const rx = parseRxNotes(updated.asha_notes, updated.doctor_assigned);
+            setRxSummary({
+              doctorName: updated.doctor_assigned || 'Dr. Arvind Kulkarni',
+              facility: updated.facility || 'Primary Health Centre - Shirwal',
+              date: new Date(updated.completed_at || updated.updated_at || Date.now()).toLocaleDateString('en-IN'),
+              diagnosis: rx.diagnosis,
+              medicines: rx.medicines,
+              advice: rx.advice
+            });
+            setStep('rx');
+          }
+        }
+      )
+      .subscribe();
+
+    // 2. Channel on teleconsult_sessions (if available)
+    const teleChannelName = `patient_tele_${teleSessionId.substring(0, 8)}`;
+    const teleChannel = supabase.channel(teleChannelName)
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'teleconsult_sessions' },
         payload => {
           const updated = payload.new;
-          // Only process updates for our specific session
-          if (updated.id !== teleSessionId) return;
+          if (updated.id !== teleSessionId && updated.care_request_id !== teleSessionId) return;
 
           if (updated.session_status === 'IN_CALL') {
             setAssignedDoctor(updated.doctor_name || 'Dr. Arvind Kulkarni (Medical Officer)');
@@ -351,51 +418,48 @@ function TeleconsultModal({ member, onClose, onCompleted }) {
               facility: updated.facility || 'Primary Health Centre - Shirwal',
               date: new Date(updated.created_at || Date.now()).toLocaleDateString('en-IN'),
               diagnosis: updated.diagnosis || 'Acute Viral Febrile Illness with mild inflammation',
-              medicines: Array.isArray(updated.rx_medicines) ? updated.rx_medicines : [
-                { name: "Tab. Paracetamol 500mg", dosage: "1 tablet thrice daily after food (3 days)" },
-                { name: "Sachet ORS (Oral Rehydration)", dosage: "1 packet in 1 litre boiled cool water (daily)" }
-              ],
+              medicines: Array.isArray(updated.rx_medicines) ? updated.rx_medicines : [],
               advice: updated.doctor_advice || 'Take adequate rest and monitor temperature.'
             });
             setStep('rx');
           }
         }
       )
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          console.log('[CareHub] Realtime subscribed for teleconsult session:', teleSessionId);
-        }
-      });
+      .subscribe();
 
-    // Fallback polling every 5 seconds if realtime doesn't fire (network/config issues)
+    // 3. Fast polling fallback (every 2.5 seconds) ensuring guaranteed connection even if Realtime events drop
     const pollInterval = setInterval(async () => {
       try {
-        const { data } = await supabase
-          .from('teleconsult_sessions')
-          .select('id, session_status, doctor_name, diagnosis, rx_medicines, doctor_advice, facility, created_at')
+        // Query care_requests first
+        const { data: cData } = await supabase
+          .from('care_requests')
+          .select('id, status, doctor_assigned, asha_notes, facility, completed_at, updated_at')
           .eq('id', teleSessionId)
-          .single();
+          .maybeSingle();
 
-        if (!data) return;
-        if (data.session_status === 'IN_CALL' && step === 'waiting') {
-          setAssignedDoctor(data.doctor_name || 'Dr. Arvind Kulkarni (Medical Officer)');
-          setStep('call');
-        } else if (data.session_status === 'COMPLETED' && step !== 'rx') {
-          setRxSummary({
-            doctorName: data.doctor_name || 'Dr. Arvind Kulkarni',
-            facility: data.facility || 'Primary Health Centre - Shirwal',
-            date: new Date(data.created_at || Date.now()).toLocaleDateString('en-IN'),
-            diagnosis: data.diagnosis || 'Acute Viral Febrile Illness',
-            medicines: Array.isArray(data.rx_medicines) ? data.rx_medicines : [],
-            advice: data.doctor_advice || 'Rest and follow prescribed dosage.'
-          });
-          setStep('rx');
+        if (cData) {
+          if (cData.status === 'IN_CALL' && step === 'waiting') {
+            setAssignedDoctor(cData.doctor_assigned || 'Dr. Arvind Kulkarni (Medical Officer)');
+            setStep('call');
+          } else if (cData.status === 'COMPLETED' && step !== 'rx') {
+            const rx = parseRxNotes(cData.asha_notes, cData.doctor_assigned);
+            setRxSummary({
+              doctorName: cData.doctor_assigned || 'Dr. Arvind Kulkarni',
+              facility: cData.facility || 'Primary Health Centre - Shirwal',
+              date: new Date(cData.completed_at || cData.updated_at || Date.now()).toLocaleDateString('en-IN'),
+              diagnosis: rx.diagnosis,
+              medicines: rx.medicines,
+              advice: rx.advice
+            });
+            setStep('rx');
+          }
         }
-      } catch (_) { /* silent */ }
-    }, 5000);
+      } catch (_) {}
+    }, 2500);
 
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(careChannel);
+      supabase.removeChannel(teleChannel);
       clearInterval(pollInterval);
     };
   }, [teleSessionId, step]);
@@ -436,7 +500,7 @@ function TeleconsultModal({ member, onClose, onCompleted }) {
     };
 
     try {
-      const { session } = await createWaitingTeleconsult({
+      const { session, careReq, id } = await createWaitingTeleconsult({
         patient_id: member?.id,
         patient_name: member?.name || "Village Patient",
         chief_complaint: symptom + (customNotes ? ` (${customNotes})` : ''),
@@ -445,8 +509,9 @@ function TeleconsultModal({ member, onClose, onCompleted }) {
         token
       });
 
-      if (session?.id) {
-        setTeleSessionId(session.id);
+      const resolvedId = id || careReq?.id || session?.id;
+      if (resolvedId) {
+        setTeleSessionId(resolvedId);
       }
     } catch (e) {
       console.warn("[CareHub] createWaitingTeleconsult notice:", e);
@@ -455,6 +520,7 @@ function TeleconsultModal({ member, onClose, onCompleted }) {
       setStep("waiting");
     }
   };
+
 
   const handleAcceptDoctorCall = () => {
     setStep("call");

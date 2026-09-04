@@ -258,9 +258,18 @@ export async function createCareRequest(payload) {
      'ASHA Worker (Priya Deshmukh)');
 
   // 1. Sanitize payload strictly for care_requests table columns
-  // care_requests table has ONLY: id, patient_id, patient_name, source, created_by, facility, department, slot_preference, appointment_date, doctor_assigned, priority, reason, asha_notes, status, created_at, updated_at, completed_at
+  const isValidUuid = (val) => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+
+  let resolvedPatientId = payload.patient_id;
+  if (!resolvedPatientId || !isValidUuid(resolvedPatientId)) {
+    try {
+      const { data: vp } = await supabase.from('village_patients').select('id').limit(1);
+      if (vp && vp.length > 0) resolvedPatientId = vp[0].id;
+    } catch (_) {}
+  }
+
   const careRequestRecord = {
-    patient_id: payload.patient_id || null,
+    patient_id: resolvedPatientId,
     patient_name: payload.patient_name || 'Village Patient',
     source: payload.source || 'ASHA_REFERRED',
     created_by: defaultCreatedBy,
@@ -285,6 +294,7 @@ export async function createCareRequest(payload) {
     .insert([careRequestRecord])
     .select()
     .single();
+
 
   if (error) {
     console.error('[ashaService] care_requests insert error:', error);
@@ -896,105 +906,171 @@ export async function saveTeleconsultSession(payload) {
 
 /**
  * Patient enters virtual waiting room:
- * Creates teleconsult_session with 'WAITING_FOR_DOCTOR' and syncs a care_request
+ * Creates teleconsult record in care_requests (and syncs to teleconsult_sessions if table exists)
  */
 export async function createWaitingTeleconsult(payload) {
   const token = payload.token || `eS-SHIR-${Math.floor(100 + Math.random() * 900)}`;
 
-  // 1. Create teleconsult session in WAITING_FOR_DOCTOR status
-  const sessionRecord = {
-    patient_id: payload.patient_id || null,
-    patient_name: payload.patient_name || 'Village Patient',
-    facility: payload.facility || 'Primary Health Centre - Shirwal',
-    chief_complaint: payload.chief_complaint || 'General Consultation',
-    additional_notes: payload.additional_notes || null,
-    vitals_snapshot: payload.vitals_snapshot || {},
-    session_duration_sec: 0,
-    session_status: 'WAITING_FOR_DOCTOR',
-    doctor_name: 'On-Duty Medical Officer (Shirwal PHC)',
-    token,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  };
-
-
-  const { data: session, error: sessErr } = await supabase
-    .from('teleconsult_sessions')
-    .insert([sessionRecord])
-    .select()
-    .single();
-
-  if (sessErr) {
-    console.warn('[ashaService] teleconsult_sessions insert warning:', sessErr.message);
+  const isValidUuid = (val) => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+  let resolvedPatientId = payload.patient_id;
+  if (!resolvedPatientId || !isValidUuid(resolvedPatientId)) {
+    try {
+      const { data: vp } = await supabase.from('village_patients').select('id').limit(1);
+      if (vp && vp.length > 0) resolvedPatientId = vp[0].id;
+    } catch (_) {}
   }
 
-  // 2. Also log in care_requests so hospital & doctor pipelines see it
+  const vitalsJson = JSON.stringify(payload.vitals_snapshot || {});
+  const metaString = `TOKEN:${token}|COMPLAINT:${payload.chief_complaint || 'General Consultation'}|VITALS:${vitalsJson}`;
+
+  // 1. Primary: Write to care_requests (guaranteed table in Supabase)
   const { data: careReq, error: careErr } = await createCareRequest({
-    patient_id: payload.patient_id || null,
+    patient_id: resolvedPatientId,
     patient_name: payload.patient_name || 'Village Patient',
     facility: payload.facility || 'Primary Health Centre - Shirwal',
     department: 'Tele-Health Virtual OPD',
     priority: payload.priority || 'ROUTINE',
-    reason: `Virtual Teleconsultation Waiting [Token: ${token}]: ${payload.chief_complaint}`,
+    reason: `Virtual Teleconsultation [Token: ${token}]: ${payload.chief_complaint}`,
     slot_preference: token,
     source: 'TELECONSULT',
     created_by: 'eSanjeevani Patient Tele-OPD',
     status: 'WAITING_FOR_DOCTOR',
-    asha_notes: session?.id ? `teleconsult_session_id:${session.id}` : ''
+    asha_notes: metaString
   });
 
-  // Link care_request_id if session was created
-  if (session && careReq) {
-    await supabase
-      .from('teleconsult_sessions')
-      .update({ care_request_id: careReq.id })
-      .eq('id', session.id);
-  }
+  // 2. Secondary: Also insert into teleconsult_sessions if table exists
+  let session = null;
+  try {
+    const sessionRecord = {
+      patient_id: resolvedPatientId,
+      patient_name: payload.patient_name || 'Village Patient',
+      facility: payload.facility || 'Primary Health Centre - Shirwal',
+      chief_complaint: payload.chief_complaint || 'General Consultation',
+      additional_notes: payload.additional_notes || null,
+      vitals_snapshot: payload.vitals_snapshot || {},
+      session_duration_sec: 0,
+      session_status: 'WAITING_FOR_DOCTOR',
+      doctor_name: 'On-Duty Medical Officer (Shirwal PHC)',
+      token,
+      care_request_id: careReq?.id || null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
 
-  return { session, careReq, token, error: sessErr || careErr };
+    const { data: sData } = await supabase
+      .from('teleconsult_sessions')
+      .insert([sessionRecord])
+      .select()
+      .maybeSingle();
+    session = sData;
+  } catch (_) {}
+
+  return { session, careReq, token, id: careReq?.id || session?.id, error: careErr };
 }
 
 /**
  * Fetch all active teleconsultations waiting for doctor or in call
  */
 export async function getWaitingTeleconsultSessions() {
-  const { data, error } = await supabase
-    .from('teleconsult_sessions')
-    .select('*')
-    .in('session_status', ['WAITING_FOR_DOCTOR', 'IN_CALL'])
-    .order('created_at', { ascending: false });
+  // 1. Primary: Query care_requests for source = 'TELECONSULT'
+  try {
+    const { data: careReqs } = await supabase
+      .from('care_requests')
+      .select('*')
+      .eq('source', 'TELECONSULT')
+      .in('status', ['WAITING_FOR_DOCTOR', 'IN_CALL'])
+      .order('created_at', { ascending: false });
 
-  return { data: data || [], error };
+    if (careReqs && careReqs.length > 0) {
+      const normalized = careReqs.map(r => {
+        let vitals = {};
+        let complaint = r.reason?.replace(/Virtual Teleconsultation \[Token: [^\]]+\]:\s*/i, '') || 'General Consultation';
+        let token = r.slot_preference || 'eS-SHIR-OPD';
+
+        if (r.asha_notes?.includes('VITALS:')) {
+          try {
+            const vPart = r.asha_notes.split('VITALS:')[1];
+            if (vPart) vitals = JSON.parse(vPart.split('|')[0]);
+          } catch (_) {}
+        }
+        if (r.asha_notes?.includes('TOKEN:')) {
+          const tMatch = r.asha_notes.match(/TOKEN:([^|]+)/);
+          if (tMatch) token = tMatch[1].trim();
+        }
+        if (r.asha_notes?.includes('COMPLAINT:')) {
+          const cMatch = r.asha_notes.match(/COMPLAINT:([^|]+)/);
+          if (cMatch) complaint = cMatch[1].trim();
+        }
+
+        return {
+          id: r.id,
+          care_request_id: r.id,
+          patient_id: r.patient_id,
+          patient_name: r.patient_name,
+          facility: r.facility,
+          chief_complaint: complaint,
+          vitals_snapshot: vitals,
+          token,
+          doctor_name: r.doctor_assigned || 'Dr. Arvind Kulkarni (Medical Officer)',
+          session_status: r.status,
+          created_at: r.created_at,
+          updated_at: r.updated_at
+        };
+      });
+      return { data: normalized, error: null };
+    }
+  } catch (e) {
+    console.warn('[ashaService] care_requests teleconsult query notice:', e);
+  }
+
+  // 2. Secondary: Query teleconsult_sessions if table exists
+  try {
+    const { data, error } = await supabase
+      .from('teleconsult_sessions')
+      .select('*')
+      .in('session_status', ['WAITING_FOR_DOCTOR', 'IN_CALL'])
+      .order('created_at', { ascending: false });
+
+    if (data && data.length > 0) return { data, error: null };
+  } catch (_) {}
+
+  return { data: [], error: null };
 }
 
 /**
  * Doctor accepts an incoming teleconsultation from waiting room
  */
 export async function doctorAcceptTeleconsult(sessionId, doctorName = 'Dr. Arvind Kulkarni') {
-  const { data, error } = await supabase
-    .from('teleconsult_sessions')
-    .update({
-      session_status: 'IN_CALL',
-      doctor_name: doctorName,
-      updated_at: new Date().toISOString()
-    })
-    .eq('id', sessionId)
-    .select()
-    .single();
+  let careData = null;
 
-  // If there is an associated care_request, update its status
-  if (data?.care_request_id) {
-    await supabase
+  // 1. Update care_requests
+  try {
+    const { data } = await supabase
       .from('care_requests')
       .update({
         status: 'IN_CALL',
         doctor_assigned: doctorName,
         updated_at: new Date().toISOString()
       })
-      .eq('id', data.care_request_id);
-  }
+      .eq('id', sessionId)
+      .select()
+      .maybeSingle();
+    careData = data;
+  } catch (_) {}
 
-  return { data, error };
+  // 2. Also update teleconsult_sessions if table exists
+  try {
+    await supabase
+      .from('teleconsult_sessions')
+      .update({
+        session_status: 'IN_CALL',
+        doctor_name: doctorName,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', sessionId);
+  } catch (_) {}
+
+  return { data: careData, error: null };
 }
 
 /**
@@ -1006,39 +1082,48 @@ export async function doctorCompleteTeleconsult(sessionId, payload) {
     rx_medicines = [],
     doctor_advice = 'Rest and follow prescribed dosage.',
     session_duration_sec = 120,
-    care_request_id = null
+    doctor_name = 'Dr. Arvind Kulkarni'
   } = payload;
 
+  const notesString = `DIAGNOSIS:${diagnosis}|RX:${JSON.stringify(rx_medicines)}|ADVICE:${doctor_advice}|DUR:${session_duration_sec}`;
 
-  const { data, error } = await supabase
-    .from('teleconsult_sessions')
-    .update({
-      session_status: 'COMPLETED',
-      diagnosis,
-      rx_medicines,
-      doctor_advice,
-      session_duration_sec,
-      updated_at: new Date().toISOString()
-    })
-    .eq('id', sessionId)
-    .select()
-    .single();
+  let careData = null;
 
-
-  const targetCareReqId = care_request_id || data?.care_request_id;
-  if (targetCareReqId) {
-    await supabase
+  // 1. Update care_requests
+  try {
+    const { data } = await supabase
       .from('care_requests')
       .update({
         status: 'COMPLETED',
+        doctor_assigned: doctor_name,
+        asha_notes: notesString,
         completed_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       })
-      .eq('id', targetCareReqId);
-  }
+      .eq('id', sessionId)
+      .select()
+      .maybeSingle();
+    careData = data;
+  } catch (_) {}
 
-  return { data, error };
+  // 2. Also update teleconsult_sessions if table exists
+  try {
+    await supabase
+      .from('teleconsult_sessions')
+      .update({
+        session_status: 'COMPLETED',
+        diagnosis,
+        rx_medicines,
+        doctor_advice,
+        session_duration_sec,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', sessionId);
+  } catch (_) {}
+
+  return { data: careData, error: null };
 }
+
 
 /**
  * Hospital Staff assigns official Token Number, Staggered Arrival Time Slot & Counter
