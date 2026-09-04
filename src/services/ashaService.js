@@ -210,16 +210,34 @@ export async function saveVitalsReading(payload) {
 }
 
 /**
- * Get all care requests for a patient (UUID from village_patients)
+/**
+ * Get all care requests for a patient.
+ * First queries by patient_id UUID. If empty (possible bridge UUID mismatch),
+ * falls back to patient_name match so the list is never blank.
  */
-export async function getCareRequests(patientId) {
-  const { data, error } = await supabase
+export async function getCareRequests(patientId, patientName = null) {
+  // Primary query by UUID
+  const { data: byId, error } = await supabase
     .from('care_requests')
     .select('*')
     .eq('patient_id', patientId)
     .order('created_at', { ascending: false });
-  return { data: data || [], error };
+
+  if (error) return { data: [], error };
+  if (byId && byId.length > 0) return { data: byId, error: null };
+
+  // Fallback: query by patient_name if UUID match returned nothing
+  if (!patientName) return { data: [], error: null };
+
+  const { data: byName, error: nameErr } = await supabase
+    .from('care_requests')
+    .select('*')
+    .ilike('patient_name', patientName)
+    .order('created_at', { ascending: false });
+
+  return { data: byName || [], error: nameErr };
 }
+
 
 /**
  * Create a new care request (ASHA referral or self-booking)
@@ -254,9 +272,12 @@ export async function createCareRequest(payload) {
     priority: payload.priority || 'ROUTINE',
     reason: payload.reason || payload.asha_notes || 'Referred for medical evaluation',
     asha_notes: payload.asha_notes || payload.reason || '',
-    status: 'SUBMITTED',
+    // Respect payload.status — teleconsults come in as COMPLETED directly
+    status: payload.status || 'SUBMITTED',
     created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
+    updated_at: new Date().toISOString(),
+    // Set completed_at if inserting as COMPLETED
+    ...(payload.status === 'COMPLETED' ? { completed_at: new Date().toISOString() } : {})
   };
 
   const { data, error } = await supabase
@@ -827,4 +848,75 @@ export async function completeFollowUp(encounterOrConsultId, resolutionNote = ''
   }
 
   return { success: true, error: null };
-}
+}
+
+// ── Teleconsult Sessions ─────────────────────────────────────────────────────
+
+/**
+ * Save a completed teleconsultation session including e-Prescription data.
+ * @param {Object} payload - {
+ *   patient_id, patient_name, care_request_id?,
+ *   doctor_name?, facility?,
+ *   chief_complaint, additional_notes?,
+ *   vitals_snapshot: { bp_systolic, bp_diastolic, spo2_pct, pulse_bpm, temperature_c },
+ *   diagnosis, rx_medicines: [{ name, dosage }], doctor_advice,
+ *   session_duration_sec
+ * }
+ * @returns {data, error} — saved teleconsult_sessions row
+ */
+export async function saveTeleconsultSession(payload) {
+  const record = {
+    patient_id: payload.patient_id || null,
+    patient_name: payload.patient_name || 'Village Patient',
+    care_request_id: payload.care_request_id || null,
+    doctor_name: payload.doctor_name || 'Dr. Priya Sharma (MBBS, DGO)',
+    facility: payload.facility || 'Primary Health Centre - Shirwal',
+    chief_complaint: payload.chief_complaint || null,
+    additional_notes: payload.additional_notes || null,
+    vitals_snapshot: payload.vitals_snapshot || {},
+    diagnosis: payload.diagnosis || null,
+    rx_medicines: payload.rx_medicines || [],
+    doctor_advice: payload.doctor_advice || null,
+    session_duration_sec: payload.session_duration_sec || 0,
+    session_status: 'COMPLETED',
+    created_at: new Date().toISOString(),
+  };
+
+  const { data, error } = await supabase
+    .from('teleconsult_sessions')
+    .insert([record])
+    .select()
+    .single();
+
+  if (error) {
+    console.error('[ashaService] teleconsult_sessions insert error:', error);
+  }
+  return { data, error };
+}
+
+/**
+ * Fetch all teleconsult sessions for a patient.
+ * @param {string} patientId - village_patients.id UUID
+ * @param {string} [patientName] - optional fallback by name
+ */
+export async function getTeleconsultSessions(patientId, patientName = null) {
+  const { data: byId, error } = await supabase
+    .from('teleconsult_sessions')
+    .select('*')
+    .eq('patient_id', patientId)
+    .order('created_at', { ascending: false });
+
+  if (error) return { data: [], error };
+  if (byId && byId.length > 0) return { data: byId, error: null };
+
+  if (!patientName) return { data: [], error: null };
+
+  const { data: byName, error: nameErr } = await supabase
+    .from('teleconsult_sessions')
+    .select('*')
+    .ilike('patient_name', patientName)
+    .order('created_at', { ascending: false });
+
+  return { data: byName || [], error: nameErr };
+}
+

@@ -1,11 +1,14 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
+import { supabase } from "../../services/supabase";
+
 import {
   Stethoscope, Plus, X, AlertTriangle, Send, Clock, CheckCircle2, CheckCheck, 
   Calendar, Building2, HeartPulse, Baby, User, Loader2, MapPin,
   Phone, Video, VideoOff, Mic, MicOff, PhoneOff, PhoneCall, Shield,
   Sparkles, Check, ArrowRight, Download, FileText, Activity
 } from "lucide-react";
-import { getCareRequests, createCareRequest } from "../../services/ashaService";
+import { getCareRequests, createCareRequest, getLatestVitals, saveTeleconsultSession, getTeleconsultSessions } from "../../services/ashaService";
+
 
 // ─── Translations for Care Hub ──────────────────────────────
 const CARE_TRANSLATIONS = {
@@ -174,9 +177,10 @@ function ReferralCard({ req, lang, onViewRx }) {
 
         {req.reason && (
           <p className="text-xs text-slate-600 mt-1 leading-relaxed bg-slate-50 p-2 rounded-xl border border-slate-100">
-            "{req.reason}"
+            {req.reason}
           </p>
         )}
+
 
         <div className="flex items-center justify-between mt-2 pt-1 text-[11px] text-slate-500 font-semibold flex-wrap gap-2">
           <span>{req.created_by ? `Origin: ${req.created_by}` : "Self-scheduled"}</span>
@@ -234,6 +238,35 @@ function TeleconsultModal({ member, onClose, onCompleted }) {
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
   const [rxSummary, setRxSummary] = useState(null);
+  const [savingRx, setSavingRx] = useState(false);
+
+  // Real vitals from Supabase vitals_history
+  const [liveVitals, setLiveVitals] = useState(null);
+  const [vitalsLoading, setVitalsLoading] = useState(true);
+
+  useEffect(() => {
+    if (!member?.id) { setVitalsLoading(false); return; }
+    getLatestVitals(member.id).then(({ data }) => {
+      setLiveVitals(data || null);
+      setVitalsLoading(false);
+    });
+  }, [member?.id]);
+
+  // Helper: format a vital value with fallback
+  const vitalVal = (key, fallback) => {
+    if (!liveVitals) return fallback;
+    const row = liveVitals[key];
+    return row ? row[key] : null;
+  };
+
+  const bpSys = vitalVal('bp_systolic', null);
+  const bpDia = liveVitals?.bp_diastolic ? liveVitals.bp_diastolic.bp_diastolic : null;
+  const spo2 = vitalVal('spo2_pct', null);
+  const pulse = vitalVal('pulse_bpm', null);
+  const temp = vitalVal('temperature_c', null);
+  const tempF = temp ? ((temp * 9/5) + 32).toFixed(1) : null;
+
+
 
   // Call timer
   useEffect(() => {
@@ -267,21 +300,45 @@ function TeleconsultModal({ member, onClose, onCompleted }) {
   };
 
   const handleEndCall = async () => {
-    const rx = {
-      doctorName: "Dr. Priya Sharma (MBBS)",
-      facility: "Primary Health Centre - Shirwal",
-      date: new Date().toLocaleDateString("en-IN"),
-      diagnosis: "Acute Viral Febrile Illness with mild upper respiratory inflammation",
-      medicines: [
-        { name: "Tab. Paracetamol 500mg", dosage: "1 tablet thrice daily after food (3 days)" },
-        { name: "Sachet ORS (Oral Rehydration)", dosage: "1 packet in 1 litre boiled cool water (daily)" },
-        { name: "Tab. Cetirizine 10mg", dosage: "1 tablet at bedtime if nasal congestion persists" }
-      ],
-      advice: "Take adequate rest, monitor temperature every 6 hours, inform ASHA Priya Deshmukh if fever exceeds 102°F."
-    };
-    setRxSummary(rx);
+    setSavingRx(true);
 
-    // Save to care_requests as COMPLETED teleconsultation
+    const diagnosis = "Acute Viral Febrile Illness with mild upper respiratory inflammation";
+    const medicines = [
+      { name: "Tab. Paracetamol 500mg", dosage: "1 tablet thrice daily after food (3 days)" },
+      { name: "Sachet ORS (Oral Rehydration)", dosage: "1 packet in 1 litre boiled cool water (daily)" },
+      { name: "Tab. Cetirizine 10mg", dosage: "1 tablet at bedtime if nasal congestion persists" }
+    ];
+    const advice = "Take adequate rest, monitor temperature every 6 hours, inform ASHA Priya Deshmukh if fever exceeds 102°F.";
+
+    // Build vitals snapshot from real fetched vitals
+    const vitalsSnapshot = {
+      bp_systolic: bpSys,
+      bp_diastolic: bpDia,
+      spo2_pct: spo2,
+      pulse_bpm: pulse,
+      temperature_c: temp,
+    };
+
+    // 1. Save to teleconsult_sessions (persistent Rx record)
+    let teleconsultId = null;
+    try {
+      const { data: sessionData } = await saveTeleconsultSession({
+        patient_id: member?.id,
+        patient_name: member?.name || "Village Patient",
+        chief_complaint: symptom,
+        additional_notes: customNotes || null,
+        vitals_snapshot: vitalsSnapshot,
+        diagnosis,
+        rx_medicines: medicines,
+        doctor_advice: advice,
+        session_duration_sec: callDuration,
+      });
+      teleconsultId = sessionData?.id || null;
+    } catch (e) {
+      console.warn("[CareHub] teleconsult_sessions save notice:", e);
+    }
+
+    // 2. Create a COMPLETED care_request linked to the teleconsult session
     try {
       await createCareRequest({
         patient_id: member?.id,
@@ -289,17 +346,30 @@ function TeleconsultModal({ member, onClose, onCompleted }) {
         facility: "Primary Health Centre - Shirwal",
         department: "General Medicine & OPD",
         priority: "ROUTINE",
-        reason: `Teleconsultation: ${symptom}. Dr. Priya Sharma prescribed Paracetamol & ORS.`,
+        reason: `Teleconsultation: ${symptom}${customNotes ? ". " + customNotes : ""}. e-Prescription issued by Dr. Priya Sharma.`,
         source: "TELECONSULT",
         created_by: "eSanjeevani Teleconsult (Dr. Priya Sharma)",
-        status: "COMPLETED"
+        status: "COMPLETED",
+        ...(teleconsultId ? { asha_notes: `teleconsult_session_id:${teleconsultId}` } : {}),
       });
     } catch (e) {
-      console.warn("Teleconsult care_request log notice:", e);
+      console.warn("[CareHub] care_request teleconsult log notice:", e);
     }
 
+    const rx = {
+      doctorName: "Dr. Priya Sharma (MBBS, DGO)",
+      facility: "Primary Health Centre - Shirwal",
+      date: new Date().toLocaleDateString("en-IN"),
+      diagnosis,
+      medicines,
+      advice,
+      sessionId: teleconsultId,
+    };
+    setRxSummary(rx);
+    setSavingRx(false);
     setStep("rx");
   };
+
 
   const formatTimer = (sec) => {
     const m = Math.floor(sec / 60);
@@ -358,19 +428,27 @@ function TeleconsultModal({ member, onClose, onCompleted }) {
                 <div className="grid grid-cols-4 gap-2 text-center pt-1 border-t border-slate-200">
                   <div className="bg-white p-2 rounded-xl border border-slate-100">
                     <p className="text-[9px] text-slate-400 font-bold">BP</p>
-                    <p className="font-black text-xs text-slate-800">120/80</p>
+                    <p className="font-black text-xs text-slate-800">
+                      {vitalsLoading ? "..." : (bpSys && bpDia ? `${bpSys}/${bpDia}` : bpSys ? `${bpSys} mmHg` : "120/80")}
+                    </p>
                   </div>
                   <div className="bg-white p-2 rounded-xl border border-slate-100">
                     <p className="text-[9px] text-slate-400 font-bold">Pulse</p>
-                    <p className="font-black text-xs text-slate-800">76 bpm</p>
+                    <p className="font-black text-xs text-slate-800">
+                      {vitalsLoading ? "..." : (pulse ? `${pulse} bpm` : "76 bpm")}
+                    </p>
                   </div>
                   <div className="bg-white p-2 rounded-xl border border-slate-100">
                     <p className="text-[9px] text-slate-400 font-bold">SpO2</p>
-                    <p className="font-black text-xs text-slate-800">98%</p>
+                    <p className="font-black text-xs text-slate-800">
+                      {vitalsLoading ? "..." : (spo2 ? `${spo2}%` : "98%")}
+                    </p>
                   </div>
                   <div className="bg-white p-2 rounded-xl border border-slate-100">
                     <p className="text-[9px] text-slate-400 font-bold">Temp</p>
-                    <p className="font-black text-xs text-slate-800">98.6°F</p>
+                    <p className="font-black text-xs text-slate-800">
+                      {vitalsLoading ? "..." : (tempF ? `${tempF}°F` : "98.6°F")}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -544,10 +622,11 @@ function TeleconsultModal({ member, onClose, onCompleted }) {
                 <button
                   type="button"
                   onClick={handleEndCall}
-                  className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-extrabold text-xs rounded-2xl flex items-center gap-2 shadow-sm transition-colors cursor-pointer"
+                  disabled={savingRx}
+                  className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-extrabold text-xs rounded-2xl flex items-center gap-2 shadow-sm transition-colors cursor-pointer disabled:opacity-50"
                 >
-                  <PhoneOff className="w-4 h-4" />
-                  <span>End & Receive Prescription</span>
+                  {savingRx ? <Loader2 className="w-4 h-4 animate-spin" /> : <PhoneOff className="w-4 h-4" />}
+                  <span>{savingRx ? "Saving Prescription..." : "End & Receive Prescription"}</span>
                 </button>
               </div>
             </div>
@@ -630,6 +709,7 @@ function BookAppointmentModal({ member, onClose, onSaved }) {
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [confirmedToken, setConfirmedToken] = useState(null);
 
   const handleSave = async () => {
     if (!facility || !dept || !slot) {
@@ -640,25 +720,76 @@ function BookAppointmentModal({ member, onClose, onSaved }) {
     setSaving(true);
 
     try {
+      const generatedToken = `OPD-SHIR-${Math.floor(1000 + Math.random() * 9000)}`;
       await createCareRequest({
-        patient_id: member.id,
-        patient_name: member.name,
+        patient_id: member?.id,
+        patient_name: member?.name || "Village Patient",
         facility,
         department: dept,
         slot_preference: slot,
         appointment_date: appointmentDate,
         priority: "ROUTINE",
-        reason: `Self-scheduled in-person visit on ${appointmentDate} (${slot})`,
+        reason: `Self-scheduled in-person visit on ${appointmentDate} (${slot}) [Token: ${generatedToken}]`,
         source: "PATIENT_DIRECT"
       });
       setSaving(false);
-      onSaved();
+      setConfirmedToken(generatedToken);
+      onSaved && onSaved();
     } catch (e) {
       console.error(e);
       setError("Could not complete booking. Please try again.");
       setSaving(false);
     }
   };
+
+  if (confirmedToken) {
+    return (
+      <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-xs animate-in fade-in">
+        <div className="bg-white w-full max-w-md rounded-3xl overflow-hidden shadow-2xl border border-slate-200 p-6 text-center space-y-4">
+          <div className="w-14 h-14 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto border border-emerald-200">
+            <CheckCircle2 className="w-8 h-8" />
+          </div>
+          <div>
+            <span className="text-[10px] font-black bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full uppercase tracking-wider">
+              Booking Confirmed
+            </span>
+            <h3 className="text-lg font-black text-slate-900 mt-2">OPD Appointment Registered</h3>
+            <p className="text-xs text-slate-500 mt-0.5">Please present this token at the registration counter</p>
+          </div>
+
+          <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl text-left space-y-2 font-semibold text-xs text-slate-700">
+            <div className="flex justify-between items-center border-b border-slate-200/80 pb-2">
+              <span className="text-slate-400 font-bold uppercase text-[10px]">Queue Token</span>
+              <span className="font-mono font-black text-base text-[#008F83]">{confirmedToken}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400 font-bold uppercase text-[10px]">Facility</span>
+              <span className="font-extrabold text-slate-900 text-right">{facility}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400 font-bold uppercase text-[10px]">Unit</span>
+              <span className="font-bold text-slate-800">{dept}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400 font-bold uppercase text-[10px]">Date & Slot</span>
+              <span className="font-bold text-slate-800">{appointmentDate} · {slot.split(" ")[0]}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400 font-bold uppercase text-[10px]">Patient</span>
+              <span className="font-bold text-slate-900">{member?.name || "Village Patient"}</span>
+            </div>
+          </div>
+
+          <button
+            onClick={onClose}
+            className="w-full py-3 bg-[#008F83] hover:bg-[#007A70] text-white font-extrabold text-xs rounded-xl shadow-xs transition-colors cursor-pointer"
+          >
+            Done & View in Care Hub
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-xs animate-in fade-in">
@@ -760,6 +891,131 @@ function BookAppointmentModal({ member, onClose, onSaved }) {
   );
 }
 
+// ─── Prescription Viewer Modal ──────────────────────────────
+function RxViewModal({ req, member, onClose }) {
+  const [session, setSession] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    async function fetchSession() {
+      if (member?.id) {
+        const { data } = await getTeleconsultSessions(member.id, member?.name);
+        if (active && data && data.length > 0) {
+          setSession(data[0]);
+        }
+      }
+      if (active) setLoading(false);
+    }
+    fetchSession();
+    return () => { active = false; };
+  }, [member?.id, member?.name]);
+
+  const defaultMedicines = [
+    { name: "Tab. Paracetamol 500mg", dosage: "1 tablet thrice daily after food (3 days)" },
+    { name: "Sachet ORS (Oral Rehydration)", dosage: "1 packet in 1 litre boiled cool water (daily)" },
+    { name: "Tab. Cetirizine 10mg", dosage: "1 tablet at bedtime if nasal congestion persists" }
+  ];
+
+  const medicines = session?.rx_medicines?.length ? session.rx_medicines : defaultMedicines;
+  const diagnosis = session?.diagnosis || "Acute Viral Febrile Illness with mild upper respiratory inflammation";
+  const doctor = session?.doctor_name || "Dr. Priya Sharma (MBBS, DGO)";
+  const facility = session?.facility || req?.facility || "Primary Health Centre - Shirwal";
+  const advice = session?.doctor_advice || "Take adequate rest, monitor temperature every 6 hours, inform ASHA Priya Deshmukh if fever exceeds 102°F.";
+  const dateStr = session?.created_at ? new Date(session.created_at).toLocaleDateString("en-IN") : new Date(req?.created_at || Date.now()).toLocaleDateString("en-IN");
+
+  return (
+    <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4 backdrop-blur-xs animate-in fade-in">
+      <div className="bg-white w-full max-w-lg rounded-3xl overflow-hidden shadow-2xl border border-slate-200 flex flex-col max-h-[90vh]">
+        <div className="bg-gradient-to-r from-[#16324F] to-[#008F83] px-6 py-4 text-white flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center">
+              <FileText className="w-5 h-5 text-teal-200" />
+            </div>
+            <div>
+              <h3 className="text-sm font-black">Official e-Prescription (Rx)</h3>
+              <p className="text-[11px] text-teal-100 font-medium">ABDM Digital Health Record</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 text-white/80 hover:text-white rounded-lg cursor-pointer">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="p-6 overflow-y-auto space-y-4 text-xs font-sans text-slate-800 flex-1">
+          {loading ? (
+            <div className="py-12 flex flex-col items-center justify-center gap-2 text-slate-400">
+              <Loader2 className="w-6 h-6 animate-spin text-[#008F83]" />
+              <p className="text-xs font-bold">Loading digital prescription...</p>
+            </div>
+          ) : (
+            <>
+              {/* Doctor / Facility banner */}
+              <div className="border border-slate-200 rounded-2xl p-4 bg-slate-50 space-y-2">
+                <div className="flex items-start justify-between border-b border-slate-200/80 pb-2">
+                  <div>
+                    <h4 className="font-black text-slate-900 text-sm">{facility}</h4>
+                    <p className="text-[11px] text-slate-600 font-bold mt-0.5">{doctor}</p>
+                    <p className="text-[10px] text-slate-400">Consultation Date: {dateStr}</p>
+                  </div>
+                  <span className="text-[9px] font-black bg-[#E8F7F3] text-[#008F83] px-2 py-0.5 rounded border border-[#008F83]/30 uppercase">
+                    ABDM Verified
+                  </span>
+                </div>
+                <div className="flex items-center justify-between pt-1 text-[11px]">
+                  <span className="font-extrabold text-slate-700">Patient: {member?.name || req?.patient_name || "Village Patient"}</span>
+                  <span className="text-slate-500 font-mono text-[10px]">{member?.abha_id || "ABHA Linked"}</span>
+                </div>
+              </div>
+
+              {/* Diagnosis */}
+              <div>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">Clinical Diagnosis</p>
+                <div className="p-3 bg-white border border-slate-200 rounded-xl">
+                  <p className="text-xs font-extrabold text-slate-900">{diagnosis}</p>
+                </div>
+              </div>
+
+              {/* Medicines */}
+              <div>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">Prescribed Medicines (Dispensed Free at PHC)</p>
+                <div className="space-y-2">
+                  {medicines.map((m, idx) => (
+                    <div key={idx} className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 flex items-start gap-2.5">
+                      <span className="w-5 h-5 rounded-md bg-[#E8F7F3] text-[#008F83] font-black text-[10px] flex items-center justify-center shrink-0 mt-0.5">
+                        {idx + 1}
+                      </span>
+                      <div className="flex-1">
+                        <p className="font-black text-xs text-slate-900">{m.name}</p>
+                        <p className="text-[11px] text-slate-600 font-semibold mt-0.5">{m.dosage}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Advice */}
+              <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl space-y-1">
+                <p className="text-[10px] font-black text-amber-800 uppercase tracking-wider">Medical Advice & Follow-up</p>
+                <p className="text-xs text-amber-950 font-medium leading-relaxed">{advice}</p>
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="p-4 border-t border-slate-100 bg-slate-50 flex gap-2">
+          <button
+            onClick={onClose}
+            className="w-full py-3 bg-[#008F83] hover:bg-[#007A70] text-white font-extrabold text-xs rounded-xl shadow-xs transition-colors cursor-pointer text-center"
+          >
+            Close Prescription
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main CareHub Component ──────────────────────────────────
 export default function CareHub({ member }) {
   const lang = localStorage.getItem("radvault_asha_lang") || localStorage.getItem("radvault_patient_lang") || "en";
@@ -769,17 +1025,36 @@ export default function CareHub({ member }) {
   const [loading, setLoading] = useState(true);
   const [showBooking, setShowBooking] = useState(false);
   const [showTeleconsult, setShowTeleconsult] = useState(false);
+  const [selectedRxReq, setSelectedRxReq] = useState(null);
   const [activeFilter, setActiveFilter] = useState("ALL"); // 'ALL' | 'ASHA' | 'DIRECT' | 'TELE'
 
-  const load = async () => {
+  const load = useCallback(async () => {
     if (!member?.id) return;
     setLoading(true);
-    const { data } = await getCareRequests(member.id);
+    const { data } = await getCareRequests(member.id, member?.name);
     setRequests(data || []);
     setLoading(false);
-  };
+  }, [member?.id, member?.name]);
 
-  useEffect(() => { load(); }, [member?.id]);
+  useEffect(() => {
+    load();
+
+    // Live subscription for care_requests
+    const channel = supabase
+      .channel(`care_requests_sync_${member?.id || "general"}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "care_requests" },
+        () => {
+          load();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [load, member?.id]);
 
   const filteredRequests = requests.filter(r => {
     if (activeFilter === "ASHA") return r.source === "ASHA_REFERRED";
@@ -910,7 +1185,7 @@ export default function CareHub({ member }) {
         ) : (
           <div className="space-y-3">
             {filteredRequests.map(r => (
-              <ReferralCard key={r.id} req={r} lang={lang} />
+              <ReferralCard key={r.id} req={r} lang={lang} onViewRx={setSelectedRxReq} />
             ))}
           </div>
         )}
@@ -968,6 +1243,14 @@ export default function CareHub({ member }) {
           member={member}
           onClose={() => setShowBooking(false)}
           onSaved={() => { setShowBooking(false); load(); }}
+        />
+      )}
+
+      {selectedRxReq && (
+        <RxViewModal
+          req={selectedRxReq}
+          member={member}
+          onClose={() => setSelectedRxReq(null)}
         />
       )}
 
