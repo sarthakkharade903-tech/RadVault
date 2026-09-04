@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { HeartPulse, Leaf, Users, Building2, ArrowRight } from "lucide-react";
+import { HeartPulse, Leaf, Users, Building2, ArrowRight, Stethoscope } from "lucide-react";
 import ASHAPortal from "./components/ASHA/ASHAPortal";
 import PatientLogin from "./components/Patient/PatientLogin";
 import FamilyDashboard from "./components/Patient/FamilyDashboard";
@@ -7,6 +7,7 @@ import illusAsha from "./assets/illus_asha.jpg";
 import illusFamily from "./assets/illus_family.jpg";
 import illusHospital from "./assets/illus_hospital.jpg";
 import HospitalStaffWorkspace from './components/workspaces/HospitalStaffWorkspace';
+import DoctorWorkspace from './components/workspaces/DoctorWorkspace';
 
 const PORTALS = [
   {
@@ -40,7 +41,7 @@ const PORTALS = [
   {
     key: "reception",
     label: "Hospital Reception",
-    desc: "Diagnostic workspace",
+    desc: "Diagnostic intake & doctor routing",
     icon: Building2,
     illus: illusHospital,
     theme: {
@@ -49,6 +50,20 @@ const PORTALS = [
       iconBg: "bg-[#F2F4FB]",
       shadow: "0 8px 30px rgba(63,81,181,0.15)",
       accent: "#3F51B5",
+    },
+  },
+  {
+    key: "doctor",
+    label: "Doctor / Specialist",
+    desc: "Clinical case review & consultation",
+    icon: Stethoscope,
+    illus: illusHospital,
+    theme: {
+      text: "text-[#800000]",
+      activeBorder: "border-[#800000]",
+      iconBg: "bg-[#FDF2F2]",
+      shadow: "0 8px 30px rgba(128,0,0,0.15)",
+      accent: "#800000",
     },
   },
 ];
@@ -93,8 +108,8 @@ function LandingPage({ onSelectPortal }) {
                     <div className="flex-1 h-[1.5px] bg-slate-200 relative overflow-hidden">
                       <div className="absolute inset-y-0 left-0 transition-all duration-500"
                         style={{
-                          width: (hoveredPortal === 'patient' && i === 0) || (hoveredPortal === 'reception' && i <= 1) ? '100%' : '0%',
-                          backgroundColor: "#008F83"
+                          width: (hoveredPortal === 'patient' && i === 0) || (hoveredPortal === 'reception' && i <= 1) || (hoveredPortal === 'doctor' && i <= 2) ? '100%' : '0%',
+                          backgroundColor: hoveredPortal === 'doctor' ? '#800000' : hoveredPortal === 'reception' ? '#3F51B5' : hoveredPortal === 'patient' ? '#D97706' : '#008F83'
                         }} />
                     </div>
                   )}
@@ -218,6 +233,9 @@ function App() {
   }
   if (activePortal === "reception") {
     return <HospitalStaffWorkspace onBack={goHome} goHome={goHome} />;
+  }
+  if (activePortal === "doctor") {
+    return <DoctorWorkspace onBack={goHome} goHome={goHome} />;
   }
 
   return <LandingPage onSelectPortal={setActivePortal} />;

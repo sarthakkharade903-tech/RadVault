@@ -31,6 +31,11 @@ const REFERRAL_STATUS = {
   CANCELLED: 'Cancelled'
 };
 
+const DEFAULT_STAFF_CREDS = {
+  email: 'myanawar5243d@gmail.com',
+  password: 'Samir@135'
+};
+
 // Initial Demo/Mock Data for standalone testing in Demo Mode
 const DEMO_DOCTORS = [
   { id: 'd-1', name: 'Dr. Arvind Kulkarni', specialty: 'Cardiology' },
@@ -109,8 +114,8 @@ const INITIAL_DEMO_REFERRALS = [
 ];
 
 export default function HospitalStaffWorkspace({ 
-  user = null,
-  isDemoMode = true,
+  user: propUser = null,
+  isDemoMode = false,
   demoDataEnabled = true,
   onBack,
   goHome,
@@ -138,38 +143,45 @@ export default function HospitalStaffWorkspace({
 
   // Fetch real data from Supabase
   const loadSupabaseData = useCallback(async () => {
-    if (!user) {
-      if (isDemoMode) {
+    setLoading(true);
+    setError('');
+
+    try {
+      let activeUser = propUser;
+      if (!activeUser) {
+        const { data: { user: currentUser } } = await supabase.auth.getUser();
+        if (currentUser && currentUser.email === DEFAULT_STAFF_CREDS.email) {
+          activeUser = currentUser;
+        }
+      }
+      if (!activeUser && !isDemoMode) {
+        const { data: authData, error: authErr } = await supabase.auth.signInWithPassword(DEFAULT_STAFF_CREDS);
+        if (!authErr && authData?.user) {
+          activeUser = authData.user;
+        }
+      }
+
+      if (!activeUser || isDemoMode) {
         setStaffProfile({
           name: 'Sagar Deshpande (Operations Desk)',
-          phc_name: 'Pune Sassoon General Hospital'
+          phc_name: 'Shrirampur Primary Health Centre'
         });
         setFacility({
-          id: 'f2222222-2222-2222-2222-222222222222',
-          name: 'Pune Sassoon General Hospital',
-          district: 'Pune'
+          id: 'f1111111-1111-1111-1111-111111111111',
+          name: 'Shrirampur Primary Health Centre',
+          district: 'Ahmednagar'
         });
         setDoctors(DEMO_DOCTORS);
         setReferrals(demoDataEnabled ? INITIAL_DEMO_REFERRALS : []);
         setLoading(false);
         return;
       }
-      setStaffProfile(null);
-      setFacility(null);
-      setDoctors([]);
-      setReferrals([]);
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    setError('');
 
-    try {
       // 1. Fetch Hospital Staff Profile and Facility
       const { data: staffData, error: staffErr } = await supabase
         .from('hospital_staff')
         .select('*, facilities(*)')
-        .eq('user_id', user.id)
+        .eq('user_id', activeUser.id)
         .maybeSingle();
 
       if (staffErr) throw staffErr;
@@ -198,7 +210,7 @@ export default function HospitalStaffWorkspace({
           resolvedFacilityName = 'Shrirampur Primary Health Centre';
           resolvedFacilityDistrict = 'Ahmednagar';
         }
-        resolvedStaffName = user.user_metadata?.name || user.email?.split('@')[0] || 'Hospital Staff';
+        resolvedStaffName = activeUser.user_metadata?.name || activeUser.email?.split('@')[0] || 'Hospital Staff';
       }
 
       setStaffProfile({
@@ -265,7 +277,7 @@ export default function HospitalStaffWorkspace({
         };
       });
 
-      console.log(`[RADVAULT][PHC_REFERRAL_LOAD] User: ${user.id}, Facility: ${resolvedFacilityId} (${resolvedFacilityName}), Referrals: ${enrichedRefs.length}`);
+      console.log(`[RADVAULT][PHC_REFERRAL_LOAD] User: ${activeUser?.id}, Facility: ${resolvedFacilityId} (${resolvedFacilityName}), Referrals: ${enrichedRefs.length}`);
       setReferrals(enrichedRefs);
 
     } catch (err) {
@@ -275,20 +287,20 @@ export default function HospitalStaffWorkspace({
     } finally {
       setLoading(false);
     }
-  }, [user, isDemoMode, demoDataEnabled]);
+  }, [propUser, isDemoMode, demoDataEnabled]);
 
-  // Load Initial Data
+  // Load Initial Data & Real-time subscription
   useEffect(() => {
     if (isDemoMode) {
       if (demoDataEnabled) {
         setStaffProfile({
           name: 'Sagar Deshpande (Operations Desk)',
-          phc_name: 'Pune Sassoon General Hospital'
+          phc_name: 'Shrirampur Primary Health Centre'
         });
         setFacility({
-          id: 'f2222222-2222-2222-2222-222222222222',
-          name: 'Pune Sassoon General Hospital',
-          district: 'Pune'
+          id: 'f1111111-1111-1111-1111-111111111111',
+          name: 'Shrirampur Primary Health Centre',
+          district: 'Ahmednagar'
         });
         setDoctors(DEMO_DOCTORS);
         setReferrals(INITIAL_DEMO_REFERRALS);
@@ -308,18 +320,23 @@ export default function HospitalStaffWorkspace({
       setLoading(false);
     } else {
       loadSupabaseData();
-    }
-  }, [isDemoMode, demoDataEnabled, loadSupabaseData]);
 
-  // Auto-refresh interval (15s) for live incoming referrals
-  useEffect(() => {
-    if (!isDemoMode && user) {
+      const channel = supabase.channel('staff_referrals_live')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'referrals' }, () => {
+          loadSupabaseData();
+        })
+        .subscribe();
+
       const interval = setInterval(() => {
         loadSupabaseData();
       }, 15000);
-      return () => clearInterval(interval);
+
+      return () => {
+        supabase.removeChannel(channel);
+        clearInterval(interval);
+      };
     }
-  }, [isDemoMode, user, loadSupabaseData]);
+  }, [isDemoMode, demoDataEnabled, loadSupabaseData]);
 
   // Clear toast alert helper
   const showToast = (msg) => {
@@ -394,8 +411,8 @@ export default function HospitalStaffWorkspace({
   // 3. Arrived -> Assign Doctor
   const handleRouteToDoctor = async (refId, doctorName) => {
     if (isDemoMode) {
-      setReferrals(prev => prev.map(r => r.id === refId ? { ...r, doctor_assigned: doctorName } : r));
-      setSelectedReferral(prev => (prev && prev.id === refId ? { ...prev, doctor_assigned: doctorName } : prev));
+      setReferrals(prev => prev.map(r => r.id === refId ? { ...r, doctor_assigned: doctorName, status: 'Assigned' } : r));
+      setSelectedReferral(prev => (prev && prev.id === refId ? { ...prev, doctor_assigned: doctorName, status: 'Assigned' } : prev));
       setShowDoctorRouteModal(null);
       showToast(`✓ Patient successfully routed to ${doctorName}.`);
       return;
@@ -404,13 +421,13 @@ export default function HospitalStaffWorkspace({
     try {
       const { error: err } = await supabase
         .from('referrals')
-        .update({ doctor_assigned: doctorName })
+        .update({ doctor_assigned: doctorName, status: 'Assigned' })
         .eq('id', refId);
 
       if (err) throw err;
 
-      setReferrals(prev => prev.map(r => r.id === refId ? { ...r, doctor_assigned: doctorName } : r));
-      setSelectedReferral(prev => (prev && prev.id === refId ? { ...prev, doctor_assigned: doctorName } : prev));
+      setReferrals(prev => prev.map(r => r.id === refId ? { ...r, doctor_assigned: doctorName, status: 'Assigned' } : r));
+      setSelectedReferral(prev => (prev && prev.id === refId ? { ...prev, doctor_assigned: doctorName, status: 'Assigned' } : prev));
       setShowDoctorRouteModal(null);
       showToast(`✓ Scoped referral updated with assigned specialist: ${doctorName}`);
     } catch (err) {
@@ -421,7 +438,7 @@ export default function HospitalStaffWorkspace({
   // Memos for metrics
   const counts = useMemo(() => {
     const pending = referrals.filter(r => r.status === 'Pending').length;
-    const waiting = referrals.filter(r => r.status === 'Accepted' || r.status === 'Arrived').length;
+    const waiting = referrals.filter(r => r.status === 'Accepted' || r.status === 'Arrived' || r.status === 'Assigned' || r.status === 'In Consultation').length;
     const completed = referrals.filter(r => r.status === 'Completed').length;
     return { pending, waiting, completed };
   }, [referrals]);
@@ -435,7 +452,7 @@ export default function HospitalStaffWorkspace({
       if (queueFilter === 'Pending') {
         list = list.filter(r => r.status === 'Pending');
       } else if (queueFilter === 'Accepted_Arrived') {
-        list = list.filter(r => r.status === 'Accepted' || r.status === 'Arrived');
+        list = list.filter(r => r.status === 'Accepted' || r.status === 'Arrived' || r.status === 'Assigned' || r.status === 'In Consultation');
       } else if (queueFilter === 'Completed') {
         list = list.filter(r => r.status === 'Completed');
       }
@@ -865,6 +882,22 @@ export default function HospitalStaffWorkspace({
                             Send to Doctor
                           </button>
                         )}
+
+                        {ref.status === 'Assigned' && (
+                          <button
+                            type="button"
+                            onClick={() => setShowDoctorRouteModal(ref)}
+                            className="px-3.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold text-xs rounded-xl transition-colors cursor-pointer"
+                          >
+                            Re-assign Doctor
+                          </button>
+                        )}
+
+                        {ref.status === 'In Consultation' && (
+                          <span className="px-3 py-1.5 text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-xl">
+                            In Consultation
+                          </span>
+                        )}
                         
                         {ref.status === 'Completed' && (
                           <button
@@ -968,6 +1001,8 @@ export default function HospitalStaffWorkspace({
         let statusBadgeStyle = 'bg-slate-100 text-slate-700 border-slate-200';
         if (selectedReferral.status === 'Accepted') statusBadgeStyle = 'bg-sky-100 text-sky-800 border-sky-200';
         if (selectedReferral.status === 'Arrived') statusBadgeStyle = 'bg-teal-100 text-teal-800 border-teal-200';
+        if (selectedReferral.status === 'Assigned') statusBadgeStyle = 'bg-indigo-100 text-indigo-800 border-indigo-200';
+        if (selectedReferral.status === 'In Consultation') statusBadgeStyle = 'bg-amber-100 text-amber-800 border-amber-200';
         if (selectedReferral.status === 'Completed') statusBadgeStyle = 'bg-emerald-100 text-emerald-800 border-emerald-200';
 
         // Safe danger signs normalization
