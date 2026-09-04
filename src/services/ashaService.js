@@ -912,8 +912,11 @@ export async function createWaitingTeleconsult(payload) {
     session_duration_sec: 0,
     session_status: 'WAITING_FOR_DOCTOR',
     doctor_name: 'On-Duty Medical Officer (Shirwal PHC)',
+    token,
     created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
   };
+
 
   const { data: session, error: sessErr } = await supabase
     .from('teleconsult_sessions')
@@ -972,7 +975,8 @@ export async function doctorAcceptTeleconsult(sessionId, doctorName = 'Dr. Arvin
     .from('teleconsult_sessions')
     .update({
       session_status: 'IN_CALL',
-      doctor_name: doctorName
+      doctor_name: doctorName,
+      updated_at: new Date().toISOString()
     })
     .eq('id', sessionId)
     .select()
@@ -1005,6 +1009,7 @@ export async function doctorCompleteTeleconsult(sessionId, payload) {
     care_request_id = null
   } = payload;
 
+
   const { data, error } = await supabase
     .from('teleconsult_sessions')
     .update({
@@ -1012,11 +1017,13 @@ export async function doctorCompleteTeleconsult(sessionId, payload) {
       diagnosis,
       rx_medicines,
       doctor_advice,
-      session_duration_sec
+      session_duration_sec,
+      updated_at: new Date().toISOString()
     })
     .eq('id', sessionId)
     .select()
     .single();
+
 
   const targetCareReqId = care_request_id || data?.care_request_id;
   if (targetCareReqId) {
@@ -1124,4 +1131,209 @@ export async function getTeleconsultSessions(patientId, patientName = null) {
 
   return { data: byName || [], error: nameErr };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CLINICAL DOCKET: Full patient history, allergies, medications for Doctor UI
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Fetch a comprehensive clinical docket for a patient including:
+ * - Allergies, current medications, chronic conditions (from village_patients)
+ * - Recent vitals history (from vitals_history)
+ * - Past consultations (from consultations + teleconsult_sessions)
+ * - Past triage encounters (from encounters)
+ */
+export async function getFullPatientClinicalDocket(patientId, patientName = null) {
+  const result = {
+    profile: null,
+    vitals: [],
+    pastConsultations: [],
+    teleconsults: [],
+    encounters: [],
+    allergies: '',
+    currentMedications: '',
+    chronicConditions: [],
+    bloodGroup: null,
+    age: null,
+    gender: null,
+    abhaId: null,
+  };
+
+  if (!patientId && !patientName) return result;
+
+  try {
+    // 1. Get village_patients profile (has allergies, medications, chronic conditions)
+    let villagePatient = null;
+
+    if (patientId) {
+      const { data: vp } = await supabase
+        .from('village_patients')
+        .select('id, name, age_years, gender, blood_group, mobile, abha_id, allergies, current_medications, chronic_conditions, has_chronic, is_pregnant, tb_symptoms')
+        .eq('id', patientId)
+        .maybeSingle();
+      villagePatient = vp;
+    }
+
+    if (!villagePatient && patientName) {
+      const { data: vp } = await supabase
+        .from('village_patients')
+        .select('id, name, age_years, gender, blood_group, mobile, abha_id, allergies, current_medications, chronic_conditions, has_chronic, is_pregnant, tb_symptoms')
+        .ilike('name', `%${patientName}%`)
+        .limit(1)
+        .maybeSingle();
+      villagePatient = vp;
+    }
+
+    if (villagePatient) {
+      result.profile = villagePatient;
+      result.allergies = villagePatient.allergies || '';
+      result.currentMedications = villagePatient.current_medications || '';
+      result.chronicConditions = Array.isArray(villagePatient.chronic_conditions)
+        ? villagePatient.chronic_conditions
+        : (villagePatient.chronic_conditions ? [villagePatient.chronic_conditions] : []);
+      if (villagePatient.is_pregnant) result.chronicConditions.push('Pregnant');
+      if (villagePatient.tb_symptoms) result.chronicConditions.push('TB Suspect');
+      result.bloodGroup = villagePatient.blood_group || null;
+      result.age = villagePatient.age_years || null;
+      result.gender = villagePatient.gender || null;
+      result.abhaId = villagePatient.abha_id || null;
+    }
+
+    const resolvedId = patientId || villagePatient?.id;
+
+    // 2. Vitals history (last 5 readings)
+    if (resolvedId) {
+      const { data: vitals } = await supabase
+        .from('vitals_history')
+        .select('recorded_at, bp_systolic, bp_diastolic, pulse_bpm, spo2_pct, temperature_c, blood_glucose_mgdl')
+        .eq('patient_id', resolvedId)
+        .order('recorded_at', { ascending: false })
+        .limit(5);
+      result.vitals = vitals || [];
+    }
+
+    // 3. Past consultations (from consultations table)
+    if (resolvedId) {
+      const { data: cons } = await supabase
+        .from('consultations')
+        .select('id, diagnosis, clinical_assessment, treatment_advice, prescriptions, created_at, doctor_id, follow_up_recommended_date')
+        .eq('patient_id', resolvedId)
+        .order('created_at', { ascending: false })
+        .limit(5);
+      result.pastConsultations = cons || [];
+    }
+
+    // 4. Past teleconsultations (from teleconsult_sessions)
+    if (resolvedId) {
+      const { data: tele } = await supabase
+        .from('teleconsult_sessions')
+        .select('id, diagnosis, rx_medicines, doctor_advice, doctor_name, session_status, created_at, chief_complaint')
+        .eq('patient_id', resolvedId)
+        .eq('session_status', 'COMPLETED')
+        .order('created_at', { ascending: false })
+        .limit(5);
+      result.teleconsults = tele || [];
+    }
+
+    // 5. Past ASHA triage encounters
+    if (resolvedId) {
+      const { data: enc } = await supabase
+        .from('encounters')
+        .select('id, complaint, priority, symptoms, danger_signs, vitals, outcome, created_at')
+        .eq('patient_id', resolvedId)
+        .order('created_at', { ascending: false })
+        .limit(4);
+      result.encounters = enc || [];
+    }
+
+  } catch (err) {
+    console.warn('[ashaService] getFullPatientClinicalDocket error:', err.message);
+  }
+
+  return result;
+}
+
+/**
+ * Generate an AI Clinical Summary using Groq (LLaMA-3.3-70b-versatile)
+ * Fast-path clinical briefing for rural PHC doctors seeing 80-120 patients/day.
+ *
+ * Returns: { critical_alerts, active_regimen, clinical_trajectory, suggested_guardrails, raw }
+ */
+export async function generateClinicalAiSummary(docket) {
+  const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
+  if (!GROQ_API_KEY) {
+    return { error: 'GROQ API key not configured', summary: null };
+  }
+
+  const {
+    profile, allergies, currentMedications, chronicConditions,
+    vitals, pastConsultations, teleconsults, encounters, age, gender
+  } = docket;
+
+  const patientDesc = `Patient: ${profile?.name || 'Unknown'}, Age: ${age || 'Unknown'}, Gender: ${gender || 'Unknown'}`;
+  const allergyDesc = allergies ? `KNOWN ALLERGIES: ${allergies}` : 'No known drug allergies (NKDA)';
+  const medsDesc = currentMedications ? `CURRENT MEDICATIONS: ${currentMedications}` : 'No active medications on record';
+  const condDesc = chronicConditions.length > 0 ? `CHRONIC CONDITIONS: ${chronicConditions.join(', ')}` : 'No chronic conditions documented';
+
+  const latestVital = vitals[0];
+  const vitalDesc = latestVital
+    ? `Latest Vitals (${new Date(latestVital.recorded_at).toLocaleDateString('en-IN')}): BP ${latestVital.bp_systolic || 'N/A'}/${latestVital.bp_diastolic || 'N/A'} mmHg, Pulse ${latestVital.pulse_bpm || 'N/A'} bpm, SpO2 ${latestVital.spo2_pct || 'N/A'}%, Temp ${latestVital.temperature_c ? ((latestVital.temperature_c * 9/5) + 32).toFixed(1) + '°F' : 'N/A'}`
+    : 'No recent vitals on record';
+
+  const pastDiagnosesDesc = [
+    ...pastConsultations.slice(0, 3).map(c => `[${new Date(c.created_at).toLocaleDateString('en-IN')}] ${c.diagnosis || 'General Review'}: ${c.treatment_advice || ''}`),
+    ...teleconsults.slice(0, 2).map(t => `[Teleconsult ${new Date(t.created_at).toLocaleDateString('en-IN')}] ${t.diagnosis || t.chief_complaint || 'General OPD'}: Rx by ${t.doctor_name || 'PHC Doctor'}`)
+  ].join('\n') || 'No past consultations on record';
+
+  const prompt = `You are a clinical decision support assistant for a rural Primary Health Centre (PHC) in Maharashtra, India. The doctor is seeing 80-120 patients in a 3-hour morning OPD. Generate a concise 3-point clinical briefing in under 100 words total.
+
+${patientDesc}
+${allergyDesc}
+${medsDesc}
+${condDesc}
+${vitalDesc}
+
+PAST HISTORY:
+${pastDiagnosesDesc}
+
+Return ONLY valid JSON with this exact structure (no markdown, no explanation):
+{
+  "critical_alerts": "One sentence: allergies or urgent risks (write NONE if absent)",
+  "active_regimen": "One sentence: current medications and compliance notes (write NONE if absent)",
+  "clinical_trajectory": "One sentence: disease course trend or notable patterns",
+  "suggested_guardrails": "One sentence: drugs or procedures to avoid (write NONE if absent)"
+}`;
+
+  try {
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${GROQ_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.1,
+        max_tokens: 300,
+        response_format: { type: 'json_object' }
+      })
+    });
+
+    if (!response.ok) {
+      const err = await response.text();
+      console.warn('[ashaService] Groq API error:', err);
+      return { error: `Groq API error: ${response.status}`, summary: null };
+    }
+
+    const json = await response.json();
+    const content = json.choices?.[0]?.message?.content;
+    const parsed = JSON.parse(content);
+    return { summary: parsed, error: null };
+  } catch (err) {
+    console.warn('[ashaService] generateClinicalAiSummary error:', err.message);
+    return { error: err.message, summary: null };
+  }
+}
+
 

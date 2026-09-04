@@ -326,15 +326,22 @@ function TeleconsultModal({ member, onClose, onCompleted }) {
   const tempF = temp ? ((temp * 9/5) + 32).toFixed(1) : null;
 
   // Realtime subscription: patient waiting room listens for Doctor connect or e-Prescription
+  // NOTE: We subscribe to the entire teleconsult_sessions table (no row-level filter)
+  // because row-level filters require REPLICA IDENTITY FULL which is a DB-level setting.
+  // Instead we filter by teleSessionId in JavaScript.
   useEffect(() => {
     if (!teleSessionId) return;
 
-    const channel = supabase.channel(`teleconsult_stream_${teleSessionId}`)
+    const channelName = `tele_patient_${teleSessionId.substring(0, 8)}`;
+    const channel = supabase.channel(channelName)
       .on(
         'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'teleconsult_sessions', filter: `id=eq.${teleSessionId}` },
+        { event: 'UPDATE', schema: 'public', table: 'teleconsult_sessions' },
         payload => {
           const updated = payload.new;
+          // Only process updates for our specific session
+          if (updated.id !== teleSessionId) return;
+
           if (updated.session_status === 'IN_CALL') {
             setAssignedDoctor(updated.doctor_name || 'Dr. Arvind Kulkarni (Medical Officer)');
             setStep('call');
@@ -344,7 +351,7 @@ function TeleconsultModal({ member, onClose, onCompleted }) {
               facility: updated.facility || 'Primary Health Centre - Shirwal',
               date: new Date(updated.created_at || Date.now()).toLocaleDateString('en-IN'),
               diagnosis: updated.diagnosis || 'Acute Viral Febrile Illness with mild inflammation',
-              medicines: updated.rx_medicines || [
+              medicines: Array.isArray(updated.rx_medicines) ? updated.rx_medicines : [
                 { name: "Tab. Paracetamol 500mg", dosage: "1 tablet thrice daily after food (3 days)" },
                 { name: "Sachet ORS (Oral Rehydration)", dosage: "1 packet in 1 litre boiled cool water (daily)" }
               ],
@@ -354,12 +361,44 @@ function TeleconsultModal({ member, onClose, onCompleted }) {
           }
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('[CareHub] Realtime subscribed for teleconsult session:', teleSessionId);
+        }
+      });
+
+    // Fallback polling every 5 seconds if realtime doesn't fire (network/config issues)
+    const pollInterval = setInterval(async () => {
+      try {
+        const { data } = await supabase
+          .from('teleconsult_sessions')
+          .select('id, session_status, doctor_name, diagnosis, rx_medicines, doctor_advice, facility, created_at')
+          .eq('id', teleSessionId)
+          .single();
+
+        if (!data) return;
+        if (data.session_status === 'IN_CALL' && step === 'waiting') {
+          setAssignedDoctor(data.doctor_name || 'Dr. Arvind Kulkarni (Medical Officer)');
+          setStep('call');
+        } else if (data.session_status === 'COMPLETED' && step !== 'rx') {
+          setRxSummary({
+            doctorName: data.doctor_name || 'Dr. Arvind Kulkarni',
+            facility: data.facility || 'Primary Health Centre - Shirwal',
+            date: new Date(data.created_at || Date.now()).toLocaleDateString('en-IN'),
+            diagnosis: data.diagnosis || 'Acute Viral Febrile Illness',
+            medicines: Array.isArray(data.rx_medicines) ? data.rx_medicines : [],
+            advice: data.doctor_advice || 'Rest and follow prescribed dosage.'
+          });
+          setStep('rx');
+        }
+      } catch (_) { /* silent */ }
+    }, 5000);
 
     return () => {
       supabase.removeChannel(channel);
+      clearInterval(pollInterval);
     };
-  }, [teleSessionId]);
+  }, [teleSessionId, step]);
 
   // Call timer
   useEffect(() => {

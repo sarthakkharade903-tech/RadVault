@@ -28,8 +28,11 @@ import { getPatientTimeline } from '../../services/patientService';
 import {
   getWaitingTeleconsultSessions,
   doctorAcceptTeleconsult,
-  doctorCompleteTeleconsult
+  doctorCompleteTeleconsult,
+  getFullPatientClinicalDocket,
+  generateClinicalAiSummary
 } from '../../services/ashaService';
+
 
 
 
@@ -156,6 +159,14 @@ export default function DoctorWorkspace({
   const [isDoctorVideoOff, setIsDoctorVideoOff] = useState(false);
   const [quickMedName, setQuickMedName] = useState('');
   const [quickMedDosage, setQuickMedDosage] = useState('');
+
+  // ─── Clinical Docket State (Allergies, Meds, AI Summary) ───
+  const [clinicalDocket, setClinicalDocket] = useState(null);
+  const [docketLoading, setDocketLoading] = useState(false);
+  const [aiSummary, setAiSummary] = useState(null);
+  const [aiSummaryLoading, setAiSummaryLoading] = useState(false);
+  const [aiSummaryError, setAiSummaryError] = useState(null);
+  const [allergyWarning, setAllergyWarning] = useState(null); // prescription safety shield
 
   // Call timer for active consultation
   useEffect(() => {
@@ -311,10 +322,13 @@ export default function DoctorWorkspace({
       setShowTeleModal(true);
       showToast(`✓ Connected to ${session.patient_name} in Virtual OPD Room.`);
       loadTeleQueue();
+      // Load clinical docket for teleconsultation patient
+      loadClinicalDocket(session.patient_id, session.patient_name);
     } catch (err) {
       setError(`Failed to connect teleconsult: ${err.message}`);
     }
   };
+
 
   const handleCompleteTeleconsult = async () => {
     if (!activeTeleSession) return;
@@ -429,16 +443,82 @@ export default function DoctorWorkspace({
     }
   };
 
+  const loadClinicalDocket = async (patientId, patientName) => {
+    if (!patientId && !patientName) return;
+    setDocketLoading(true);
+    setClinicalDocket(null);
+    setAiSummary(null);
+    setAiSummaryError(null);
+    setAllergyWarning(null);
+    try {
+      const docket = await getFullPatientClinicalDocket(patientId, patientName);
+      setClinicalDocket(docket);
+    } catch (err) {
+      console.warn('[DoctorWorkspace] Clinical docket load error:', err.message);
+    } finally {
+      setDocketLoading(false);
+    }
+  };
+
+  const handleLoadAiSummary = async () => {
+    if (!clinicalDocket) return;
+    setAiSummaryLoading(true);
+    setAiSummaryError(null);
+    try {
+      const { summary, error } = await generateClinicalAiSummary(clinicalDocket);
+      if (error) {
+        setAiSummaryError(error);
+      } else {
+        setAiSummary(summary);
+      }
+    } catch (err) {
+      setAiSummaryError(err.message);
+    } finally {
+      setAiSummaryLoading(false);
+    }
+  };
+
+  // Prescription Safety Shield: checks a medicine name against known allergies
+  const checkAllergyContraindication = (medicineName) => {
+    if (!clinicalDocket?.allergies) return null;
+    const allergyList = clinicalDocket.allergies.toLowerCase().split(/[,;]/);
+    const CONTRAINDICATION_MAP = {
+      'penicillin': ['amoxicillin', 'ampicillin', 'cloxacillin', 'flucloxacillin', 'piperacillin'],
+      'sulfa': ['sulfamethoxazole', 'trimethoprim', 'cotrimoxazole', 'bactrim'],
+      'nsaids': ['ibuprofen', 'diclofenac', 'naproxen', 'aspirin'],
+      'aspirin': ['ibuprofen', 'diclofenac', 'naproxen'],
+      'codeine': ['tramadol', 'morphine'],
+      'sulfonamide': ['sulfamethoxazole', 'dapsone', 'furosemide'],
+    };
+    const medLower = medicineName.toLowerCase();
+    for (const allergy of allergyList) {
+      const a = allergy.trim();
+      if (medLower.includes(a)) return `⚠️ ALLERGY ALERT: Patient is allergic to "${a.toUpperCase()}". Do not prescribe this medication!`;
+      const contraList = CONTRAINDICATION_MAP[a] || [];
+      for (const contra of contraList) {
+        if (medLower.includes(contra)) {
+          return `⚠️ CONTRAINDICATION: Patient has "${a.toUpperCase()}" allergy. ${medicineName} (${contra}) is cross-reactive and contraindicated!`;
+        }
+      }
+    }
+    return null;
+  };
+
   const handleOpenCase = (ref) => {
     setActiveCase(ref);
     handleLoadDraft(ref.id);
     checkConsent(ref.patient_id);
+    loadClinicalDocket(ref.patient_id, ref.patient_name);
   };
 
   const handleCloseCase = () => {
     setActiveCase(null);
     setShowSignModal(false);
+    setClinicalDocket(null);
+    setAiSummary(null);
+    setAllergyWarning(null);
   };
+
 
   const handleStartConsultation = async () => {
     if (!activeCase) return;
@@ -1166,6 +1246,174 @@ export default function DoctorWorkspace({
               </div>
             </div>
 
+            {/* ── CLINICAL DOSSIER PANEL ── Allergies, Meds, History, AI Copilot ── */}
+
+            {docketLoading ? (
+              <div className="bg-white border border-slate-200 rounded-3xl p-4 shadow-2xs flex items-center gap-3">
+                <Loader2 className="w-4 h-4 animate-spin text-[#008F83]" />
+                <span className="text-xs text-slate-500 font-bold">Loading clinical dossier from ABHA health records...</span>
+              </div>
+            ) : clinicalDocket ? (
+              <div className="space-y-3">
+                {/* Allergy Alert Banner */}
+                {clinicalDocket.allergies ? (
+                  <div className="bg-red-50 border-l-4 border-red-500 border border-red-200 rounded-2xl p-3.5 flex items-start gap-3">
+                    <div className="w-7 h-7 rounded-lg bg-red-100 flex items-center justify-center shrink-0 text-red-700 font-black text-sm">⚠️</div>
+                    <div>
+                      <p className="text-[10px] font-black text-red-700 uppercase tracking-wider">DOCUMENTED DRUG ALLERGY — CRITICAL</p>
+                      <p className="text-xs font-black text-red-900 mt-0.5">{clinicalDocket.allergies}</p>
+                      <p className="text-[10px] text-red-600 font-medium mt-0.5">Cross-check all prescriptions before signing. A safety shield is active below.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-2xl px-3.5 py-2.5 flex items-center gap-2.5">
+                    <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span className="text-xs font-bold text-emerald-800">No Known Drug Allergies (NKDA) — Safe to prescribe standard formulations</span>
+                  </div>
+                )}
+
+                {/* Allergy Warning (triggered by prescription safety shield) */}
+                {allergyWarning && (
+                  <div className="bg-amber-50 border-2 border-amber-400 rounded-2xl p-3 text-xs font-bold text-amber-900 flex items-center gap-2">
+                    <span className="text-xl">🛡️</span>
+                    <span>{allergyWarning}</span>
+                  </div>
+                )}
+
+                {/* Current Medications & Chronic Conditions */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {clinicalDocket.currentMedications && (
+                    <div className="bg-white border border-slate-200 rounded-2xl p-3.5 space-y-1.5">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider flex items-center gap-1">
+                        <Pill className="w-3 h-3" /> Active Medications on Record
+                      </p>
+                      <p className="text-xs font-semibold text-slate-800 leading-relaxed">{clinicalDocket.currentMedications}</p>
+                    </div>
+                  )}
+                  {clinicalDocket.chronicConditions?.length > 0 && (
+                    <div className="bg-white border border-slate-200 rounded-2xl p-3.5 space-y-1.5">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider flex items-center gap-1">
+                        <Activity className="w-3 h-3" /> Chronic Conditions
+                      </p>
+                      <div className="flex flex-wrap gap-1.5 pt-0.5">
+                        {clinicalDocket.chronicConditions.map((cond, i) => (
+                          <span key={i} className="text-[10px] font-black bg-amber-50 text-amber-800 border border-amber-200 px-2 py-0.5 rounded-full">{cond}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Vitals Trend (from vitals_history) */}
+                {clinicalDocket.vitals?.length > 0 && (
+                  <div className="bg-white border border-slate-200 rounded-2xl p-3.5 space-y-2">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Recent Vitals History ({clinicalDocket.vitals.length} readings)</p>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-[10px] font-bold text-slate-700">
+                        <thead>
+                          <tr className="text-slate-400 border-b border-slate-100">
+                            <td className="pb-1 pr-3">Date</td>
+                            <td className="pb-1 pr-3">BP</td>
+                            <td className="pb-1 pr-3">Pulse</td>
+                            <td className="pb-1 pr-3">SpO₂</td>
+                            <td className="pb-1">Temp</td>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {clinicalDocket.vitals.slice(0, 3).map((v, i) => (
+                            <tr key={i} className={i === 0 ? 'text-[#007A70] font-extrabold' : 'text-slate-600'}>
+                              <td className="py-0.5 pr-3">{new Date(v.recorded_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</td>
+                              <td className="py-0.5 pr-3">{v.bp_systolic && v.bp_diastolic ? `${v.bp_systolic}/${v.bp_diastolic}` : v.bp_systolic || '—'}</td>
+                              <td className="py-0.5 pr-3">{v.pulse_bpm ? `${v.pulse_bpm} bpm` : '—'}</td>
+                              <td className="py-0.5 pr-3">{v.spo2_pct ? `${v.spo2_pct}%` : '—'}</td>
+                              <td className="py-0.5">{v.temperature_c ? `${((v.temperature_c * 9/5) + 32).toFixed(1)}°F` : '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* AI Clinical Copilot */}
+                <div className="bg-gradient-to-br from-indigo-50 to-white border border-indigo-200 rounded-2xl p-4 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-indigo-600" />
+                      <span className="text-[10px] font-black text-indigo-700 uppercase tracking-wider">⚡ AI Clinical Copilot (Groq / RAG)</span>
+                    </div>
+                    {!aiSummary && (
+                      <button
+                        type="button"
+                        onClick={handleLoadAiSummary}
+                        disabled={aiSummaryLoading}
+                        className="text-[10px] font-black bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg cursor-pointer disabled:opacity-60 flex items-center gap-1.5 transition-colors"
+                      >
+                        {aiSummaryLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                        {aiSummaryLoading ? 'Analyzing...' : 'Generate 3-sec Briefing'}
+                      </button>
+                    )}
+                  </div>
+
+                  {aiSummaryError && (
+                    <p className="text-[10px] text-rose-600 font-bold bg-rose-50 px-3 py-1.5 rounded-lg">{aiSummaryError}</p>
+                  )}
+
+                  {aiSummary ? (
+                    <div className="space-y-2 text-xs">
+                      {aiSummary.critical_alerts && aiSummary.critical_alerts !== 'NONE' && (
+                        <div className="flex gap-2">
+                          <span className="text-red-500 shrink-0">🚨</span>
+                          <div>
+                            <span className="font-black text-red-700">Safety: </span>
+                            <span className="text-red-800 font-semibold">{aiSummary.critical_alerts}</span>
+                          </div>
+                        </div>
+                      )}
+                      {aiSummary.active_regimen && aiSummary.active_regimen !== 'NONE' && (
+                        <div className="flex gap-2">
+                          <span className="text-amber-500 shrink-0">💊</span>
+                          <div>
+                            <span className="font-black text-amber-700">Medications: </span>
+                            <span className="text-amber-900 font-semibold">{aiSummary.active_regimen}</span>
+                          </div>
+                        </div>
+                      )}
+                      {aiSummary.clinical_trajectory && (
+                        <div className="flex gap-2">
+                          <span className="text-indigo-500 shrink-0">📋</span>
+                          <div>
+                            <span className="font-black text-indigo-700">Trajectory: </span>
+                            <span className="text-indigo-800 font-semibold">{aiSummary.clinical_trajectory}</span>
+                          </div>
+                        </div>
+                      )}
+                      {aiSummary.suggested_guardrails && aiSummary.suggested_guardrails !== 'NONE' && (
+                        <div className="flex gap-2">
+                          <span className="text-slate-500 shrink-0">🛡️</span>
+                          <div>
+                            <span className="font-black text-slate-700">Avoid: </span>
+                            <span className="text-slate-700 font-semibold">{aiSummary.suggested_guardrails}</span>
+                          </div>
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setAiSummary(null)}
+                        className="text-[10px] text-indigo-400 hover:text-indigo-600 font-bold cursor-pointer mt-1"
+                      >
+                        Regenerate →
+                      </button>
+                    </div>
+                  ) : !aiSummaryLoading && !aiSummaryError && (
+                    <p className="text-[10px] text-indigo-400 font-medium">
+                      Click "Generate 3-sec Briefing" to get an AI-synthesized clinical summary of this patient's history, disease trajectory, and prescribing guardrails.
+                    </p>
+                  )}
+                </div>
+              </div>
+            ) : null}
+
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
               <div className="lg:col-span-5 space-y-6">
                 <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-2xs space-y-4">
@@ -1695,6 +1943,37 @@ export default function DoctorWorkspace({
                   <span className="font-bold text-amber-900">Reported Concern: </span>
                   {activeTeleSession.chief_complaint || 'General medical review requested'}
                 </div>
+
+                {/* Clinical Dossier Mini-Panel inside teleconsult desk */}
+                {clinicalDocket && (
+                  <div className="space-y-1.5 pt-1">
+                    {clinicalDocket.allergies ? (
+                      <div className="p-2.5 bg-red-50 border border-red-300 rounded-xl flex items-center gap-2">
+                        <span className="text-base shrink-0">⚠️</span>
+                        <div>
+                          <p className="text-[10px] font-black text-red-700 uppercase">ALLERGY ALERT</p>
+                          <p className="text-xs font-bold text-red-900">{clinicalDocket.allergies}</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="p-2 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-1.5">
+                        <CheckCircle className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <span className="text-[10px] font-bold text-emerald-800">NKDA — No known drug allergies</span>
+                      </div>
+                    )}
+                    {clinicalDocket.currentMedications && (
+                      <div className="p-2 bg-slate-50 border border-slate-200 rounded-xl flex items-center gap-1.5">
+                        <Pill className="w-3.5 h-3.5 text-[#008F83] shrink-0" />
+                        <span className="text-[10px] font-semibold text-slate-700">Active Rx: {clinicalDocket.currentMedications}</span>
+                      </div>
+                    )}
+                    {allergyWarning && (
+                      <div className="p-2 bg-amber-50 border-2 border-amber-400 rounded-xl text-xs font-bold text-amber-900">
+                        🛡️ {allergyWarning}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Diagnosis Input */}
@@ -1730,8 +2009,14 @@ export default function DoctorWorkspace({
                       key={idx}
                       type="button"
                       onClick={() => {
-                        if (!teleMedicines.some(m => m.name === med.name)) {
-                          setTeleMedicines(prev => [...prev, med]);
+                        const warning = checkAllergyContraindication(med.name);
+                        if (warning) {
+                          setAllergyWarning(warning);
+                        } else {
+                          setAllergyWarning(null);
+                          if (!teleMedicines.some(m => m.name === med.name)) {
+                            setTeleMedicines(prev => [...prev, med]);
+                          }
                         }
                       }}
                       className="px-2.5 py-1 bg-slate-100 hover:bg-[#E8F7F3] hover:text-[#008F83] border border-slate-200 rounded-lg text-[11px] font-bold text-slate-700 transition-colors cursor-pointer"
@@ -1749,6 +2034,7 @@ export default function DoctorWorkspace({
                         <span className="font-extrabold text-slate-900">{m.name}</span>
                         <span className="text-slate-500 text-[11px] ml-2">{m.dosage}</span>
                       </div>
+
                       <button
                         type="button"
                         onClick={() => setTeleMedicines(prev => prev.filter((_, i) => i !== idx))}
