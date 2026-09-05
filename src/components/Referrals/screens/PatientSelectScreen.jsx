@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { UserCircle2, Search, Loader2, Plus, UserPlus, Heart, Baby, Shield, AlertTriangle, RefreshCw } from 'lucide-react';
-import { getVillagePatients } from '../../../services/ashaService';
+import { getVillagePatients, addPatient } from '../../../services/ashaService';
 
 const FALLBACK_PATIENTS = [
   { id: 'b6f81101-46d0-4b4d-8df0-9d9ce11a6a70', name: 'Rekha Bai', gender: 'Female', age_years: 22, is_pregnant: true, relation_to_head: 'Wife', village: 'Shirwal' },
@@ -17,6 +17,7 @@ export default function PatientSelectScreen({ onSelect, onSelectPatient, demoMod
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [customName, setCustomName] = useState('');
+  const [creatingCustom, setCreatingCustom] = useState(false);
 
   const loadPatients = async () => {
     setLoading(true);
@@ -50,16 +51,39 @@ export default function PatientSelectScreen({ onSelect, onSelectPatient, demoMod
 
   const filtered = patients.filter(p => p.name?.toLowerCase().includes(search.toLowerCase()));
 
-  const handleSelectCustom = () => {
-    if (!customName.trim()) return;
-    const newPat = {
-      id: crypto.randomUUID(),
-      name: customName.trim(),
-      gender: 'Other',
-      age_years: 30,
-      village: 'Shirwal'
-    };
-    if (handleSelection) handleSelection(newPat);
+  const handleSelectCustom = async () => {
+    if (!customName.trim() || creatingCustom) return;
+    try {
+      setCreatingCustom(true);
+      setError('');
+      if (!demoMode) {
+        const { data, error: addErr } = await addPatient({
+          name: customName.trim(),
+          gender: 'Other',
+          age_years: 30,
+          village: 'Shirwal',
+          phone: '9876543210'
+        });
+        if (addErr) throw addErr;
+        if (data && handleSelection) {
+          handleSelection(data);
+          return;
+        }
+      }
+      const newPat = {
+        id: crypto.randomUUID(),
+        name: customName.trim(),
+        gender: 'Other',
+        age_years: 30,
+        village: 'Shirwal'
+      };
+      if (handleSelection) handleSelection(newPat);
+    } catch (err) {
+      console.error("Failed to register walk-in patient:", err);
+      setError(`Failed to register walk-in: ${err.message || 'Database error'}`);
+    } finally {
+      setCreatingCustom(false);
+    }
   };
 
   return (
@@ -96,12 +120,16 @@ export default function PatientSelectScreen({ onSelect, onSelectPatient, demoMod
         </div>
         <button
           type="button"
-          disabled={!customName.trim()}
+          disabled={!customName.trim() || creatingCustom}
           onClick={handleSelectCustom}
-          className="px-3.5 py-2 bg-[#008F83] hover:bg-[#007A70] disabled:bg-slate-300 text-white font-extrabold text-xs rounded-lg shadow-xs flex items-center gap-1 transition-all cursor-pointer whitespace-nowrap"
+          className="px-3.5 py-2 bg-[#008F83] hover:bg-[#007A70] disabled:bg-slate-300 text-white font-extrabold text-xs rounded-lg shadow-xs flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap"
         >
-          <UserPlus className="w-3.5 h-3.5" />
-          <span>Refer</span>
+          {creatingCustom ? (
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          ) : (
+            <UserPlus className="w-3.5 h-3.5" />
+          )}
+          <span>{creatingCustom ? 'Registering...' : 'Refer'}</span>
         </button>
       </div>
 
