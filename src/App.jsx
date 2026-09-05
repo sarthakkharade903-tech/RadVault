@@ -208,7 +208,13 @@ function LandingPage({ onSelectPortal }) {
 }
 
 function App() {
-  const [activePortal, setActivePortal] = useState(() => localStorage.getItem("radvault_portal") || "home");
+  const [activePortal, setActivePortal] = useState(() => {
+    if (typeof window !== "undefined") {
+      const p = new URLSearchParams(window.location.search).get("portal");
+      if (p) return p;
+    }
+    return localStorage.getItem("radvault_portal") || "home";
+  });
   const [familyAuthData, setFamilyAuthData] = useState(() => {
     const saved = localStorage.getItem("radvault_family_auth");
     return saved ? JSON.parse(saved) : null;

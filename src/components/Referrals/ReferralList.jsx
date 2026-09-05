@@ -3,7 +3,8 @@ import {
   MapPin, Globe, RefreshCw, Plus, ArrowLeft, Users, Flame,
   AlertTriangle, Activity, Clock, CheckCircle2, Video, Search,
   X, ChevronRight, ArrowRight, Phone, ShieldCheck, Heart,
-  Trash2, Building2, User, Stethoscope, ChevronDown
+  Trash2, Building2, User, Stethoscope, ChevronDown,
+  Ambulance, Home, HeartPulse, Hospital
 } from 'lucide-react';
 
 
@@ -31,6 +32,14 @@ const TRANSLATIONS = {
     discPHCSub: "Clinical Review",
     discSpecialist: "Specialist",
     discSpecialistSub: "Expert Care",
+    stagePatient: "Patient at Home",
+    stagePatientSub: "Community Need",
+    stageAsha: "ASHA Didi",
+    stageAshaSub: "Vitals & Triage",
+    stagePHC: "Arogya Mandir / PHC",
+    stagePHCSub: "Clinical Intake",
+    stageHospital: "District Specialist",
+    stageHospitalSub: "Expert Doctor",
     activeReferrals: "Active Referrals",
     emergency: "Emergency",
     urgent: "Urgent",
@@ -88,6 +97,14 @@ const TRANSLATIONS = {
     discPHCSub: "तपासणी व टोकन",
     discSpecialist: "तज्ज्ञ डॉक्टर",
     discSpecialistSub: "विशेषज्ञ सल्ला",
+    stagePatient: "रुग्ण (घरी)",
+    stagePatientSub: "शिरवळ गाव",
+    stageAsha: "आशा ताई",
+    stageAshaSub: "तपासणी व नोंदणी",
+    stagePHC: "आरोग्य मंदिर / केंद्र",
+    stagePHCSub: "डॉक्टर पुनरावलोकन",
+    stageHospital: "जिल्हा रुग्णालय",
+    stageHospitalSub: "विशेषज्ञ डॉक्टर",
     activeReferrals: "सक्रिय रेफरल",
     emergency: "अति तातडीचे",
     urgent: "तातडीचे",
@@ -331,206 +348,264 @@ function FreshThemeHero({
         </div>
       </div>
 
-      {/* ── Main Fresh Theme Card: Modern Geometric Health Theme ── */}
-      <div className="relative rounded-3xl overflow-hidden border border-teal-100 bg-gradient-to-br from-teal-50 via-emerald-50/30 to-teal-100/50 shadow-sm p-4 sm:p-8">
+      {/* ── Main Fresh Theme Card: The Natural Care Journey ── */}
+      <div className="relative w-full rounded-3xl overflow-hidden bg-gradient-to-br from-[#f8fbf8] via-[#eef8f1] to-[#f4faf5] border-2 border-emerald-200/90 shadow-sm p-4 sm:p-7 mb-6">
         
-        {/* Abstract Geometric Background Elements */}
-        <div className="absolute top-0 right-0 w-full h-full overflow-hidden pointer-events-none z-0">
-           <div className="absolute -top-[20%] -right-[10%] w-[60%] h-[120%] bg-gradient-to-b from-teal-200/40 to-emerald-100/20 rounded-full blur-3xl rotate-12" />
-           <div className="absolute -bottom-[20%] -left-[10%] w-[50%] h-[100%] bg-gradient-to-t from-[#008F83]/15 to-transparent rounded-full blur-3xl -rotate-12" />
-           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[80%] h-[50%] bg-white/40 blur-2xl rounded-full" />
+        {/* Soft Sunlit Countryside Ambient Accents */}
+        <div className="absolute -top-12 -right-12 w-52 h-52 bg-amber-200/40 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute -bottom-10 -left-10 w-60 h-60 bg-emerald-200/30 rounded-full blur-3xl pointer-events-none" />
+
+        {/* Rolling Hills Scenic SVG at Base */}
+        <div className="absolute bottom-0 left-0 right-0 h-16 pointer-events-none opacity-40 overflow-hidden">
+          <svg viewBox="0 0 1200 120" preserveAspectRatio="none" className="w-full h-full">
+            <path d="M0,60 C200,20 400,90 600,40 C800,-10 1000,70 1200,30 L1200,120 L0,120 Z" fill="#a7f3d0" />
+            <path d="M0,80 C250,50 500,100 750,60 C950,20 1100,90 1200,70 L1200,120 L0,120 Z" fill="#6ee7b7" opacity="0.5" />
+          </svg>
         </div>
 
-        {/* Floating Script Annotations */}
-        <div className="relative z-10 flex items-center justify-between pointer-events-none mb-4 px-2 sm:px-6">
-          <div className="hidden sm:flex items-center gap-1 text-xs font-black text-[#008F83] uppercase tracking-widest select-none opacity-80">
-            <span>{t.doodleLeft}</span>
-          </div>
-          <div className="hidden sm:flex items-center gap-1 text-xs font-black text-[#008F83] uppercase tracking-widest select-none opacity-80">
-            <span>{t.doodleRight}</span>
-          </div>
-        </div>
-
-        {/* ── 3 Fresh, Vibrant Circular Theme Discs with Connected Pathway ── */}
-        <div className="relative z-10 px-2 sm:px-10 py-3 flex items-center justify-between max-w-4xl mx-auto">
+        {/* Content Layer */}
+        <div className="relative z-10 flex flex-col gap-6">
           
-          {/* DISC 1: Village / Community Care */}
-          <div className="flex flex-col items-center text-center group z-10">
-            <div className="relative">
-              <div className="w-20 h-20 sm:w-28 sm:h-28 rounded-full overflow-hidden ring-4 ring-white border border-emerald-100 shadow-md transition-transform group-hover:scale-105 bg-gradient-to-br from-emerald-100 to-teal-50 flex items-center justify-center text-[#008F83]">
-                <Heart className="w-8 h-8 sm:w-12 sm:h-12 stroke-[2.5]" />
-              </div>
-              <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 px-2.5 py-0.5 rounded-full bg-[#008F83] text-white border-2 border-white shadow-sm text-[10px] font-black tracking-wider uppercase flex items-center gap-1">
-                <span>✓</span> <span>Triage</span>
-              </div>
+          {/* Header Banner: Natural Title & Doodles */}
+          <div className="flex items-center justify-between px-1 sm:px-3">
+            <div className="flex items-center gap-2">
+              <span className="px-3 py-1 rounded-full bg-emerald-100/90 border border-emerald-300 text-emerald-900 text-[11px] font-black tracking-wide uppercase flex items-center gap-1.5 shadow-2xs">
+                <span>🌿</span>
+                <span>The Rural Care Pathway · शिरवळ गाव</span>
+              </span>
             </div>
-            {/* Pill Label */}
-            <div className="mt-4 bg-white/90 backdrop-blur-sm border border-emerald-100 rounded-full px-4 py-1.5 shadow-sm text-center">
-              <div className="font-black text-xs sm:text-sm text-[#0F2942] leading-tight">
-                {t.discVillage}
-              </div>
-              <div className="text-[10px] font-bold text-[#008F83]">
-                {t.discVillageSub}
-              </div>
+            <div className="hidden sm:flex items-center gap-2 text-xs font-bold text-emerald-700/80 select-none">
+              <span>{t.doodleLeft}</span>
             </div>
           </div>
 
-          {/* CONNECTOR 1: Winding Dotted Pathway with Chevron Waypoint */}
-          <div className="flex-1 px-1 sm:px-4 flex items-center justify-center relative -mt-10">
-            <div className="w-full h-0 border-t-[3px] border-dotted border-[#008F83]/40" />
-            <div className="absolute w-6 h-6 rounded-full bg-white border border-teal-200 text-[#008F83] shadow-sm flex items-center justify-center text-[10px] font-black">
-              ❯
-            </div>
-          </div>
-
-          {/* DISC 2: Primary Health Centre (PHC) */}
-          <div className="flex flex-col items-center text-center group z-10">
-            <div className="relative">
-              <div className="w-20 h-20 sm:w-28 sm:h-28 rounded-full overflow-hidden ring-4 ring-white border border-amber-100 shadow-md transition-transform group-hover:scale-105 bg-gradient-to-br from-amber-50 to-orange-100 flex items-center justify-center text-amber-500">
-                <Building2 className="w-8 h-8 sm:w-12 sm:h-12 stroke-[2.5]" />
-              </div>
-              <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 px-2.5 py-0.5 rounded-full bg-amber-500 text-white border-2 border-white shadow-sm text-[10px] font-black tracking-wider uppercase flex items-center gap-1 animate-pulse">
-                <span className="w-1.5 h-1.5 rounded-full bg-white" /> <span>Intake</span>
-              </div>
-            </div>
-            {/* Pill Label */}
-            <div className="mt-4 bg-white/90 backdrop-blur-sm border border-amber-100 rounded-full px-4 py-1.5 shadow-sm text-center">
-              <div className="font-black text-xs sm:text-sm text-[#0F2942] leading-tight">
-                {t.discPHC}
-              </div>
-              <div className="text-[10px] font-bold text-amber-600">
-                {t.discPHCSub}
-              </div>
-            </div>
-          </div>
-
-          {/* CONNECTOR 2: Winding Dotted Pathway with Chevron Waypoint */}
-          <div className="flex-1 px-1 sm:px-4 flex items-center justify-center relative -mt-10">
-            <div className="w-full h-0 border-t-[3px] border-dotted border-[#008F83]/40" />
-            <div className="absolute w-6 h-6 rounded-full bg-white border border-teal-200 text-[#008F83] shadow-sm flex items-center justify-center text-[10px] font-black">
-              ❯
-            </div>
-          </div>
-
-          {/* DISC 3: District Hospital Specialist */}
-          <div className="flex flex-col items-center text-center group z-10">
-            <div className="relative">
-              <div className="w-20 h-20 sm:w-28 sm:h-28 rounded-full overflow-hidden ring-4 ring-white border border-blue-100 shadow-md transition-transform group-hover:scale-105 bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center text-[#16324F]">
-                <Stethoscope className="w-8 h-8 sm:w-12 sm:h-12 stroke-[2.5]" />
-              </div>
-              <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 px-2.5 py-0.5 rounded-full bg-[#16324F] text-white border-2 border-white shadow-sm text-[10px] font-black tracking-wider uppercase flex items-center gap-1">
-                <span>○</span> <span>Expert</span>
-              </div>
-            </div>
-            {/* Pill Label */}
-            <div className="mt-4 bg-white/90 backdrop-blur-sm border border-blue-100 rounded-full px-4 py-1.5 shadow-sm text-center">
-              <div className="font-black text-xs sm:text-sm text-[#0F2942] leading-tight">
-                {t.discSpecialist}
-              </div>
-              <div className="text-[10px] font-bold text-blue-800">
-                {t.discSpecialistSub}
-              </div>
-            </div>
-          </div>
-
-        </div>
-
-        {/* ── BIG BUTTON: NEW REFERRAL (Placed Directly Below the 3 Circles!) ── */}
-        <div className="relative z-10 px-2 sm:px-6 mt-4 mb-4 flex justify-center">
-          <button
-            onClick={onCreateNew}
-            className="w-full max-w-xl py-3.5 sm:py-4 px-8 bg-gradient-to-r from-[#008F83] via-[#007A70] to-[#0A4D44] hover:from-[#007A70] hover:to-[#083E36] active:scale-[0.99] text-white font-black text-sm sm:text-base rounded-2xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-3 cursor-pointer group"
-          >
-            <div className="w-7 h-7 rounded-xl bg-white/20 flex items-center justify-center group-hover:rotate-90 transition-transform duration-300">
-              <Plus className="w-5 h-5 stroke-[3]" />
-            </div>
-            <span className="tracking-wide uppercase text-xs sm:text-sm font-black">
-              {t.newReferralBtn}
-            </span>
-          </button>
-        </div>
-
-        {/* ── 5-Tile Floating Metric Ribbon (Matching Reference Layout) ── */}
-        <div className="relative z-10 px-1 sm:px-2">
-          <div className="bg-white rounded-2xl border border-slate-200/80 p-2.5 sm:p-3 shadow-xs grid grid-cols-2 sm:grid-cols-5 gap-2 sm:gap-3 items-center">
+          {/* ── 4-Stage Natural Storybook Journey ── */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-3 relative items-center pt-2">
             
-            {/* Tile 1: Active Referrals */}
-            <div className="flex items-center gap-3 p-2 rounded-xl bg-teal-50/60 border border-teal-100/70">
-              <div className="w-10 h-10 rounded-xl bg-teal-100 text-[#008F83] flex items-center justify-center shrink-0">
-                <Users className="w-5 h-5" />
+            {/* NODE 1: Patient at Home */}
+            <div className="flex flex-col items-center text-center group relative z-10">
+              <div className="relative">
+                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-gradient-to-br from-amber-100 via-orange-50 to-amber-200 border-2 border-amber-300 text-amber-800 shadow-sm flex items-center justify-center transition-transform group-hover:scale-105 group-hover:-rotate-2">
+                  <Home className="w-8 h-8 sm:w-10 sm:h-10 stroke-[2.2]" />
+                </div>
+                <div className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-amber-500 text-white flex items-center justify-center text-[10px] font-black shadow-xs border-2 border-white">
+                  1
+                </div>
+                <div className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 px-2.5 py-0.5 rounded-full bg-amber-600 text-white text-[9px] font-black tracking-wider uppercase whitespace-nowrap shadow-2xs">
+                  {t.stagePatient || "Patient"}
+                </div>
               </div>
-              <div>
-                <div className="text-xl sm:text-2xl font-black text-slate-900 leading-none">
-                  {counts.total}
-                </div>
-                <div className="text-[10px] font-bold text-slate-500 mt-0.5">
-                  {t.activeReferrals}
-                </div>
-              </div>
-            </div>
-
-            {/* Tile 2: Emergency */}
-            <div className="flex items-center gap-3 p-2 rounded-xl bg-red-50/60 border border-red-100/70">
-              <div className="w-10 h-10 rounded-xl bg-red-100 text-red-600 flex items-center justify-center shrink-0">
-                <Flame className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="text-xl sm:text-2xl font-black text-red-600 leading-none">
-                  {counts.RED}
-                </div>
-                <div className="text-[10px] font-bold text-red-700 mt-0.5">
-                  {t.emergency}
-                </div>
+              <div className="mt-4">
+                <h4 className="font-black text-xs sm:text-sm text-slate-800 leading-tight">
+                  {t.stagePatient || "Village Home"}
+                </h4>
+                <p className="text-[10px] font-semibold text-slate-500 mt-0.5">
+                  {t.stagePatientSub || "Community Need"}
+                </p>
               </div>
             </div>
 
-            {/* Tile 3: Urgent */}
-            <div className="flex items-center gap-3 p-2 rounded-xl bg-amber-50/60 border border-amber-100/70">
-              <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center shrink-0">
-                <AlertTriangle className="w-5 h-5" />
+            {/* CONNECTOR 1: Winding Dotted Curly Road (Hidden on Mobile) */}
+            <div className="hidden md:flex absolute left-[18%] top-[30%] w-[16%] items-center justify-center pointer-events-none z-0">
+              <svg className="w-full h-8 overflow-visible" viewBox="0 0 100 24" fill="none">
+                <path d="M5,12 C25,2 35,22 55,10 C70,0 80,16 95,12" stroke="#10b981" strokeWidth="2.5" strokeDasharray="4 4" strokeLinecap="round" />
+                <polygon points="93,8 100,12 93,16" fill="#10b981" />
+              </svg>
+            </div>
+
+            {/* NODE 2: ASHA Didi Triage */}
+            <div className="flex flex-col items-center text-center group relative z-10">
+              <div className="relative">
+                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-gradient-to-br from-emerald-100 via-teal-50 to-emerald-200 border-2 border-emerald-400 text-emerald-800 shadow-sm flex items-center justify-center transition-transform group-hover:scale-105 group-hover:rotate-2">
+                  <HeartPulse className="w-8 h-8 sm:w-10 sm:h-10 stroke-[2.2]" />
+                </div>
+                <div className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[10px] font-black shadow-xs border-2 border-white">
+                  2
+                </div>
+                <div className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 px-2.5 py-0.5 rounded-full bg-emerald-700 text-white text-[9px] font-black tracking-wider uppercase whitespace-nowrap shadow-2xs">
+                  {t.stageAsha || "ASHA Didi"}
+                </div>
               </div>
-              <div>
-                <div className="text-xl sm:text-2xl font-black text-amber-600 leading-none">
-                  {counts.ORANGE}
-                </div>
-                <div className="text-[10px] font-bold text-amber-700 mt-0.5">
-                  {t.urgent}
-                </div>
+              <div className="mt-4">
+                <h4 className="font-black text-xs sm:text-sm text-slate-800 leading-tight">
+                  {t.stageAsha || "ASHA Frontline"}
+                </h4>
+                <p className="text-[10px] font-semibold text-emerald-700 mt-0.5">
+                  {t.stageAshaSub || "Vitals & Triage"}
+                </p>
               </div>
             </div>
 
-            {/* Tile 4: Routine */}
-            <div className="flex items-center gap-3 p-2 rounded-xl bg-emerald-50/60 border border-emerald-100/70">
-              <div className="w-10 h-10 rounded-xl bg-emerald-100 text-[#008F83] flex items-center justify-center shrink-0">
-                <Activity className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="text-xl sm:text-2xl font-black text-[#008F83] leading-none">
-                  {counts.GREEN}
+            {/* CONNECTOR 2: Winding Road WITH ANIMATED AMBULANCE */}
+            <div className="hidden md:flex absolute left-[43%] top-[24%] w-[16%] flex-col items-center justify-center pointer-events-none z-20">
+              <svg className="w-full h-8 overflow-visible" viewBox="0 0 100 24" fill="none">
+                <path d="M5,12 C25,20 40,2 65,14 C75,20 85,8 95,12" stroke="#059669" strokeWidth="2.5" strokeDasharray="4 4" strokeLinecap="round" />
+                <polygon points="93,8 100,12 93,16" fill="#059669" />
+              </svg>
+              {/* Cute 108 Ambulance Van traveling along road */}
+              <div className="absolute -top-4 bg-white border-2 border-emerald-500 rounded-full px-2 py-0.5 shadow-md flex items-center gap-1.5 animate-bounce pointer-events-auto cursor-pointer" style={{ animationDuration: '2.5s' }} title="108 Emergency Route">
+                <div className="relative flex items-center">
+                  <Ambulance className="w-3.5 h-3.5 text-emerald-700" />
+                  <span className="absolute -top-1 -right-1 w-1.5 h-1.5 rounded-full bg-red-500 animate-ping" />
+                  <span className="absolute -top-1 -right-1 w-1.5 h-1.5 rounded-full bg-red-500" />
                 </div>
-                <div className="text-[10px] font-bold text-teal-800 mt-0.5">
-                  {t.routine}
-                </div>
+                <span className="text-[9px] font-black text-emerald-900 tracking-wider">108 VAN</span>
               </div>
             </div>
 
-            {/* Tile 5: Intake Status */}
-            <div className="col-span-2 sm:col-span-1 flex items-center gap-2.5 p-2 rounded-xl bg-slate-50 border border-slate-200/70">
-              <Clock className="w-5 h-5 text-slate-500 shrink-0" />
-              <div className="text-xs font-black text-slate-800 leading-tight">
-                {counts.submitted > 0 ? (
-                  <span><strong className="text-amber-700">{counts.submitted}</strong> {t.awaitingIntake}</span>
-                ) : (
-                  <span className="text-emerald-700 font-bold">{t.allTriaged}</span>
-                )}
+            {/* NODE 3: PHC Clinic / Arogya Mandir */}
+            <div className="flex flex-col items-center text-center group relative z-10">
+              <div className="relative">
+                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-gradient-to-br from-cyan-100 via-teal-50 to-cyan-200 border-2 border-teal-400 text-teal-800 shadow-sm flex items-center justify-center transition-transform group-hover:scale-105 group-hover:-rotate-2">
+                  <Building2 className="w-8 h-8 sm:w-10 sm:h-10 stroke-[2.2]" />
+                </div>
+                <div className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-teal-600 text-white flex items-center justify-center text-[10px] font-black shadow-xs border-2 border-white">
+                  3
+                </div>
+                <div className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 px-2.5 py-0.5 rounded-full bg-teal-700 text-white text-[9px] font-black tracking-wider uppercase whitespace-nowrap shadow-2xs">
+                  {t.stagePHC || "PHC Clinic"}
+                </div>
+              </div>
+              <div className="mt-4">
+                <h4 className="font-black text-xs sm:text-sm text-slate-800 leading-tight">
+                  {t.stagePHC || "Arogya Mandir"}
+                </h4>
+                <p className="text-[10px] font-semibold text-teal-700 mt-0.5">
+                  {t.stagePHCSub || "Clinical Intake"}
+                </p>
+              </div>
+            </div>
+
+            {/* CONNECTOR 3: Winding Dotted Curly Road to Hospital */}
+            <div className="hidden md:flex absolute left-[68%] top-[30%] w-[16%] items-center justify-center pointer-events-none z-0">
+              <svg className="w-full h-8 overflow-visible" viewBox="0 0 100 24" fill="none">
+                <path d="M5,12 C25,2 40,24 65,10 C75,2 85,18 95,12" stroke="#3b82f6" strokeWidth="2.5" strokeDasharray="4 4" strokeLinecap="round" />
+                <polygon points="93,8 100,12 93,16" fill="#3b82f6" />
+              </svg>
+            </div>
+
+            {/* NODE 4: District Hospital & Specialist */}
+            <div className="flex flex-col items-center text-center group relative z-10">
+              <div className="relative">
+                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-gradient-to-br from-blue-100 via-indigo-50 to-blue-200 border-2 border-indigo-400 text-indigo-900 shadow-sm flex items-center justify-center transition-transform group-hover:scale-105 group-hover:rotate-2">
+                  <Hospital className="w-8 h-8 sm:w-10 sm:h-10 stroke-[2.2]" />
+                </div>
+                <div className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-indigo-600 text-white flex items-center justify-center text-[10px] font-black shadow-xs border-2 border-white">
+                  4
+                </div>
+                <div className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 px-2.5 py-0.5 rounded-full bg-indigo-800 text-white text-[9px] font-black tracking-wider uppercase whitespace-nowrap shadow-2xs">
+                  {t.stageHospital || "Specialist"}
+                </div>
+              </div>
+              <div className="mt-4">
+                <h4 className="font-black text-xs sm:text-sm text-slate-800 leading-tight">
+                  {t.stageHospital || "District Hospital"}
+                </h4>
+                <p className="text-[10px] font-semibold text-indigo-700 mt-0.5">
+                  {t.stageHospitalSub || "Specialist Care"}
+                </p>
               </div>
             </div>
 
           </div>
+
+          {/* ── BIG BUTTON: NEW REFERRAL (Directly Below the Pathway) ── */}
+          <div className="relative z-10 px-2 sm:px-6 mt-3 flex justify-center">
+            <button
+              onClick={onCreateNew}
+              className="w-full max-w-xl py-3.5 sm:py-4 px-8 bg-gradient-to-r from-[#008F83] via-[#007A70] to-[#0A4D44] hover:from-[#007A70] hover:to-[#083E36] active:scale-[0.99] text-white font-black text-sm sm:text-base rounded-2xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-3 cursor-pointer group"
+            >
+              <div className="w-7 h-7 rounded-xl bg-white/20 flex items-center justify-center group-hover:rotate-90 transition-transform duration-300">
+                <Plus className="w-5 h-5 stroke-[3]" />
+              </div>
+              <span className="tracking-wide uppercase text-xs sm:text-sm font-black">
+                {t.newReferralBtn}
+              </span>
+            </button>
+          </div>
+
+          {/* ── 5-Tile Floating Metric Ribbon (Matching Reference Layout) ── */}
+          <div className="relative z-10 px-1 sm:px-2">
+            <div className="bg-white/95 backdrop-blur-sm rounded-2xl border border-emerald-200/80 p-2.5 sm:p-3 shadow-xs grid grid-cols-2 sm:grid-cols-5 gap-2 sm:gap-3 items-center">
+              
+              {/* Tile 1: Active Referrals */}
+              <div className="flex items-center gap-3 p-2 rounded-xl bg-teal-50/70 border border-teal-100">
+                <div className="w-10 h-10 rounded-xl bg-teal-100 text-[#008F83] flex items-center justify-center shrink-0">
+                  <Users className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="text-xl sm:text-2xl font-black text-slate-900 leading-none">
+                    {counts.total}
+                  </div>
+                  <div className="text-[10px] font-bold text-slate-500 mt-0.5">
+                    {t.activeReferrals}
+                  </div>
+                </div>
+              </div>
+
+              {/* Tile 2: Emergency */}
+              <div className="flex items-center gap-3 p-2 rounded-xl bg-red-50/70 border border-red-100">
+                <div className="w-10 h-10 rounded-xl bg-red-100 text-red-600 flex items-center justify-center shrink-0">
+                  <Flame className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="text-xl sm:text-2xl font-black text-red-600 leading-none">
+                    {counts.RED}
+                  </div>
+                  <div className="text-[10px] font-bold text-red-700 mt-0.5 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                    <span>{t.emergency}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Tile 3: Urgent */}
+              <div className="flex items-center gap-3 p-2 rounded-xl bg-amber-50/70 border border-amber-100">
+                <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center shrink-0">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="text-xl sm:text-2xl font-black text-amber-600 leading-none">
+                    {counts.ORANGE}
+                  </div>
+                  <div className="text-[10px] font-bold text-amber-700 mt-0.5">
+                    {t.urgent}
+                  </div>
+                </div>
+              </div>
+
+              {/* Tile 4: Routine */}
+              <div className="flex items-center gap-3 p-2 rounded-xl bg-emerald-50/70 border border-emerald-100">
+                <div className="w-10 h-10 rounded-xl bg-emerald-100 text-[#008F83] flex items-center justify-center shrink-0">
+                  <Activity className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="text-xl sm:text-2xl font-black text-[#008F83] leading-none">
+                    {counts.GREEN}
+                  </div>
+                  <div className="text-[10px] font-bold text-teal-800 mt-0.5">
+                    {t.routine}
+                  </div>
+                </div>
+              </div>
+
+              {/* Tile 5: Intake Status */}
+              <div className="col-span-2 sm:col-span-1 flex items-center gap-2.5 p-2 rounded-xl bg-slate-50 border border-slate-200/70">
+                <Clock className="w-5 h-5 text-slate-500 shrink-0" />
+                <div className="text-xs font-black text-slate-800 leading-tight">
+                  {counts.submitted > 0 ? (
+                    <span><strong className="text-amber-700">{counts.submitted}</strong> {t.awaitingIntake}</span>
+                  ) : (
+                    <span className="text-emerald-700 font-bold">{t.allTriaged}</span>
+                  )}
+                </div>
+              </div>
+
+            </div>
+          </div>
+
         </div>
-
       </div>
-
     </div>
   );
 }
