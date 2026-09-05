@@ -112,12 +112,18 @@ export async function addPatient(payload) {
   try {
     await ensureRoleAuth('asha');
   } catch (_) {}
-  // Auto-generate ABHA ID if not provided
+  // Auto-generate ABHA ID if not provided, normalize mobile vs phone
+  const cleanPayload = { ...payload };
+  if (cleanPayload.phone && !cleanPayload.mobile) {
+    cleanPayload.mobile = cleanPayload.phone;
+  }
+  delete cleanPayload.phone;
+
   const finalPayload = {
-    ...payload,
-    abha_id: payload.abha_id || generateMockABHA(),
+    ...cleanPayload,
+    abha_id: cleanPayload.abha_id || generateMockABHA(),
     asha_verified_at: new Date().toISOString(),
-    asha_worker_name: payload.asha_worker_name || 'Priya Deshmukh',
+    asha_worker_name: cleanPayload.asha_worker_name || 'Priya Deshmukh',
   };
   const { data, error } = await supabase
     .from('village_patients')

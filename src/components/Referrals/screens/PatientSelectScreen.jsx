@@ -62,7 +62,7 @@ export default function PatientSelectScreen({ onSelect, onSelectPatient, demoMod
           gender: 'Other',
           age_years: 30,
           village: 'Shirwal',
-          phone: '9876543210'
+          mobile: '9876543210'
         });
         if (addErr) throw addErr;
         if (data && handleSelection) {
