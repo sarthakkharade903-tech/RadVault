@@ -427,10 +427,10 @@ export default function FollowUpTracker({ patients, onLogVisit, onEditPatient, d
 
     const combined = [...referral, ...docItems, ...routine];
 
-    if (combined.length === 0) return getDemoItems(t);
+    if (combined.length === 0) return demoMode ? getDemoItems(t) : [];
     combined.sort((a, b) => a.urgencyDays - b.urgencyDays);
     return combined;
-  }, [patients, careRequests, doctorFollowUps, lang]);
+  }, [patients, careRequests, doctorFollowUps, lang, demoMode]);
 
   const visibleItems = useMemo(() => {
     if (activeFilter === "done") return allItems.filter(it => completedSet.has(it.id));

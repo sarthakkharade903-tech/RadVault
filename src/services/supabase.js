@@ -63,3 +63,8 @@ export async function ensureRoleAuth(roleName) {
 
   return inFlightAuth;
 }
+
+if (typeof window !== 'undefined') {
+  window.__supabase = supabase;
+  window.__ensureRoleAuth = ensureRoleAuth;
+}
