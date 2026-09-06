@@ -6,6 +6,7 @@ import FamilyDashboard from "./components/Patient/FamilyDashboard";
 import illusAsha from "./assets/illus_asha.jpg";
 import illusFamily from "./assets/illus_family.jpg";
 import illusHospital from "./assets/illus_hospital.jpg";
+import illusDoctor from "./assets/illus_doctor.jpg";
 import HospitalStaffWorkspace from './components/workspaces/HospitalStaffWorkspace';
 import DoctorWorkspace from './components/workspaces/DoctorWorkspace';
 import { ensureRoleAuth } from './services/supabase';
@@ -58,13 +59,13 @@ const PORTALS = [
     label: "Doctor / Specialist",
     desc: "Clinical case review & consultation",
     icon: Stethoscope,
-    illus: illusHospital,
+    illus: illusDoctor,
     theme: {
-      text: "text-[#800000]",
-      activeBorder: "border-[#800000]",
-      iconBg: "bg-[#FDF2F2]",
-      shadow: "0 8px 30px rgba(128,0,0,0.15)",
-      accent: "#800000",
+      text: "text-[#7C3AED]",
+      activeBorder: "border-[#7C3AED]",
+      iconBg: "bg-[#F5F3FF]",
+      shadow: "0 8px 30px rgba(124,58,237,0.18)",
+      accent: "#7C3AED",
     },
   },
 ];
@@ -110,7 +111,7 @@ function LandingPage({ onSelectPortal }) {
                       <div className="absolute inset-y-0 left-0 transition-all duration-500"
                         style={{
                           width: (hoveredPortal === 'patient' && i === 0) || (hoveredPortal === 'reception' && i <= 1) || (hoveredPortal === 'doctor' && i <= 2) ? '100%' : '0%',
-                          backgroundColor: hoveredPortal === 'doctor' ? '#800000' : hoveredPortal === 'reception' ? '#3F51B5' : hoveredPortal === 'patient' ? '#D97706' : '#008F83'
+                          backgroundColor: hoveredPortal === 'doctor' ? '#7C3AED' : hoveredPortal === 'reception' ? '#3F51B5' : hoveredPortal === 'patient' ? '#D97706' : '#008F83'
                         }} />
                     </div>
                   )}
@@ -176,7 +177,7 @@ function LandingPage({ onSelectPortal }) {
                   <div className="flex items-center gap-2.5">
                     <div className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: activePortal.theme.accent }} />
                     <span className="text-[11px] font-bold tracking-wider uppercase" style={{ color: activePortal.theme.accent }}>
-                      {activePortal.key === "asha" ? "Community Care Begins Here" : activePortal.key === "patient" ? "Health Stays Connected with Family" : "Community Care Connects to Clinical Care"}
+                      {activePortal.key === "asha" ? "Community Care Begins Here" : activePortal.key === "patient" ? "Health Stays Connected with Family" : activePortal.key === "reception" ? "Community Care Connects to Clinical Care" : "Specialist Consultation & Tele-Clinical Review"}
                     </span>
                   </div>
                   <div className="flex gap-1.5">
