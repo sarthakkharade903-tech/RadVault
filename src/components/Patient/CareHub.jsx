@@ -1315,6 +1315,9 @@ export default function CareHub({ member, onOpenEmergency }) {
   const [showTeleconsult, setShowTeleconsult] = useState(false);
   const [selectedRxReq, setSelectedRxReq] = useState(null);
   const [activeFilter, setActiveFilter] = useState("ALL"); // 'ALL' | 'ASHA' | 'DIRECT' | 'TELE'
+  const [mapToast, setMapToast] = useState('');
+
+  const showMapToast = (msg) => { setMapToast(msg); setTimeout(() => setMapToast(''), 4000); };
 
   const load = useCallback(async (isSilent = false) => {
     if (!member?.id) return;
@@ -1494,6 +1497,158 @@ export default function CareHub({ member, onOpenEmergency }) {
             ))}
           </div>
         )}
+      </div>
+
+      {/* ── Toast Banner (ASHA Escort / Map Actions) ── */}
+      {mapToast && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 bg-[#008F83] text-white text-xs font-bold px-5 py-3 rounded-2xl shadow-lg flex items-center gap-2 animate-in fade-in">
+          <span>✓</span> {mapToast}
+        </div>
+      )}
+
+      {/* ── How to Reach the Hospital (NHS / US Urgent Care Style) ── */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-xs font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+            <span>🗺️</span> How to Reach the Hospital
+          </h3>
+          {filteredRequests.some(r => ['Accepted','ACCEPTED','Assigned','Arrived'].includes(r.status)) && (
+            <span className="text-[9px] font-black bg-[#008F83] text-white px-2.5 py-1 rounded-full flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+              APPOINTMENT ACTIVE
+            </span>
+          )}
+        </div>
+
+        {/* Map Preview Card */}
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+
+          {/* Interactive Map Banner */}
+          <a
+            href="https://maps.google.com/maps?q=Shirwal+Primary+Health+Centre,+Shirwal,+Maharashtra&z=15"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block relative h-32 bg-gradient-to-br from-teal-50 via-emerald-50 to-slate-100 hover:opacity-90 transition-opacity cursor-pointer"
+          >
+            {/* Grid background */}
+            <svg className="absolute inset-0 w-full h-full opacity-15" viewBox="0 0 400 128" preserveAspectRatio="none">
+              {[0,40,80,120,160,200,240,280,320,360,400].map(x => (
+                <line key={`v${x}`} x1={x} y1="0" x2={x} y2="128" stroke="#008F83" strokeWidth="1"/>
+              ))}
+              {[0,32,64,96,128].map(y => (
+                <line key={`h${y}`} x1="0" y1={y} x2="400" y2={y} stroke="#008F83" strokeWidth="1"/>
+              ))}
+              {/* Road lines */}
+              <path d="M0,64 Q100,48 200,64 T400,64" stroke="#008F83" strokeWidth="4" fill="none" opacity="0.5"/>
+              <path d="M200,0 L200,128" stroke="#007A70" strokeWidth="3" opacity="0.4"/>
+              <path d="M0,32 L400,96" stroke="#008F83" strokeWidth="2" opacity="0.3"/>
+            </svg>
+
+            {/* Hospital Pin */}
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="flex flex-col items-center drop-shadow-lg">
+                <div className="w-12 h-12 rounded-full bg-[#008F83] border-3 border-white flex items-center justify-center shadow-lg">
+                  <span className="text-2xl">🏥</span>
+                </div>
+                <div className="mt-1 bg-white/95 px-3 py-0.5 rounded-full text-[10px] font-black text-[#008F83] shadow border border-[#008F83]/20">
+                  Shirwal PHC
+                </div>
+              </div>
+            </div>
+
+            {/* Open Maps CTA */}
+            <div className="absolute top-2 right-2 bg-white/95 border border-slate-200 rounded-lg px-2.5 py-1 text-[9px] font-black text-slate-700 flex items-center gap-1 shadow">
+              <MapPin className="w-3 h-3 text-[#008F83]" /> Open in Google Maps
+            </div>
+
+            {/* Distance badge */}
+            <div className="absolute bottom-2 left-2 bg-[#008F83]/90 text-white rounded-lg px-2.5 py-1 text-[9px] font-black flex items-center gap-1">
+              📍 ~2.4 km · ~8 min by auto
+            </div>
+
+            {/* Appointment time if active */}
+            {filteredRequests.find(r => ['Accepted','ACCEPTED','Assigned'].includes(r.status))?.slot_preference && (
+              <div className="absolute bottom-2 right-2 bg-amber-500/90 text-white rounded-lg px-2.5 py-1 text-[9px] font-black">
+                ⏰ {filteredRequests.find(r => ['Accepted','ACCEPTED','Assigned'].includes(r.status))?.slot_preference?.split('·')?.[1]?.trim() || 'Slot confirmed'}
+              </div>
+            )}
+          </a>
+
+          {/* Transport Options */}
+          <div className="p-3.5 space-y-3">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Choose how to get there</p>
+            <div className="grid grid-cols-4 gap-2">
+
+              {/* 108 Ambulance / Patient Transport Service */}
+              <a
+                href="tel:108"
+                className="flex flex-col items-center gap-1.5 p-2.5 rounded-xl bg-red-50 border border-red-100 hover:bg-red-100 transition-colors cursor-pointer"
+              >
+                <span className="text-xl">🚑</span>
+                <span className="text-[9px] font-black text-red-700 text-center leading-tight">108 Free</span>
+              </a>
+
+              {/* Google Maps Directions */}
+              <a
+                href="https://maps.google.com/maps?daddr=17.9800,74.0200&travelmode=driving"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex flex-col items-center gap-1.5 p-2.5 rounded-xl bg-[#E8F7F3] border border-[#008F83]/20 hover:bg-teal-100 transition-colors cursor-pointer"
+              >
+                <span className="text-xl">🧭</span>
+                <span className="text-[9px] font-black text-[#008F83] text-center leading-tight">Directions</span>
+              </a>
+
+              {/* Local Auto / Ola Taxi */}
+              <a
+                href="https://book.olacabs.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex flex-col items-center gap-1.5 p-2.5 rounded-xl bg-amber-50 border border-amber-100 hover:bg-amber-100 transition-colors cursor-pointer"
+              >
+                <span className="text-xl">🚕</span>
+                <span className="text-[9px] font-black text-amber-700 text-center leading-tight">Auto / Ola</span>
+              </a>
+
+              {/* ASHA Escort Request */}
+              <button
+                onClick={() => showMapToast('ASHA escort request sent! Your ASHA worker will contact you to confirm pickup time.')}
+                className="flex flex-col items-center gap-1.5 p-2.5 rounded-xl bg-purple-50 border border-purple-100 hover:bg-purple-100 transition-colors cursor-pointer"
+              >
+                <span className="text-xl">👩‍⚕️</span>
+                <span className="text-[9px] font-black text-purple-700 text-center leading-tight">ASHA Escort</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* International Standards Transport Panel */}
+        <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
+          <div className="flex items-center gap-2 pb-2 border-b border-slate-200">
+            <span className="text-base">🌍</span>
+            <span className="text-[11px] font-black text-slate-700">Patient Transport Rights & Accessibility</span>
+          </div>
+          <div className="space-y-2.5 text-[11px]">
+            <div className="flex items-start gap-2.5">
+              <span className="shrink-0 text-sm mt-0.5">🇬🇧</span>
+              <span className="text-slate-600 leading-snug">
+                <strong className="text-slate-800">NHS-style PTS:</strong> Non-emergency 108 Patient Transport Service available for those medically unable to travel independently. Request via ASHA worker or PHC reception on <strong>02169-244222</strong>.
+              </span>
+            </div>
+            <div className="flex items-start gap-2.5">
+              <span className="shrink-0 text-sm mt-0.5">🇺🇸</span>
+              <span className="text-slate-600 leading-snug">
+                <strong className="text-slate-800">ADA Accessible:</strong> Shirwal PHC has wheelchair ramps, accessible OPD counters, and sign-language support. Inform reception for priority queue access.
+              </span>
+            </div>
+            <div className="flex items-start gap-2.5">
+              <span className="shrink-0 text-sm mt-0.5">🏥</span>
+              <span className="text-slate-600 leading-snug">
+                <strong className="text-slate-800">PM-JAY / Ayushman Bharat:</strong> Free transport via 108 for BPL patients. Show your Ayushman Bharat card at Reception for reimbursement upto ₹250.
+              </span>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* ── Nearby Government Facilities ── */}

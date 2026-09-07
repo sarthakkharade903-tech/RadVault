@@ -322,7 +322,7 @@ export default function HospitalStaffWorkspace({
 
       showToast(`✓ Official Token #${assignTokenNum} & slot ${assignSlot} assigned to ${showTokenModal.patient_name}.`);
       setShowTokenModal(null);
-      loadSupabaseData(true);
+      setTimeout(() => loadSupabaseData(true), 3000);
     } catch (err) {
       setError(`Failed to assign token: ${err.message}`);
     } finally {
@@ -639,7 +639,7 @@ export default function HospitalStaffWorkspace({
       setReferrals(prev => prev.map(r => r.id === refId ? { ...r, status: 'Accepted' } : r));
       setSelectedReferral(prev => (prev && prev.id === refId ? { ...prev, status: 'Accepted' } : prev));
       showToast('✓ Referral accepted successfully.');
-      loadSupabaseData(true);
+      setTimeout(() => loadSupabaseData(true), 2500);
     } catch (err) {
       setError(`Failed to accept referral: ${err.message}`);
     }
@@ -668,7 +668,7 @@ export default function HospitalStaffWorkspace({
       setReferrals(prev => prev.map(r => r.id === refId ? { ...r, status: 'Arrived' } : r));
       setSelectedReferral(prev => (prev && prev.id === refId ? { ...prev, status: 'Arrived' } : prev));
       showToast('✓ Patient marked as arrived.');
-      loadSupabaseData(true);
+      setTimeout(() => loadSupabaseData(true), 2500);
     } catch (err) {
       setError(`Failed to mark arrival: ${err.message}`);
     }
@@ -716,8 +716,8 @@ export default function HospitalStaffWorkspace({
       setReferrals(prev => prev.map(r => r.id === refId ? { ...r, doctor_assigned: doctorName, status: 'Assigned' } : r));
       setSelectedReferral(prev => (prev && prev.id === refId ? { ...prev, doctor_assigned: doctorName, status: 'Assigned' } : prev));
       setShowDoctorRouteModal(null);
-      showToast(`✓ Scoped referral updated with assigned specialist: ${doctorName}`);
-      loadSupabaseData(true);
+      showToast(`✓ Patient routed to ${doctorName}. Status → Assigned. Doctor desk notified.`);
+      setTimeout(() => loadSupabaseData(true), 3000);
     } catch (err) {
       setError(`Failed to assign specialist: ${err.message}`);
     }

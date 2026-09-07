@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Users, Droplet, Zap, Home as HomeIcon, MapPin, Edit, Phone, Lock, ChevronRight, ChevronLeft, UserPlus, FileText, CheckCircle2, ActivitySquare } from "lucide-react";
+import { Users, Droplet, Zap, Home as HomeIcon, MapPin, Edit, Phone, Lock, ChevronRight, ChevronLeft, UserPlus, FileText, CheckCircle2, ActivitySquare, Navigation } from "lucide-react";
 import { getFamilyWithMembers } from "../../services/ashaService";
 
 export default function FamilyManager({ family: initialFamily, onBack, onAddMember, onEditMember, onEditFamily, onLogVisit }) {
@@ -142,6 +142,43 @@ export default function FamilyManager({ family: initialFamily, onBack, onAddMemb
                   </button>
                   <button onClick={() => onEditMember(p)} className="flex-1 bg-white border border-slate-200 text-slate-600 py-2.5 rounded-xl text-[11px] font-bold hover:bg-slate-50 transition-colors">
                     Edit Profile
+                  </button>
+                  {/* Navigate to Patient Home (Google Maps) */}
+                  <button
+                    onClick={() => {
+                      // Build destination from patient GPS or village name
+                      const destGPS = p.gps_coordinates || p.gps;
+                      const destVillage = encodeURIComponent(
+                        (p.village || family.village || 'Shirwal') + ', Maharashtra, India'
+                      );
+                      const dest = destGPS ? `${destGPS}` : destVillage;
+
+                      if (navigator.geolocation) {
+                        navigator.geolocation.getCurrentPosition(
+                          (pos) => {
+                            const { latitude, longitude } = pos.coords;
+                            const mapsUrl = destGPS
+                              ? `https://maps.google.com/maps?saddr=${latitude},${longitude}&daddr=${dest}`
+                              : `https://maps.google.com/maps?saddr=${latitude},${longitude}&daddr=${dest}`;
+                            window.open(mapsUrl, '_blank');
+                          },
+                          () => {
+                            // Geolocation denied — open destination-only link
+                            const mapsUrl = destGPS
+                              ? `https://maps.google.com/maps?q=${dest}`
+                              : `https://maps.google.com/maps?q=${dest}`;
+                            window.open(mapsUrl, '_blank');
+                          }
+                        );
+                      } else {
+                        // No geolocation support — open maps with destination
+                        window.open(`https://maps.google.com/maps?q=${dest}`, '_blank');
+                      }
+                    }}
+                    className="w-10 h-10 bg-[#E8F7F3] border border-[#008F83]/30 text-[#008F83] rounded-xl flex items-center justify-center hover:bg-[#008F83] hover:text-white transition-colors shrink-0"
+                    title={`Navigate to ${p.name}'s home`}
+                  >
+                    <Navigation className="w-4 h-4" />
                   </button>
                 </div>
               </div>
