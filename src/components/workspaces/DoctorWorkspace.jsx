@@ -42,6 +42,7 @@ import {
   getFullPatientClinicalDocket,
   generateClinicalAiSummary
 } from '../../services/ashaService';
+import { parseEmergencyRecord, updateEmergencyDispatch } from '../../services/emergencyService';
 
 
 
@@ -123,6 +124,7 @@ export default function DoctorWorkspace({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+  const [emergencyCases, setEmergencyCases] = useState([]);
 
   const [activeCase, setActiveCase] = useState(null);
   const [showSignModal, setShowSignModal] = useState(false);
@@ -272,35 +274,42 @@ export default function DoctorWorkspace({
           .order('created_at', { ascending: false });
 
         if (careData && careData.length > 0) {
-          careRefs = careData.map(c => {
-            const isHigh = c.priority === 'URGENT' || c.priority === 'HIGH' || c.priority === 'RED';
-            const isMedium = c.priority === 'MEDIUM' || c.priority === 'ORANGE';
-            const mappedPriority = isHigh ? 'HIGH' : isMedium ? 'ORANGE' : 'GREEN';
-            const priorityLabel = isHigh ? '🔴 Emergency / Immediate Attention' : isMedium ? '🟡 Urgent / Within 24 Hours' : '🟢 Routine / Local Care';
+          const emergencies = careData
+            .filter(c => c.source === 'EMERGENCY_SOS' && c.status !== 'RESOLVED' && c.status !== 'COMPLETED')
+            .map(parseEmergencyRecord);
+          setEmergencyCases(emergencies);
 
-            let mappedStatus = c.status === 'SUBMITTED' || c.status === 'PENDING_PHC' ? 'Arrived'
-              : c.status === 'ACCEPTED' ? 'Assigned'
-              : c.status === 'COMPLETED' ? 'Completed'
-              : c.status;
+          careRefs = careData
+            .filter(c => c.source !== 'EMERGENCY_SOS')
+            .map(c => {
+              const isHigh = c.priority === 'URGENT' || c.priority === 'HIGH' || c.priority === 'RED' || c.priority === 'EMERGENCY';
+              const isMedium = c.priority === 'MEDIUM' || c.priority === 'ORANGE';
+              const mappedPriority = isHigh ? 'HIGH' : isMedium ? 'ORANGE' : 'GREEN';
+              const priorityLabel = isHigh ? '🔴 Emergency / Immediate Attention' : isMedium ? '🟡 Urgent / Within 24 Hours' : '🟢 Routine / Local Care';
 
-            return {
-              id: c.id,
-              patient_id: c.patient_id,
-              patient_name: c.patient_name,
-              created_by: c.created_by,
-              destination_hospital: c.facility,
-              destination_department: c.department || 'General Medicine',
-              doctor_assigned: c.doctor_assigned || resolvedDoctor.name,
-              priority: mappedPriority,
-              priority_label: priorityLabel,
-              status: mappedStatus,
-              symptoms: c.reason,
-              ai_note: c.asha_notes,
-              slot_preference: c.slot_preference,
-              created_at: c.created_at,
-              isCareRequest: true
-            };
-          });
+              let mappedStatus = c.status === 'SUBMITTED' || c.status === 'PENDING_PHC' ? 'Arrived'
+                : c.status === 'ACCEPTED' ? 'Assigned'
+                : c.status === 'COMPLETED' ? 'Completed'
+                : c.status;
+
+              return {
+                id: c.id,
+                patient_id: c.patient_id,
+                patient_name: c.patient_name,
+                created_by: c.created_by,
+                destination_hospital: c.facility,
+                destination_department: c.department || 'General Medicine',
+                doctor_assigned: c.doctor_assigned || resolvedDoctor.name,
+                priority: mappedPriority,
+                priority_label: priorityLabel,
+                status: mappedStatus,
+                symptoms: c.reason,
+                ai_note: c.asha_notes,
+                slot_preference: c.slot_preference,
+                created_at: c.created_at,
+                isCareRequest: true
+              };
+            });
         }
       } catch (cErr) {
         console.warn('[RadVault Doctor] care_requests load notice:', cErr.message);
@@ -916,6 +925,80 @@ export default function DoctorWorkspace({
                   <PhoneCall className="w-4 h-4" />
                   <span>Connect Video Call</span>
                 </button>
+              </div>
+            )}
+
+            {/* Live Acute Emergency SOS Alert Banner for Clinical Doctor */}
+            {emergencyCases.length > 0 && (
+              <div className="p-4 bg-red-50 border-2 border-red-500 rounded-3xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-lg animate-in fade-in duration-200">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-red-600 text-white flex items-center justify-center font-black text-xl shrink-0 shadow-sm animate-pulse">
+                    🚨
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[10px] font-black bg-red-600 text-white px-2.5 py-0.5 rounded-full uppercase tracking-wider animate-bounce">
+                        ● ACUTE EMERGENCY SOS ACTIVE ({emergencyCases.length})
+                      </span>
+                      <span className="text-sm font-black text-slate-900">
+                        {emergencyCases[0].patient_name || 'Emergency Caller'}
+                      </span>
+                      <span className="text-[10px] font-black px-2 py-0.5 rounded bg-red-100 text-red-800 border border-red-200">
+                        {emergencyCases[0].cadCategory} · {emergencyCases[0].nature}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-600 font-semibold mt-1">
+                      <span>Breathing: <strong>{emergencyCases[0].breathing}</strong></span>
+                      <span className="mx-1">·</span>
+                      <span>State: <strong>{emergencyCases[0].consciousness}</strong></span>
+                      <span className="mx-1">·</span>
+                      <span>Location: <strong>{emergencyCases[0].village}</strong></span>
+                      {emergencyCases[0].ambulanceStatus === 'DISPATCHED' && (
+                        <span className="ml-1 text-red-600 font-black">
+                          · 🚑 108 En Route (ETA: {emergencyCases[0].ambulanceEta})
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                  <a
+                    href={`tel:${emergencyCases[0].phone}`}
+                    className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-black text-xs rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Phone className="w-3.5 h-3.5" />
+                    <span>Call {emergencyCases[0].phone}</span>
+                  </a>
+
+                  {emergencyCases[0].mapsLink && (
+                    <a
+                      href={emergencyCases[0].mapsLink}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 font-black text-xs rounded-xl border border-slate-200 transition-colors flex items-center gap-1"
+                    >
+                      <span>GPS Map</span>
+                    </a>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await updateEmergencyDispatch(emergencyCases[0].id, { status: 'RESOLVED', doctor_status: 'STABILIZED' });
+                        setEmergencyCases(prev => prev.filter(c => c.id !== emergencyCases[0].id));
+                        setSuccessMsg('✓ Emergency case marked stabilized & in clinical care');
+                      } catch (e) {
+                        console.error(e);
+                      }
+                    }}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Mark Stabilized</span>
+                  </button>
+                </div>
               </div>
             )}
 

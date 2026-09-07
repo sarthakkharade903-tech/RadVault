@@ -5,7 +5,7 @@ import {
   Stethoscope, Plus, X, AlertTriangle, Send, Clock, CheckCircle2, CheckCheck, 
   Calendar, Building2, HeartPulse, Baby, User, Loader2, MapPin,
   Phone, Video, VideoOff, Mic, MicOff, PhoneOff, PhoneCall, Shield,
-  Sparkles, Check, ArrowRight, Download, FileText, Activity, Ticket
+  Sparkles, Check, ArrowRight, Download, FileText, Activity, Ticket, Siren
 } from "lucide-react";
 import {
   getCareRequests,
@@ -1305,7 +1305,7 @@ function RxViewModal({ req, member, onClose }) {
 }
 
 // ─── Main CareHub Component ──────────────────────────────────
-export default function CareHub({ member }) {
+export default function CareHub({ member, onOpenEmergency }) {
   const lang = localStorage.getItem("radvault_asha_lang") || localStorage.getItem("radvault_patient_lang") || "en";
   const t = CARE_TRANSLATIONS[lang] || CARE_TRANSLATIONS.en;
 
@@ -1393,9 +1393,20 @@ export default function CareHub({ member }) {
 
       {/* ── 24x7 Emergency Helplines Strip ── */}
       <div className="bg-[#E8F7F3] rounded-2xl border border-[#008F83]/30 p-4 shadow-xs">
-        <div className="flex items-center gap-2 mb-2.5">
-          <Shield className="w-4 h-4 text-[#008F83]" />
-          <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">{t.emergencyHelplines}</h3>
+        <div className="flex items-center justify-between gap-2 mb-2.5 flex-wrap">
+          <div className="flex items-center gap-2">
+            <Shield className="w-4 h-4 text-[#008F83]" />
+            <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">{t.emergencyHelplines}</h3>
+          </div>
+          {onOpenEmergency && (
+            <button
+              onClick={onOpenEmergency}
+              className="px-3.5 py-1 bg-red-600 hover:bg-red-700 text-white font-black text-[11px] rounded-full flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer animate-pulse"
+            >
+              <Siren className="w-3.5 h-3.5" />
+              <span>Trigger Hospital Emergency SOS</span>
+            </button>
+          )}
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">

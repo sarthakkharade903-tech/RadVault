@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import {
   HeartPulse, LogOut, FileText, Calendar, Home, Users, ChevronLeft,
   Plus, Stethoscope, Pill, FileImage, Droplet, Sparkles, Loader2,
-  Globe, Shield, ArrowRight, Search
+  Globe, Shield, ArrowRight, Search, Siren
 } from "lucide-react";
 import PatientHome from "../dashboard/PatientHome";
 import CareHub from "./CareHub";
@@ -11,6 +11,7 @@ import MedicalDocumentCard from './MedicalDocumentCard';
 import DocumentPreview from './DocumentPreview';
 import UploadModal from './UploadModal';
 import GovernmentSchemes from './GovernmentSchemes';
+import EmergencySOSModal from './EmergencySOSModal';
 import { getDocuments } from '../../services/vaultService';
 
 // ─── Single-Language Dictionaries (No Mixed Text) ─────────
@@ -20,6 +21,7 @@ const PORTAL_TRANSLATIONS = {
     navTimeline: "Timeline",
     navVault: "Vault",
     navCare: "Care Hub",
+    navEmergency: "Emergency SOS",
     navFamily: "Family",
     signOut: "Sign Out",
     vaultTitle: "Medical Vault",
@@ -43,6 +45,7 @@ const PORTAL_TRANSLATIONS = {
     navTimeline: "आरोग्य इतिहास",
     navVault: "डिजिटल व्हॉल्ट",
     navCare: "आरोग्य सेवा",
+    navEmergency: "आपत्कालीन SOS",
     navFamily: "कुटुंब",
     signOut: "बाहेर पडा",
     vaultTitle: "डिजिटल आरोग्य व्हॉल्ट",
@@ -66,6 +69,7 @@ const PORTAL_TRANSLATIONS = {
     navTimeline: "टाइमलाइन",
     navVault: "हेल्थ वॉल्ट",
     navCare: "स्वास्थ्य सेवा",
+    navEmergency: "आपातकालीन SOS",
     navFamily: "परिवार",
     signOut: "लॉग आउट",
     vaultTitle: "डिजिटल स्वास्थ्य वॉल्ट",
@@ -100,11 +104,12 @@ export default function FamilyDashboard({ family, members, onLogout, onBack }) {
   };
 
   const NAV = [
-    { key: "home",     label: t.navOverview,  Icon: Home },
-    { key: "timeline", label: t.navTimeline,  Icon: Calendar },
-    { key: "records",  label: t.navVault,     Icon: FileText },
-    { key: "care",     label: t.navCare,      Icon: Stethoscope },
-    { key: "family",   label: t.navFamily,    Icon: Users },
+    { key: "home",      label: t.navOverview,   Icon: Home },
+    { key: "timeline",  label: t.navTimeline,   Icon: Calendar },
+    { key: "records",   label: t.navVault,      Icon: FileText },
+    { key: "care",      label: t.navCare,       Icon: Stethoscope },
+    { key: "emergency", label: t.navEmergency,  Icon: Siren, isEmergency: true },
+    { key: "family",    label: t.navFamily,     Icon: Users },
   ];
 
   const VAULT_CATEGORIES = [
@@ -346,7 +351,14 @@ export default function FamilyDashboard({ family, members, onLogout, onBack }) {
         {/* ── Care Hub Tab ── */}
         {activeTab === "care" && (
           <div className="pb-36">
-            <CareHub member={selectedMember} />
+            <CareHub member={selectedMember} onOpenEmergency={() => setActiveTab("emergency")} />
+          </div>
+        )}
+
+        {/* ── Emergency SOS Tab ── */}
+        {activeTab === "emergency" && (
+          <div className="pb-36">
+            <EmergencySOSModal member={selectedMember} isStandaloneTab={true} />
           </div>
         )}
 
@@ -414,20 +426,27 @@ export default function FamilyDashboard({ family, members, onLogout, onBack }) {
       {/* ── Floating Bottom Navigation ── */}
       <div className="fixed bottom-5 left-0 right-0 pointer-events-none z-50 px-4 flex justify-center">
         <nav className="bg-white/95 backdrop-blur-xl border border-amber-100 px-2 py-1.5 rounded-full shadow-[0_12px_40px_-8px_rgba(251,191,36,0.3)] pointer-events-auto flex items-center gap-1">
-          {NAV.map(({ key, label, Icon }) => {
+          {NAV.map(({ key, label, Icon, isEmergency }) => {
             const active = activeTab === key;
+            const isEm = !!isEmergency;
+
+            let buttonClass = "text-[#64748B] hover:text-[#16324F] hover:bg-amber-50/50";
+            if (active && !isEm) {
+              buttonClass = "bg-gradient-to-r from-amber-400 to-amber-500 text-white shadow-md shadow-amber-300/40";
+            } else if (active && isEm) {
+              buttonClass = "bg-gradient-to-r from-red-600 to-rose-600 text-white shadow-md shadow-red-500/40 ring-2 ring-red-400";
+            } else if (!active && isEm) {
+              buttonClass = "text-red-700 bg-red-50 hover:bg-red-100 border border-red-200/60 animate-pulse";
+            }
+
             return (
               <button
                 key={key}
                 onClick={() => setActiveTab(key)}
-                className={`flex items-center gap-2 py-2 px-3.5 rounded-full transition-all duration-300 whitespace-nowrap cursor-pointer ${
-                  active 
-                    ? "bg-gradient-to-r from-amber-400 to-amber-500 text-white shadow-md shadow-amber-300/40" 
-                    : "text-[#64748B] hover:text-[#16324F] hover:bg-amber-50/50"
-                }`}
+                className={`flex items-center gap-2 py-2 px-3.5 rounded-full transition-all duration-300 whitespace-nowrap cursor-pointer ${buttonClass}`}
               >
-                <Icon className="w-4 h-4 shrink-0" strokeWidth={active ? 2.5 : 2} />
-                <span className={`text-[12px] font-black tracking-wide ${active ? "inline-block" : "hidden sm:inline-block"}`}>
+                <Icon className={`w-4 h-4 shrink-0 ${isEm && !active ? "text-red-600" : ""}`} strokeWidth={active || isEm ? 2.5 : 2} />
+                <span className={`text-[12px] font-black tracking-wide ${active ? "inline-block" : isEm ? "inline-block font-extrabold" : "hidden sm:inline-block"}`}>
                   {label}
                 </span>
               </button>
