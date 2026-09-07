@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
-import { Home, Users, Send, AlertTriangle, BarChart2, ChevronLeft, UserCircle2, Menu, X, Pill, HeartPulse } from "lucide-react";
+import { Home, Users, Send, AlertTriangle, BarChart2, ChevronLeft, UserCircle2, Menu, X, Pill, HeartPulse, MapPin } from "lucide-react";
 import ASHAHome from "./ASHAHome";
 import MyVillage from "./MyVillage";
+import VillageMapView from "./VillageMapView";
 import AddFamilyForm from "./AddFamilyForm";
 import FamilyManager from "./FamilyManager";
 import PatientProfileBuilder from "./PatientProfileBuilder";
@@ -15,12 +16,13 @@ import { getVillagePatients, getFamilies } from "../../services/ashaService";
 const NAV = [
   { key: "home",     label: "Home",         Icon: Home },
   { key: "village",  label: "Village",      Icon: Users },
+  { key: "map",      label: "Village Map",  Icon: MapPin },
   { key: "refer",    label: "Refer",        Icon: Send },
   { key: "followup", label: "Follow-Up",    Icon: AlertTriangle },
   { key: "activity", label: "Activity",     Icon: BarChart2 },
   { key: "medicine", label: "Medicine Kit", Icon: Pill },
 ];
-const MAIN_SCREENS = ["home","village","refer","followup","activity","medicine"];
+const MAIN_SCREENS = ["home","village","map","refer","followup","activity","medicine"];
 
 export default function ASHAPortal({ onBack, demoMode = false }) {
   const [screen, setScreen]               = useState("home");
@@ -164,6 +166,17 @@ export default function ASHAPortal({ onBack, demoMode = false }) {
             onAddFamily={() => { setEditingFamily(null); setScreen("add_family"); }}
             onOpenFamily={(fam) => { setSelectedFamily(fam); setScreen("manage_family"); }}
             onAddMember={(fam) => { setAddMemberFamily(fam); setEditingPatient(null); setScreen("add_member"); }}
+          />
+        )}
+        {screen === "map" && (
+          <VillageMapView
+            patients={patients}
+            onNavigate={setScreen}
+            onLogVisit={(p) => {
+              setLogVisitPatient(p);
+              setLogVisitReturnScreen("map");
+              setScreen("log_visit");
+            }}
           />
         )}
         {screen === "refer"    && (

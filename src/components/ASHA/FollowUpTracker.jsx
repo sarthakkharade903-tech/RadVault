@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import {
   Phone, CheckCircle2, Check, Heart, Baby, Activity,
   Stethoscope, Shield, CalendarCheck, ArrowRight, RefreshCw,
-  Send, Loader2, Hospital, MapPin
+  Send, Loader2, Hospital, MapPin, Navigation
 } from "lucide-react";
 import { supabase } from "../../services/supabase";
 import { getDoctorFollowUps, completeFollowUp } from "../../services/ashaService";
@@ -687,6 +687,30 @@ export default function FollowUpTracker({ patients, onLogVisit, onEditPatient, d
                           >
                             <ArrowRight className="w-3.5 h-3.5" />
                             <span>{item.actionLabel || t.logVisit}</span>
+                          </button>
+
+                          {/* 4. Navigate to Patient Home (Google Maps) */}
+                          <button
+                            onClick={() => {
+                              const dest = encodeURIComponent(`${item.patientName || 'Patient'} Home, ${item.village || 'Shirwal'}, Maharashtra, India`);
+                              if (navigator.geolocation) {
+                                navigator.geolocation.getCurrentPosition(
+                                  (pos) => {
+                                    window.open(`https://maps.google.com/maps?saddr=${pos.coords.latitude},${pos.coords.longitude}&daddr=${dest}&travelmode=walking`, '_blank');
+                                  },
+                                  () => {
+                                    window.open(`https://maps.google.com/maps?daddr=${dest}&travelmode=walking`, '_blank');
+                                  }
+                                );
+                              } else {
+                                window.open(`https://maps.google.com/maps?daddr=${dest}&travelmode=walking`, '_blank');
+                              }
+                            }}
+                            className="flex items-center gap-1.5 bg-[#E8F7F3] hover:bg-[#008F83] hover:text-white text-[#008F83] border border-[#008F83]/30 text-xs font-black px-3 py-2 rounded-xl transition-all cursor-pointer"
+                            title="Get turn-by-turn directions to patient home"
+                          >
+                            <Navigation className="w-3.5 h-3.5" />
+                            <span>{lang === 'mr' ? 'दिशा / नकाशा' : lang === 'hi' ? 'रास्ता / मैप' : 'Directions'}</span>
                           </button>
                         </>
                       ) : (

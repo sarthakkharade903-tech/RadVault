@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from "react";
 import {
   Send, Users, Heart, Baby, AlertTriangle, RefreshCw, ChevronRight,
   Calendar, CheckCircle2, Clock, MapPin, Building2, Stethoscope,
-  Plus, Phone, Search, X, Check, FileText, ArrowRight, UserPlus, Package
+  Plus, Phone, Search, X, Check, FileText, ArrowRight, UserPlus, Package, Navigation, Compass
 } from "lucide-react";
 import { computeStats, computeDueList } from "../../services/ashaService";
 import { supabase } from "../../services/supabase";
@@ -289,6 +289,16 @@ export default function ASHAHome({
               <span>{t.tabFamilies}</span>
             </button>
 
+            {/* Tab 4: Village Map & Route Navigator */}
+            <button
+              onClick={() => onNavigate && onNavigate("map")}
+              className="flex items-center gap-2 py-3 px-4 font-black text-xs sm:text-sm border-b-4 border-transparent text-teal-100 hover:text-white hover:border-teal-300 transition-all cursor-pointer whitespace-nowrap"
+            >
+              <MapPin className="w-4 h-4 text-emerald-300" />
+              <span>{lang === 'mr' ? 'गाव नकाशा' : lang === 'hi' ? 'गांव नक्शा' : 'Village Map'}</span>
+              <span className="text-[10px] bg-white/20 text-white font-bold px-1.5 py-0.5 rounded-full">GPS</span>
+            </button>
+
           </div>
         </div>
 
@@ -384,6 +394,58 @@ export default function ASHAHome({
 
               </div>
 
+              {/* ── 🗺️ FEATURED VILLAGE MAP & HOME ROUTE CARD ── */}
+              <div className="bg-gradient-to-r from-teal-900 via-[#008F83] to-emerald-800 text-white rounded-3xl p-5 sm:p-6 shadow-md flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 relative overflow-hidden">
+                {/* Background road lines */}
+                <svg className="absolute inset-0 w-full h-full opacity-10 pointer-events-none" viewBox="0 0 500 120" preserveAspectRatio="none">
+                  <path d="M0,60 Q125,20 250,60 T500,60" stroke="#FFFFFF" strokeWidth="6" fill="none" />
+                  <line x1="250" y1="0" x2="250" y2="120" stroke="#FFFFFF" strokeWidth="4" />
+                </svg>
+
+                <div className="flex items-center gap-3.5 relative z-10">
+                  <div className="w-12 h-12 rounded-2xl bg-white/15 border border-white/25 flex items-center justify-center text-white shrink-0 shadow-inner">
+                    <Compass className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-base font-black leading-tight">
+                        {lang === 'mr' ? 'गाव आरोग्य नकाशा व रुग्ण घराचा रस्ता' : lang === 'hi' ? 'गांव स्वास्थ्य नक्शा एवं मरीज घर का रास्ता' : 'Village Patient Map & Home Directions'}
+                      </h3>
+                      <span className="text-[9px] font-black bg-white/20 text-white px-2 py-0.5 rounded-full uppercase tracking-wider">
+                        GPS Active
+                      </span>
+                    </div>
+                    <p className="text-xs text-teal-100 font-medium mt-0.5">
+                      {lang === 'mr'
+                        ? 'गावातील सर्व रुग्ण, गरोदर माता व प्राथमिक आरोग्य केंद्रासाठी थेट Google Maps रस्ता'
+                        : lang === 'hi'
+                        ? 'गांव के सभी मरीजों, गर्भवती माताओं एवं प्राथमिक स्वास्थ्य केंद्र का लाइव रास्ता'
+                        : 'Live turn-by-turn walking & driving routes to patient households & Shirwal PHC'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 relative z-10 w-full sm:w-auto">
+                  <button
+                    onClick={() => onNavigate && onNavigate("map")}
+                    className="flex-1 sm:flex-initial px-5 py-2.5 bg-white text-[#008F83] hover:bg-teal-50 text-xs font-black rounded-xl shadow transition-all flex items-center justify-center gap-2 cursor-pointer uppercase tracking-wider"
+                  >
+                    <MapPin className="w-3.5 h-3.5" />
+                    <span>{lang === 'mr' ? 'नकाशा उघडा' : lang === 'hi' ? 'नक्शा खोलें' : 'Open Village Map'}</span>
+                  </button>
+
+                  <a
+                    href="https://maps.google.com/maps?daddr=17.9800,74.0200&travelmode=driving"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-2.5 bg-white/15 hover:bg-white/25 text-white rounded-xl border border-white/20 transition-colors cursor-pointer"
+                    title="Navigate to Shirwal PHC (2.4 km)"
+                  >
+                    <Building2 className="w-4 h-4" />
+                  </a>
+                </div>
+              </div>
+
               {/* ── RECENT REFERRALS & CONSULTATIONS LIST SECTION ── */}
               <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-7 shadow-xs space-y-4">
                 <div className="flex items-center justify-between pb-3 border-b border-slate-100">
@@ -429,7 +491,18 @@ export default function ASHAHome({
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-3 shrink-0 self-end sm:self-auto">
+                        <div className="flex items-center gap-2.5 shrink-0 self-end sm:self-auto">
+                          <button
+                            onClick={() => {
+                              const dest = encodeURIComponent(`${refItem.patient_name || 'Patient'} Home, Shirwal, Maharashtra, India`);
+                              window.open(`https://maps.google.com/maps?daddr=${dest}&travelmode=walking`, '_blank');
+                            }}
+                            className="px-2.5 py-1 bg-[#E8F7F3] hover:bg-[#008F83] hover:text-white text-[#008F83] text-[10px] font-black rounded-lg border border-[#008F83]/20 flex items-center gap-1 transition-colors cursor-pointer"
+                            title="Open Google Maps to Patient Home"
+                          >
+                            <Navigation className="w-3 h-3" />
+                            <span>Map</span>
+                          </button>
                           <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full flex items-center gap-1">
                             <CheckCircle2 className="w-3 h-3 text-emerald-600" />
                             {refItem.status || t.statusPending}
@@ -500,7 +573,18 @@ export default function ASHAHome({
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2.5">
+                        <button
+                          onClick={() => {
+                            const dest = encodeURIComponent(`${refItem.patient_name || 'Patient'} Home, Shirwal, Maharashtra, India`);
+                            window.open(`https://maps.google.com/maps?daddr=${dest}&travelmode=walking`, '_blank');
+                          }}
+                          className="px-2.5 py-1.5 bg-[#E8F7F3] hover:bg-[#008F83] hover:text-white text-[#008F83] text-xs font-black rounded-xl border border-[#008F83]/20 flex items-center gap-1.5 transition-colors cursor-pointer"
+                          title="Open Google Maps to Patient Home"
+                        >
+                          <Navigation className="w-3.5 h-3.5" />
+                          <span>Map</span>
+                        </button>
                         <span className="text-[10px] font-black bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full uppercase border border-emerald-200">
                           {refItem.status || t.statusPending}
                         </span>

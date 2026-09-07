@@ -5,7 +5,7 @@ import {
   Stethoscope, Plus, X, AlertTriangle, Send, Clock, CheckCircle2, CheckCheck, 
   Calendar, Building2, HeartPulse, Baby, User, Loader2, MapPin,
   Phone, Video, VideoOff, Mic, MicOff, PhoneOff, PhoneCall, Shield,
-  Sparkles, Check, ArrowRight, Download, FileText, Activity, Ticket, Siren
+  Sparkles, Check, ArrowRight, Download, FileText, Activity, Ticket, Siren, Navigation
 } from "lucide-react";
 import {
   getCareRequests,
@@ -279,6 +279,53 @@ function ReferralCard({ req, lang, onViewRx }) {
                   <span className="leading-snug">{instruction}</span>
                 </div>
               )}
+
+              {/* ── Hospital Directions & Transport directly with Token ── */}
+              <div className="pt-2.5 border-t border-[#008F83]/20 space-y-2">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="font-extrabold text-[#008F83] flex items-center gap-1.5">
+                    <MapPin className="w-3.5 h-3.5" /> Shirwal PHC Route (~2.4 km · 8 mins)
+                  </span>
+                  <a
+                    href="https://maps.google.com/maps?daddr=17.9800,74.0200&travelmode=driving"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[10px] font-black text-[#008F83] hover:underline flex items-center gap-0.5 cursor-pointer"
+                  >
+                    <span>Full Map</span> <ArrowRight className="w-3 h-3" />
+                  </a>
+                </div>
+
+                <div className="grid grid-cols-3 gap-1.5">
+                  <a
+                    href="https://maps.google.com/maps?daddr=17.9800,74.0200&travelmode=driving"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-2 rounded-xl bg-white border border-[#008F83]/30 hover:bg-teal-50 flex items-center justify-center gap-1 text-[10px] font-black text-[#008F83] transition-colors shadow-2xs cursor-pointer"
+                  >
+                    <Navigation className="w-3.5 h-3.5 text-[#008F83]" />
+                    <span>Get Route</span>
+                  </a>
+
+                  <a
+                    href="tel:108"
+                    className="p-2 rounded-xl bg-red-50 border border-red-200 hover:bg-red-100 flex items-center justify-center gap-1 text-[10px] font-black text-red-700 transition-colors shadow-2xs cursor-pointer"
+                  >
+                    <span>🚑</span>
+                    <span>108 Free</span>
+                  </a>
+
+                  <a
+                    href="https://book.olacabs.com"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-2 rounded-xl bg-amber-50 border border-amber-200 hover:bg-amber-100 flex items-center justify-center gap-1 text-[10px] font-black text-amber-800 transition-colors shadow-2xs cursor-pointer"
+                  >
+                    <span>🚕</span>
+                    <span>Auto / Cab</span>
+                  </a>
+                </div>
+              </div>
             </div>
           );
         })()}
@@ -1436,69 +1483,6 @@ export default function CareHub({ member, onOpenEmergency }) {
         </div>
       </div>
 
-      {/* ── Active Care & Referrals Section with Source Filters ── */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <h3 className="text-xs font-black text-slate-700 uppercase tracking-wider">{t.activeCare}</h3>
-          
-          {/* Source Segregation Pills */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
-            {[
-              { key: "ALL", label: t.filterAll },
-              { key: "ASHA", label: t.filterAsha },
-              { key: "DIRECT", label: t.filterAppointments },
-              { key: "TELE", label: t.filterTeleconsult },
-            ].map(f => (
-              <button
-                key={f.key}
-                onClick={() => setActiveFilter(f.key)}
-                className={`px-3 py-1 rounded-xl font-bold transition-all cursor-pointer text-[11px] ${
-                  activeFilter === f.key
-                    ? "bg-[#008F83] text-white shadow-xs"
-                    : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"
-                }`}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {loading ? (
-          <div className="space-y-3">
-            {[1, 2].map(i => <div key={i} className="bg-white rounded-2xl border border-slate-100 h-32 animate-pulse" />)}
-          </div>
-        ) : filteredRequests.length === 0 ? (
-          <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center shadow-xs">
-            <div className="w-12 h-12 bg-[#E8F7F3] text-[#008F83] rounded-2xl flex items-center justify-center mx-auto mb-3">
-              <Stethoscope className="w-6 h-6" />
-            </div>
-            <h4 className="font-black text-slate-900 text-sm">{t.noActiveTitle}</h4>
-            <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto mb-4">{t.noActiveSub}</p>
-            <div className="flex justify-center gap-2">
-              <button
-                onClick={() => setShowTeleconsult(true)}
-                className="px-4 py-2 bg-[#008F83] hover:bg-[#007A70] text-white rounded-xl text-xs font-black shadow-xs cursor-pointer"
-              >
-                + {t.startTeleconsult}
-              </button>
-              <button
-                onClick={() => setShowBooking(true)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold cursor-pointer"
-              >
-                + {t.bookAppointment}
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {filteredRequests.map(r => (
-              <ReferralCard key={r.id} req={r} lang={lang} onViewRx={setSelectedRxReq} />
-            ))}
-          </div>
-        )}
-      </div>
-
       {/* ── Toast Banner (ASHA Escort / Map Actions) ── */}
       {mapToast && (
         <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 bg-[#008F83] text-white text-xs font-bold px-5 py-3 rounded-2xl shadow-lg flex items-center gap-2 animate-in fade-in">
@@ -1506,14 +1490,14 @@ export default function CareHub({ member, onOpenEmergency }) {
         </div>
       )}
 
-      {/* ── How to Reach the Hospital (NHS / US Urgent Care Style) ── */}
+      {/* ── 🗺️ How to Reach the Hospital & Transport Options (FEATURED AT TOP) ── */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <h3 className="text-xs font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-            <span>🗺️</span> How to Reach the Hospital
+            <span>🗺️</span> How to Reach the Hospital & Transport
           </h3>
           {filteredRequests.some(r => ['Accepted','ACCEPTED','Assigned','Arrived'].includes(r.status)) && (
-            <span className="text-[9px] font-black bg-[#008F83] text-white px-2.5 py-1 rounded-full flex items-center gap-1">
+            <span className="text-[9px] font-black bg-[#008F83] text-white px-2.5 py-1 rounded-full flex items-center gap-1 shadow-2xs">
               <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
               APPOINTMENT ACTIVE
             </span>
@@ -1528,7 +1512,7 @@ export default function CareHub({ member, onOpenEmergency }) {
             href="https://maps.google.com/maps?q=Shirwal+Primary+Health+Centre,+Shirwal,+Maharashtra&z=15"
             target="_blank"
             rel="noopener noreferrer"
-            className="block relative h-32 bg-gradient-to-br from-teal-50 via-emerald-50 to-slate-100 hover:opacity-90 transition-opacity cursor-pointer"
+            className="block relative h-32 bg-gradient-to-br from-teal-50 via-emerald-50 to-slate-100 hover:opacity-95 transition-opacity cursor-pointer"
           >
             {/* Grid background */}
             <svg className="absolute inset-0 w-full h-full opacity-15" viewBox="0 0 400 128" preserveAspectRatio="none">
@@ -1649,6 +1633,69 @@ export default function CareHub({ member, onOpenEmergency }) {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* ── Active Care & Referrals Section with Source Filters ── */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <h3 className="text-xs font-black text-slate-700 uppercase tracking-wider">{t.activeCare}</h3>
+          
+          {/* Source Segregation Pills */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
+            {[
+              { key: "ALL", label: t.filterAll },
+              { key: "ASHA", label: t.filterAsha },
+              { key: "DIRECT", label: t.filterAppointments },
+              { key: "TELE", label: t.filterTeleconsult },
+            ].map(f => (
+              <button
+                key={f.key}
+                onClick={() => setActiveFilter(f.key)}
+                className={`px-3 py-1 rounded-xl font-bold transition-all cursor-pointer text-[11px] ${
+                  activeFilter === f.key
+                    ? "bg-[#008F83] text-white shadow-xs"
+                    : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="space-y-3">
+            {[1, 2].map(i => <div key={i} className="bg-white rounded-2xl border border-slate-100 h-32 animate-pulse" />)}
+          </div>
+        ) : filteredRequests.length === 0 ? (
+          <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center shadow-xs">
+            <div className="w-12 h-12 bg-[#E8F7F3] text-[#008F83] rounded-2xl flex items-center justify-center mx-auto mb-3">
+              <Stethoscope className="w-6 h-6" />
+            </div>
+            <h4 className="font-black text-slate-900 text-sm">{t.noActiveTitle}</h4>
+            <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto mb-4">{t.noActiveSub}</p>
+            <div className="flex justify-center gap-2">
+              <button
+                onClick={() => setShowTeleconsult(true)}
+                className="px-4 py-2 bg-[#008F83] hover:bg-[#007A70] text-white rounded-xl text-xs font-black shadow-xs cursor-pointer"
+              >
+                + {t.startTeleconsult}
+              </button>
+              <button
+                onClick={() => setShowBooking(true)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold cursor-pointer"
+              >
+                + {t.bookAppointment}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {filteredRequests.map(r => (
+              <ReferralCard key={r.id} req={r} lang={lang} onViewRx={setSelectedRxReq} />
+            ))}
+          </div>
+        )}
       </div>
 
       {/* ── Nearby Government Facilities ── */}
