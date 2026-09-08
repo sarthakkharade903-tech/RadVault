@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import {
   HeartPulse, LogOut, FileText, Calendar, Home, Users, ChevronLeft,
   Plus, Stethoscope, Pill, FileImage, Droplet, Sparkles, Loader2,
-  Globe, Shield, ArrowRight, Search
+  Globe, Shield, ArrowRight, Search, Siren
 } from "lucide-react";
 import PatientHome from "../dashboard/PatientHome";
 import CareHub from "./CareHub";
@@ -86,7 +86,7 @@ const PORTAL_TRANSLATIONS = {
   }
 };
 
-export default function FamilyDashboard({ family, members, onLogout, onBack }) {
+export default function FamilyDashboard({ family, members, onLogout, onBack, onOpenEmergencySOS }) {
   const [lang, setLang] = useState(() => {
     return localStorage.getItem("radvault_asha_lang") || localStorage.getItem("radvault_patient_lang") || "en";
   });
@@ -114,7 +114,13 @@ export default function FamilyDashboard({ family, members, onLogout, onBack }) {
     { id: "Scans",         label: t.catScans,         Icon: FileImage },
   ];
 
-  const [activeTab, setActiveTab] = useState("home");
+  const [activeTab, setActiveTab] = useState(() => {
+    if (typeof window !== "undefined") {
+      const t = new URLSearchParams(window.location.search).get("tab");
+      if (t && ["home", "timeline", "records", "care", "family"].includes(t)) return t;
+    }
+    return "home";
+  });
   const [selectedMemberId, setSelectedMemberId] = useState(null);
   const [documents, setDocuments] = useState([]);
   const [loadingDocs, setLoadingDocs] = useState(false);
@@ -171,7 +177,18 @@ export default function FamilyDashboard({ family, members, onLogout, onBack }) {
         </div>
 
         {/* Right Section: Universal Language Switcher & Sign Out */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5 sm:gap-3">
+          {onOpenEmergencySOS && (
+            <button
+              onClick={onOpenEmergencySOS}
+              className="px-3 py-1 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-black text-xs rounded-full flex items-center gap-1.5 shadow-sm shadow-red-900/20 transition-transform active:scale-95 cursor-pointer animate-pulse"
+              title="Trigger 24x7 Emergency SOS"
+            >
+              <Siren className="w-3.5 h-3.5" />
+              <span>24x7 SOS</span>
+            </button>
+          )}
+
           {/* Language Switcher Pill */}
           <div className="flex items-center bg-amber-50/80 p-1 rounded-full border border-amber-200/70 shadow-2xs">
             <button
@@ -346,7 +363,7 @@ export default function FamilyDashboard({ family, members, onLogout, onBack }) {
         {/* ── Care Hub Tab ── */}
         {activeTab === "care" && (
           <div className="pb-36">
-            <CareHub member={selectedMember} />
+            <CareHub member={selectedMember} onOpenEmergency={onOpenEmergencySOS} />
           </div>
         )}
 

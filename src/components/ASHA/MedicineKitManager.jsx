@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import {
   Package, Plus, Edit2, Trash2, Send, CheckCircle2,
-  Search, X, RefreshCw, FileText, Pill, Phone, MessageSquare, Hospital
+  Search, X, RefreshCw, FileText, Pill, Phone, MessageSquare, Hospital,
+  AlertTriangle, Minus, Clock, ShieldCheck, ChevronRight
 } from "lucide-react";
 import {
   getMedicines,
@@ -15,16 +16,16 @@ import {
 
 const TRANSLATIONS = {
   en: {
-    title: "Medicine Kit & Drug Stock",
-    subtitle: "ASHA Field Medicine Bag \u2022 Real-time Inventory & PHC Indents",
+    title: "Field Medicine Bag · Sector 4",
+    subtitle: "Priya Deshmukh · PHC Shirwal Supply Link",
     totalMedicines: "Medicines Tracked",
     totalUnits: "Total Units in Kit",
     lowStockAlerts: "Low Stock Items",
     indentsSent: "PHC Indents",
     searchPlaceholder: "Search medicine name, category or unit...",
-    filterAll: "All Medicines",
+    filterAll: "All Pouches",
     filterLowStock: "Low Stock (Urgent)",
-    filterMaternal: "Maternal Health",
+    filterMaternal: "Maternal Care",
     filterChild: "Child Care",
     filterFever: "Fever & Pain",
     filterFirstAid: "Kits & Diagnostics",
@@ -38,8 +39,8 @@ const TRANSLATIONS = {
     addNewItemTitle: "Add New Medicine to Kit",
     editItemTitle: "Edit Medicine Details",
     englishName: "Medicine Name (English)",
-    marathiName: "\u0928\u093e\u0935 (\u092e\u0930\u093e\u0920\u0940)",
-    hindiName: "\u0928\u093e\u092e (\u0939\u093f\u0902\u0926\u0940)",
+    marathiName: "नाव (मराठी)",
+    hindiName: "नाम (हिंदी)",
     initialStock: "Current In-Hand Stock",
     alertThreshold: "Low Stock Alert Threshold",
     deleteConfirmTitle: "Confirm Deletion",
@@ -55,60 +56,117 @@ const TRANSLATIONS = {
     dispatchIndentBtn: "Dispatch Indent to PHC Shirwal",
     indentSuccess: "Restock Indent successfully dispatched to PHC Storekeeper!",
     noMedicinesFound: "No medicines match your search criteria.",
-    lowStockBadge: "Low Stock",
-    healthyStockBadge: "Adequate Stock",
+    lowStockBadge: "LOW STOCK",
+    healthyStockBadge: "ADEQUATE",
     category: "Category",
     unit: "Unit",
     batchNo: "Batch No.",
     expiry: "Expiry Date",
+    kitReadiness: "Kit Readiness",
+    target: "Target",
+    depotConnected: "PHC Depot Connected",
   },
   mr: {
-    title: "\u0914\u0937\u0927 \u0938\u093e\u0920\u093e \u0935 \u0915\u093f\u091f \u0935\u094d\u092f\u0935\u0938\u094d\u0925\u093e\u092a\u0928",
-    subtitle: "\u0906\u0936\u093e \u0915\u093e\u0930\u094d\u092f\u0915\u0930\u094d\u0924\u093e \u0914\u0937\u0927 \u0915\u093f\u091f \u2022 \u0925\u0947\u091f \u0938\u093e\u0920\u093e \u0928\u094b\u0902\u0926 \u0935 \u092a\u094d\u0930\u093e\u0925\u092e\u093f\u0915 \u0906\u0930\u094b\u0917\u094d\u092f \u0915\u0947\u0902\u0926\u094d\u0930 \u092e\u093e\u0917\u0923\u0940",
-    totalMedicines: "\u090f\u0915\u0942\u0923 \u0914\u0937\u0927 \u092a\u094d\u0930\u0915\u093e\u0930",
-    totalUnits: "\u090f\u0915\u0942\u0923 \u0909\u092a\u0932\u092c\u094d\u0927 \u0917\u094b\u0933\u094d\u092f\u093e/\u0915\u093f\u091f",
-    lowStockAlerts: "\u0915\u092e\u0940 \u0938\u093e\u0920\u093e \u0905\u0938\u0932\u0947\u0932\u0940 \u0914\u0937\u0927\u0947",
-    indentsSent: "\u092a\u093e\u0920\u0935\u0932\u0947\u0932\u094d\u092f\u093e \u092e\u093e\u0917\u0923\u094d\u092f\u093e",
-    searchPlaceholder: "\u0914\u0937\u0927\u093e\u091a\u0947 \u0928\u093e\u0935 \u0915\u093f\u0902\u0935\u093e \u092a\u094d\u0930\u0915\u093e\u0930 \u0936\u094b\u0927\u093e...",
-    filterAll: "\u0938\u0930\u094d\u0935 \u0914\u0937\u0927\u0947",
-    filterLowStock: "\u0915\u092e\u0940 \u0938\u093e\u0920\u093e (\u0924\u093e\u0924\u0921\u0940\u0928\u0947 \u0906\u0935\u0936\u094d\u092f\u0915)",
-    filterMaternal: "\u092e\u093e\u0924\u093e \u0906\u0930\u094b\u0917\u094d\u092f",
-    filterChild: "\u092c\u093e\u0932 \u0938\u0902\u0917\u094b\u092a\u0928",
-    filterFever: "\u0924\u093e\u092a \u0935 \u0905\u0902\u0917\u0926\u0941\u0916\u0940",
-    filterFirstAid: "\u0915\u093f\u091f \u0935 \u0924\u092a\u093e\u0938\u0923\u0940 \u0938\u093e\u0927\u0928\u0947",
-    addMedicineBtn: "\u0928\u0935\u0940\u0928 \u0914\u0937\u0927 \u091c\u094b\u0921\u093e",
-    submitIndentBtn: "\u0906\u0930\u094b\u0917\u094d\u092f \u0915\u0947\u0902\u0926\u094d\u0930\u093e\u0915\u0921\u0947 \u092e\u093e\u0917\u0923\u0940 \u092a\u093e\u0920\u0935\u093e",
-    historyBtn: "\u092e\u093e\u0917\u0923\u0940 \u0907\u0924\u093f\u0939\u093e\u0938",
-    minThreshold: "\u0915\u093f\u092e\u093e\u0928 \u0906\u0935\u0936\u094d\u092f\u0915 \u092e\u0930\u094d\u092f\u093e\u0926\u093e",
-    editItem: "\u092e\u093e\u0939\u093f\u0924\u0940 \u092c\u0926\u0932\u093e",
-    deleteItem: "\u0915\u093e\u0922\u0942\u0928 \u091f\u093e\u0915\u093e",
-    saveChanges: "\u092c\u0926\u0932 \u091c\u0924\u0928 \u0915\u0930\u093e",
-    addNewItemTitle: "\u0915\u093f\u091f\u092e\u0927\u094d\u092f\u0947 \u0928\u0935\u0940\u0928 \u0914\u0937\u0927 \u091c\u094b\u0921\u093e",
-    editItemTitle: "\u0914\u0937\u0927 \u092e\u093e\u0939\u093f\u0924\u0940 \u0938\u0902\u092a\u093e\u0926\u093f\u0924 \u0915\u0930\u093e",
-    englishName: "\u0914\u0937\u0927\u093e\u091a\u0947 \u0928\u093e\u0935 (\u0907\u0902\u0917\u094d\u0930\u091c\u0940)",
-    marathiName: "\u0928\u093e\u0935 (\u092e\u0930\u093e\u0920\u0940)",
-    hindiName: "\u0928\u093e\u0935 (\u0939\u093f\u0902\u0926\u0940)",
-    initialStock: "\u0938\u0927\u094d\u092f\u093e\u091a\u093e \u0909\u092a\u0932\u092c\u094d\u0927 \u0938\u093e\u0920\u093e",
-    alertThreshold: "\u0915\u092e\u0940 \u0938\u093e\u0920\u093e \u0938\u0942\u091a\u0928\u093e \u092e\u0930\u094d\u092f\u093e\u0926\u093e",
-    deleteConfirmTitle: "\u0939\u091f\u0935\u0923\u094d\u092f\u093e\u091a\u0940 \u092a\u0941\u0937\u094d\u091f\u0940 \u0915\u0930\u093e",
-    deleteConfirmDesc: "\u0939\u0947 \u0914\u0937\u0927 \u0915\u093f\u091f \u0928\u094b\u0902\u0926\u0923\u0940\u0924\u0942\u0928 \u0915\u093e\u0922\u093e\u092f\u091a\u0947 \u0906\u0939\u0947 \u0915\u093e?",
-    confirmDeleteBtn: "\u0939\u094b, \u0915\u093e\u0922\u093e",
-    cancel: "\u0930\u0926\u094d\u0926 \u0915\u0930\u093e",
-    close: "\u092c\u0902\u0926 \u0915\u0930\u093e",
-    indentTitle: "\u0938\u094d\u092e\u093e\u0930\u094d\u091f PHC \u092a\u0941\u0928\u0930\u094d\u092d\u0930\u0923 \u092e\u093e\u0917\u0923\u0940",
-    indentSubtitle: "\u0915\u092e\u0940 \u0938\u093e\u0920\u094d\u092f\u093e\u091a\u094d\u092f\u093e \u0906\u0927\u093e\u0930\u0947 \u0938\u094d\u0935\u092f\u0902\u091a\u0932\u093f\u0924 \u0917\u0923\u0928\u093e",
-    requestedQty: "\u092e\u093e\u0917\u0935\u0932\u0947\u0932\u0940 \u0938\u0902\u0916\u094d\u092f\u093e",
-    ashaNotes: "\u0906\u0936\u093e \u0915\u093e\u0930\u094d\u092f\u0915\u0930\u094d\u0924\u094d\u092f\u093e\u091a\u094d\u092f\u093e \u0928\u094b\u0902\u0926\u0940",
-    notesPlaceholder: "\u0909\u0926\u093e. \u0938\u0947\u0915\u094d\u091f\u0930 4 \u092e\u0927\u094d\u092f\u0947 \u0935\u093f\u0937\u093e\u0923\u0941\u091c\u0928\u094d\u092f (\u0924\u093e\u092a) \u0935\u093e\u0922\u0932\u093e \u0906\u0939\u0947...",
-    dispatchIndentBtn: "PHC \u0936\u093f\u0930\u0935\u0933\u0915\u0921\u0947 \u092e\u093e\u0917\u0923\u0940 \u092a\u093e\u0920\u0935\u093e",
-    indentSuccess: "\u092a\u0941\u0928\u0930\u094d\u092d\u0930\u0923 \u092e\u093e\u0917\u0923\u0940 \u092f\u0936\u0938\u094d\u0935\u0940\u0930\u093f\u0924\u094d\u092f\u093e \u092a\u093e\u0920\u0935\u0932\u0940!",
-    noMedicinesFound: "\u0936\u094b\u0927 \u0928\u093f\u0915\u0937\u093e\u0902\u0936\u0940 \u091c\u0941\u0933\u0923\u093e\u0930\u0940 \u0914\u0937\u0927\u0947 \u0928\u093e\u0939\u0940\u0924.",
-    lowStockBadge: "\u0915\u092e\u0940 \u0938\u093e\u0920\u093e",
-    healthyStockBadge: "\u092a\u0941\u0930\u0947\u0938\u093e \u0938\u093e\u0920\u093e",
-    category: "\u092a\u094d\u0930\u0915\u093e\u0930",
-    unit: "\u090f\u0915\u0915",
-    batchNo: "\u092c\u0945\u091a \u0915\u094d\u0930.",
-    expiry: "\u0915\u093e\u0932\u092c\u093e\u0939\u094d\u092f\u0924\u093e \u0924\u093e\u0930\u0940\u0916",
+    title: "फिल्ड औषध किट बॅग · सेक्टर ४",
+    subtitle: "प्रिया देशमुख · प्राथमिक आरोग्य केंद्र शिरवळ थेट जोडणी",
+    totalMedicines: "एकूण औषध प्रकार",
+    totalUnits: "एकूण उपलब्ध गोळ्या/किट",
+    lowStockAlerts: "कमी साठा असलेली औषधे",
+    indentsSent: "पाठवलेल्या मागण्या",
+    searchPlaceholder: "औषधाचे नाव किंवा प्रकार शोधा...",
+    filterAll: "सर्व कप्पे (All)",
+    filterLowStock: "कमी साठा (तातडीने)",
+    filterMaternal: "माता आरोग्य",
+    filterChild: "बाल संगोपन",
+    filterFever: "ताप व अंगदुखी",
+    filterFirstAid: "किट व तपासणी",
+    addMedicineBtn: "नवीन औषध जोडा",
+    submitIndentBtn: "आरोग्य केंद्राकडे मागणी पाठवा",
+    historyBtn: "मागणी इतिहास",
+    minThreshold: "किमान आवश्यक मर्यादा",
+    editItem: "माहिती बदला",
+    deleteItem: "काढून टाका",
+    saveChanges: "बदल जतन करा",
+    addNewItemTitle: "किटमध्ये नवीन औषध जोडा",
+    editItemTitle: "औषध माहिती संपादित करा",
+    englishName: "औषधाचे नाव (इंग्रजी)",
+    marathiName: "नाव (मराठी)",
+    hindiName: "नाव (हिंदी)",
+    initialStock: "सध्याचा उपलब्ध साठा",
+    alertThreshold: "कमी साठा सूचना मर्यादा",
+    deleteConfirmTitle: "हटवण्याची पुष्टी करा",
+    deleteConfirmDesc: "हे औषध किट नोंदणीतून काढायचे आहे का?",
+    confirmDeleteBtn: "हो, काढा",
+    cancel: "रद्द करा",
+    close: "बंद करा",
+    indentTitle: "स्मार्ट PHC पुनर्भरण मागणी",
+    indentSubtitle: "कमी साठ्याच्या आधारे स्वयंचलित गणना",
+    requestedQty: "मागवलेली संख्या",
+    ashaNotes: "आशा कार्यकर्त्याच्या नोंदी",
+    notesPlaceholder: "उदा. सेक्टर 4 मध्ये विषाणूजन्य (ताप) वाढला आहे...",
+    dispatchIndentBtn: "PHC शिरवळकडे मागणी पाठवा",
+    indentSuccess: "पुनर्भरण मागणी यशस्वीरीत्या पाठवली!",
+    noMedicinesFound: "शोध निकषांशी जुळणारी औषधे नाहीत.",
+    lowStockBadge: "कमी साठा",
+    healthyStockBadge: "पुरेसा साठा",
+    category: "प्रकार",
+    unit: "एकक",
+    batchNo: "बॅच क्र.",
+    expiry: "कालबाह्यता तारीख",
+    kitReadiness: "किट तयारी",
+    target: "लक्ष्य",
+    depotConnected: "PHC डेपो जोडलेला",
+  },
+  hi: {
+    title: "फील्ड मेडिसिन किट बैग · सेक्टर 4",
+    subtitle: "प्रिया देशमुख · पीएचसी शिरवल सप्लाई लिंक",
+    totalMedicines: "कुल दवा प्रकार",
+    totalUnits: "किट में कुल दवाइयां",
+    lowStockAlerts: "कम स्टॉक वाली दवाएं",
+    indentsSent: "भेजी गई मांगें",
+    searchPlaceholder: "दवा का नाम या श्रेणी खोजें...",
+    filterAll: "सभी पाउच",
+    filterLowStock: "कम स्टॉक (अति आवश्यक)",
+    filterMaternal: "मातृ स्वास्थ्य",
+    filterChild: "बाल देखभाल",
+    filterFever: "बुखार व दर्द",
+    filterFirstAid: "किट व जांच",
+    addMedicineBtn: "नई दवा जोड़ें",
+    submitIndentBtn: "पीएचसी को मांग भेजें",
+    historyBtn: "मांग इतिहास",
+    minThreshold: "न्यूनतम अलर्ट सीमा",
+    editItem: "दवा संपादित करें",
+    deleteItem: "हटाएं",
+    saveChanges: "बदलाव सहेजें",
+    addNewItemTitle: "किट में नई दवा जोड़ें",
+    editItemTitle: "दवा विवरण संपादित करें",
+    englishName: "दवा का नाम (अंग्रेजी)",
+    marathiName: "नाम (मराठी)",
+    hindiName: "नाम (हिंदी)",
+    initialStock: "वर्तमान उपलब्ध स्टॉक",
+    alertThreshold: "कम स्टॉक अलर्ट सीमा",
+    deleteConfirmTitle: "हटाने की पुष्टि करें",
+    deleteConfirmDesc: "क्या आप वाकई इस दवा को अपनी किट से हटाना चाहते हैं?",
+    confirmDeleteBtn: "हाँ, हटाएं",
+    cancel: "रद्द करें",
+    close: "बंद करें",
+    indentTitle: "स्मार्ट पीएचसी रीस्टॉक मांग",
+    indentSubtitle: "कम स्टॉक के आधार पर स्वचालित गणना",
+    requestedQty: "मांगी गई मात्रा",
+    ashaNotes: "आशा कार्यकर्ता की टिप्पणियां",
+    notesPlaceholder: "उदा. सेक्टर 4 में मौसमी बुखार के मामले बढ़े हैं...",
+    dispatchIndentBtn: "पीएचसी शिरवल को मांग भेजें",
+    indentSuccess: "रीस्टॉक मांग सफलतापूर्वक भेजी गई!",
+    noMedicinesFound: "खोज से मेल खाती कोई दवा नहीं मिली।",
+    lowStockBadge: "कम स्टॉक",
+    healthyStockBadge: "पर्याप्त स्टॉक",
+    category: "श्रेणी",
+    unit: "इकाई",
+    batchNo: "बैच सं.",
+    expiry: "समाप्ति तिथि",
+    kitReadiness: "किट तैयारी",
+    target: "लक्ष्य",
+    depotConnected: "पीएचसी डिपो कनेक्टेड",
   }
 };
 
@@ -185,8 +243,21 @@ export default function MedicineKitManager({ isFullPage = false, onClose, onStoc
   const lowStockCount = useMemo(() =>
     medicines.filter(m => (m.stock || 0) <= (m.threshold || 10)).length, [medicines]);
 
+  const lowStockNames = useMemo(() => {
+    const list = medicines.filter(m => (m.stock || 0) <= (m.threshold || 10));
+    if (list.length === 0) return "";
+    return list.map(m => m.name_en.split(" ")[0]).join(", ");
+  }, [medicines]);
+
   const totalUnitsInBag = useMemo(() =>
     medicines.reduce((sum, m) => sum + (parseInt(m.stock, 10) || 0), 0), [medicines]);
+
+  // Dynamic Kit Readiness score: percentage of stock categories meeting safety thresholds
+  const readinessPercent = useMemo(() => {
+    if (medicines.length === 0) return 100;
+    const safeItems = medicines.filter(m => (m.stock || 0) > (m.threshold || 10)).length;
+    return Math.round((safeItems / medicines.length) * 100);
+  }, [medicines]);
 
   const persistStockToServer = useCallback(async (id, newStock) => {
     await adjustMedicineStock(id, newStock);
@@ -210,6 +281,15 @@ export default function MedicineKitManager({ isFullPage = false, onClose, onStoc
     setLocalStock(prev => ({ ...prev, [id]: String(newStock) }));
     setMedicines(prev => prev.map(m => m.id === id ? { ...m, stock: newStock } : m));
     await adjustMedicineStock(id, newStock);
+  };
+
+  // Tactile one-handed stepper adjustment (+ / -)
+  const handleStepStock = async (id, delta) => {
+    const currentVal = parseInt(localStock[id] ?? "0", 10) || 0;
+    const nextVal = Math.max(0, currentVal + delta);
+    setLocalStock(prev => ({ ...prev, [id]: String(nextVal) }));
+    setMedicines(prev => prev.map(m => m.id === id ? { ...m, stock: nextVal } : m));
+    await adjustMedicineStock(id, nextVal);
   };
 
   const handleOpenAddModal = () => {
@@ -304,182 +384,366 @@ export default function MedicineKitManager({ isFullPage = false, onClose, onStoc
     setShowHistoryModal(true);
   };
 
+  // Helper for pouch icon
+  const getPouchIcon = (category, unit) => {
+    if (unit === "kits" || category === "First Aid & Kits") return "🧰";
+    if (category === "Maternal Health") return "🤰";
+    if (category === "Child Care" || unit === "packets") return "🍼";
+    if (unit === "bottles" || unit === "syrup") return "🧴";
+    return "💊";
+  };
+
   const mainContent = (
     <div className="flex flex-col h-full bg-[#F5FBF9]">
-      {/* Header in Signal Green / Navy */}
-      <div className="bg-gradient-to-r from-[#16324F] via-[#008F83] to-[#007A70] text-white px-5 sm:px-7 py-5 flex items-center justify-between flex-shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-2xl bg-white/10 flex items-center justify-center">
-            <Pill className="w-6 h-6 text-white" />
+      {/* ── Top Header Row (Tactical Field Bag) ── */}
+      <div className="bg-gradient-to-r from-[#112437] via-[#16324F] to-[#0D4B46] text-white px-5 sm:px-8 py-5 flex items-center justify-between flex-shrink-0 shadow-md">
+        <div className="flex items-center gap-3.5">
+          <div className="w-11 h-11 rounded-2xl bg-teal-500/20 border border-teal-400/30 flex items-center justify-center text-xl shadow-inner">
+            🎒
           </div>
           <div>
-            <h2 className="text-lg font-black tracking-tight">{t.title}</h2>
-            <p className="text-xs text-teal-100/90 font-medium">{t.subtitle}</p>
-          </div>
-        </div>
-        {!isFullPage && onClose && (
-          <button onClick={onClose} className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors cursor-pointer">
-            <X className="w-4 h-4" />
-          </button>
-        )}
-      </div>
-
-      {/* Metric Ribbon with Connected PHC Hotline */}
-      <div className="bg-white border-b border-slate-200 px-5 sm:px-7 py-3 grid grid-cols-2 sm:grid-cols-4 gap-3 flex-shrink-0">
-        <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/80">
-          <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">{t.totalMedicines}</p>
-          <p className="text-xl font-black text-[#16324F] mt-0.5">{medicines.length}</p>
-        </div>
-        <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/80">
-          <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">{t.totalUnits}</p>
-          <p className="text-xl font-black text-[#008F83] mt-0.5">{totalUnitsInBag}</p>
-        </div>
-        <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/80">
-          <p className="text-[10px] font-extrabold text-rose-500 uppercase tracking-wider">{t.lowStockAlerts}</p>
-          <p className={"text-xl font-black mt-0.5 " + (lowStockCount > 0 ? "text-rose-600" : "text-slate-700")}>{lowStockCount}</p>
-        </div>
-        {/* Connected PHC Depot Card */}
-        <div className="bg-[#E8F7F3] p-2.5 rounded-xl border border-[#008F83]/30 flex items-center justify-between">
-          <div className="min-w-0">
-            <p className="text-[10px] font-black text-[#008F83] uppercase tracking-wider flex items-center gap-1">
-              <Hospital className="w-3 h-3" /> PHC Shirwal Depot
-            </p>
-            <div className="flex items-center gap-1.5 mt-0.5">
-              <a
-                href="tel:+919422012345"
-                className="text-xs font-black text-[#008F83] hover:underline flex items-center gap-1"
-                title="Call PHC Pharmacist"
-              >
-                <Phone className="w-3 h-3" /> +91 94220-12345
-              </a>
+            <div className="flex items-center gap-2">
+              <h2 className="text-lg sm:text-xl font-black tracking-tight">{t.title}</h2>
+              <span className="text-[10px] font-black uppercase tracking-wider bg-teal-500/20 text-teal-300 border border-teal-400/30 px-2 py-0.5 rounded-md">
+                Sector 4
+              </span>
             </div>
+            <p className="text-xs text-teal-100/80 font-medium mt-0.5">{t.subtitle}</p>
           </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          {/* Kit Readiness Badge */}
+          <div className="hidden md:flex items-center gap-2 bg-slate-900/60 border border-slate-700/80 px-3.5 py-1.5 rounded-xl text-xs font-black">
+            <span className="text-slate-400 text-[11px] font-bold">{t.kitReadiness}:</span>
+            <span className={readinessPercent >= 85 ? "text-teal-400 font-black" : "text-amber-400 font-black"}>
+              {readinessPercent}% Stored
+            </span>
+            <span className={"w-2 h-2 rounded-full " + (readinessPercent >= 85 ? "bg-teal-400 animate-pulse" : "bg-amber-400 animate-pulse")} />
+          </div>
+
+          {/* Quick PHC Indent Action */}
           <button
-            onClick={handleOpenHistory}
-            className="text-[10px] font-black text-[#008F83] hover:text-white bg-white hover:bg-[#008F83] px-2 py-1 rounded-lg border border-[#008F83]/30 transition-all cursor-pointer shrink-0"
+            onClick={handleOpenIndentGenerator}
+            className="flex items-center gap-2 bg-gradient-to-r from-[#008F83] to-[#00A896] hover:from-[#007A70] hover:to-[#008F83] text-white px-3.5 py-2 rounded-xl text-xs font-black shadow-md hover:shadow-lg transition-all cursor-pointer border border-teal-300/30"
           >
-            {t.historyBtn}
+            <Package className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">PHC Indent</span>
+            {lowStockCount > 0 ? (
+              <span className="bg-rose-500 text-white text-[10px] font-black px-1.5 py-0.2 rounded-full">
+                {lowStockCount} Urgent
+              </span>
+            ) : (
+              <span className="bg-teal-800/60 text-teal-200 text-[10px] font-bold px-1.5 py-0.2 rounded-full">
+                Ready
+              </span>
+            )}
           </button>
+
+          {!isFullPage && onClose && (
+            <button onClick={onClose} className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors cursor-pointer">
+              <X className="w-4 h-4" />
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Toolbar */}
-      <div className="bg-white px-5 sm:px-7 pt-4 pb-3 space-y-3 flex-shrink-0 border-b border-slate-100">
+      {/* ── Quick Status Bar (Tactile Pouch Counters) ── */}
+      <div className="bg-white border-b border-slate-200/90 px-5 sm:px-8 py-3.5 grid grid-cols-2 lg:grid-cols-4 gap-3.5 flex-shrink-0">
+        {/* Total Medicines */}
+        <div className="bg-slate-50 hover:bg-white transition-all p-3 rounded-2xl border border-slate-200 flex items-center justify-between">
+          <div>
+            <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">{t.totalMedicines}</p>
+            <p className="text-2xl font-black text-slate-900 mt-0.5">{medicines.length}</p>
+            <p className="text-[10px] text-slate-500 font-semibold mt-0.5">Active field formulary</p>
+          </div>
+          <div className="w-9 h-9 rounded-xl bg-slate-200/60 text-slate-600 flex items-center justify-center text-sm">
+            📋
+          </div>
+        </div>
+
+        {/* Total Units */}
+        <div className="bg-teal-50/50 hover:bg-teal-50 transition-all p-3 rounded-2xl border border-teal-100 flex items-center justify-between">
+          <div>
+            <p className="text-[10px] font-extrabold text-teal-700 uppercase tracking-wider">{t.totalUnits}</p>
+            <p className="text-2xl font-black text-[#008F83] mt-0.5">{totalUnitsInBag}</p>
+            <p className="text-[10px] text-teal-600 font-semibold mt-0.5">Across all pouches</p>
+          </div>
+          <div className="w-9 h-9 rounded-xl bg-teal-100 text-[#008F83] flex items-center justify-center text-sm font-black">
+            💊
+          </div>
+        </div>
+
+        {/* Low Stock Alerts */}
+        <div className={"transition-all p-3 rounded-2xl border flex items-center justify-between " + (
+          lowStockCount > 0
+            ? "bg-rose-50/60 border-rose-200/80 hover:bg-rose-50"
+            : "bg-slate-50 border-slate-200 hover:bg-white"
+        )}>
+          <div>
+            <p className={"text-[10px] font-extrabold uppercase tracking-wider " + (lowStockCount > 0 ? "text-rose-600" : "text-slate-400")}>
+              {t.lowStockAlerts}
+            </p>
+            <p className={"text-2xl font-black mt-0.5 " + (lowStockCount > 0 ? "text-rose-600" : "text-slate-800")}>
+              {lowStockCount}
+            </p>
+            <p className={"text-[10px] font-semibold mt-0.5 " + (lowStockCount > 0 ? "text-rose-700 font-bold" : "text-slate-500")}>
+              {lowStockCount > 0 ? `${lowStockNames || 'Requires indent'} alert` : "All pouches safe"}
+            </p>
+          </div>
+          <div className={"w-9 h-9 rounded-xl flex items-center justify-center text-sm " + (
+            lowStockCount > 0 ? "bg-rose-100 text-rose-600" : "bg-emerald-100 text-emerald-700"
+          )}>
+            {lowStockCount > 0 ? "⚠️" : "✓"}
+          </div>
+        </div>
+
+        {/* PHC Shirwal Depot Card */}
+        <div className="bg-[#E8F7F3] p-3 rounded-2xl border border-[#008F83]/30 flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <p className="text-[10px] font-black text-[#008F83] uppercase tracking-wider flex items-center gap-1">
+              <Hospital className="w-3.5 h-3.5" /> PHC Shirwal Depot
+            </p>
+            <button
+              onClick={handleOpenHistory}
+              className="text-[9px] font-black text-[#008F83] hover:text-white bg-white hover:bg-[#008F83] px-2 py-0.5 rounded-lg border border-[#008F83]/30 transition-all cursor-pointer"
+            >
+              {t.historyBtn}
+            </button>
+          </div>
+          <div className="flex items-center justify-between mt-2">
+            <a
+              href="tel:+919422012345"
+              className="text-xs font-black text-[#008F83] hover:underline flex items-center gap-1"
+              title="Call PHC Pharmacist"
+            >
+              <Phone className="w-3 h-3 stroke-[2.5]" /> +91 94220-12345
+            </a>
+            <span className="text-[9px] font-bold text-teal-700 bg-teal-100/80 px-1.5 py-0.5 rounded">
+              ● Connected
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Search Bar & Pouch Category Tabs ── */}
+      <div className="bg-white px-5 sm:px-8 pt-4 pb-3 space-y-3 flex-shrink-0 border-b border-slate-100">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="relative flex-1">
             <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
               type="text" placeholder={t.searchPlaceholder} value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:border-[#008F83] focus:bg-white transition-all"
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:border-[#008F83] focus:bg-white transition-all shadow-inner"
             />
             {searchTerm && (
-              <button onClick={() => setSearchTerm("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+              <button onClick={() => setSearchTerm("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer">
                 <X className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
-          <button onClick={handleOpenAddModal} className="px-3.5 py-2 bg-[#008F83] hover:bg-[#007A70] text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition-all cursor-pointer flex-shrink-0">
+          <button onClick={handleOpenAddModal} className="px-4 py-2.5 bg-[#008F83] hover:bg-[#007A70] text-white font-black text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition-all cursor-pointer flex-shrink-0">
             <Plus className="w-3.5 h-3.5 stroke-[3]" />
             <span>{t.addMedicineBtn}</span>
           </button>
         </div>
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
-          {["All", "Low Stock", "Maternal Health", "Child Care", "Fever & Pain", "First Aid & Kits"].map((cat) => {
-            const active = activeCategory === cat;
+
+        {/* Pouch Category Filter Chips */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs no-scrollbar">
+          {[
+            { id: "All", label: t.filterAll, icon: "🎒" },
+            { id: "Low Stock", label: `${t.filterLowStock} (${lowStockCount})`, icon: "⚠️" },
+            { id: "Maternal Health", label: t.filterMaternal, icon: "🤰" },
+            { id: "Child Care", label: t.filterChild, icon: "🍼" },
+            { id: "Fever & Pain", label: t.filterFever, icon: "💊" },
+            { id: "First Aid & Kits", label: t.filterFirstAid, icon: "🧰" },
+          ].map((cat) => {
+            const active = activeCategory === cat.id;
             return (
-              <button key={cat} onClick={() => setActiveCategory(cat)}
-                className={"px-3 py-1 rounded-xl font-bold whitespace-nowrap transition-all cursor-pointer " + (
+              <button
+                key={cat.id}
+                onClick={() => setActiveCategory(cat.id)}
+                className={"px-3.5 py-1.5 rounded-xl font-bold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 text-xs " + (
                   active
-                    ? (cat === "Low Stock" ? "bg-rose-600 text-white shadow-xs" : "bg-[#008F83] text-white shadow-xs")
-                    : (cat === "Low Stock" && lowStockCount > 0
-                      ? "bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100"
+                    ? (cat.id === "Low Stock" ? "bg-rose-600 text-white shadow-sm font-black" : "bg-[#008F83] text-white shadow-sm font-black")
+                    : (cat.id === "Low Stock" && lowStockCount > 0
+                      ? "bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 font-black"
                       : "bg-slate-100 text-slate-600 hover:bg-slate-200")
-                )}>
-                {cat === "All" ? t.filterAll :
-                 cat === "Low Stock" ? (t.filterLowStock + " (" + lowStockCount + ")") :
-                 cat === "Maternal Health" ? t.filterMaternal :
-                 cat === "Child Care" ? t.filterChild :
-                 cat === "Fever & Pain" ? t.filterFever : t.filterFirstAid}
+                )}
+              >
+                <span>{cat.icon}</span>
+                <span>{cat.label}</span>
               </button>
             );
           })}
         </div>
       </div>
 
-      {/* Medicine List */}
-      <div className="flex-1 overflow-y-auto px-5 sm:px-7 py-4">
+      {/* ── Medicine Pouch Cards List ── */}
+      <div className="flex-1 overflow-y-auto px-5 sm:px-8 py-4 space-y-3">
         {loading ? (
-          <div className="p-12 text-center text-slate-400 font-bold text-xs flex flex-col items-center gap-2">
-            <RefreshCw className="w-6 h-6 animate-spin text-[#008F83]" />
-            <span>Loading medicine inventory...</span>
+          <div className="p-16 text-center text-slate-400 font-bold text-xs flex flex-col items-center gap-2">
+            <RefreshCw className="w-7 h-7 animate-spin text-[#008F83]" />
+            <span>Opening field medicine kit...</span>
           </div>
         ) : filteredMedicines.length === 0 ? (
-          <div className="p-12 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
-            <Package className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+          <div className="p-12 text-center bg-white rounded-3xl border border-dashed border-slate-200">
+            <Package className="w-12 h-12 text-slate-300 mx-auto mb-2" />
             <p className="font-extrabold text-slate-700 text-sm">{t.noMedicinesFound}</p>
+            <p className="text-xs text-slate-400 mt-1">Check pouch filters or search for another drug name.</p>
           </div>
         ) : (
-          <div className="divide-y divide-slate-100 border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-xs">
+          <div className="space-y-3">
             {filteredMedicines.map((med) => {
               const isLow = (med.stock || 0) <= (med.threshold || 10);
               const displayName = lang === "mr" ? (med.name_mr || med.name_en) : lang === "hi" ? (med.name_hi || med.name_en) : med.name_en;
               const stockVal = localStock[med.id] ?? String(med.stock ?? 0);
+              const currentStockNum = parseInt(stockVal, 10) || 0;
+
+              // Safe target capacity calculation (e.g. 2x threshold or current stock + 10)
+              const targetCapacity = Math.max((med.threshold || 10) * 2, med.stock || 0, 10);
+              const stockRatio = Math.min(100, Math.round((currentStockNum / targetCapacity) * 100));
+
               let expiryWarning = null;
               if (med.expiry_date) {
                 const diffDays = Math.floor((new Date(med.expiry_date) - new Date()) / 86400000);
                 if (diffDays < 0) expiryWarning = "expired";
                 else if (diffDays <= 60) expiryWarning = "soon";
               }
+
               return (
-                <div key={med.id} className={"p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors " + (isLow ? "bg-rose-50/40 hover:bg-rose-50/70" : "hover:bg-slate-50")}>
-                  <div className="flex items-start gap-3 min-w-0 flex-1">
-                    <div className={"w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5 text-lg " + (isLow ? "bg-rose-100" : "bg-teal-50")}>
-                      {med.unit === "kits" ? "🧰" : med.unit === "packets" ? "📦" : "💊"}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h4 className="font-black text-slate-900 text-sm">{displayName}</h4>
-                        {lang !== "en" && med.name_en !== displayName && (
-                          <span className="text-[10px] text-slate-400">({med.name_en})</span>
-                        )}
-                        <span className="text-[9px] font-extrabold bg-slate-100 text-slate-600 px-2 py-0.5 rounded uppercase">{med.category}</span>
-                        {isLow && <span className="text-[9px] font-black bg-rose-100 text-rose-700 border border-rose-200 px-2 py-0.5 rounded-full">{t.lowStockBadge} ⚠️</span>}
+                <div
+                  key={med.id}
+                  className={"p-4 sm:p-5 rounded-2xl border transition-all shadow-xs " + (
+                    isLow
+                      ? "bg-rose-50/35 border-rose-200/90 hover:border-rose-300"
+                      : "bg-white border-slate-200/80 hover:border-slate-300"
+                  )}
+                >
+                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                    {/* Left: Icon & Medicine Clinical Details */}
+                    <div className="flex items-start gap-3.5 min-w-0 flex-1">
+                      <div className={"w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 text-2xl shadow-xs border " + (
+                        isLow ? "bg-rose-100 border-rose-200" : "bg-teal-50 border-teal-100"
+                      )}>
+                        {getPouchIcon(med.category, med.unit)}
                       </div>
-                      <div className="flex items-center gap-3 text-[11px] text-slate-500 mt-1 flex-wrap font-medium">
-                        <span>{t.minThreshold}: <b className="text-slate-700">{med.threshold} {med.unit}</b></span>
-                        {med.batch_number && <span>• Batch: <b className="text-slate-700">{med.batch_number}</b></span>}
-                        {med.expiry_date && (
-                          <span className={expiryWarning === "expired" ? "text-rose-700 font-bold" : expiryWarning === "soon" ? "text-amber-600 font-bold" : ""}>
-                            • Exp: <b>{med.expiry_date}</b>
-                            {expiryWarning === "expired" && " 🚫 EXPIRED"}
-                            {expiryWarning === "soon" && " ⚠️ Expiring Soon"}
+
+                      <div className="min-w-0 flex-1">
+                        {/* Title Row with Badges */}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h4 className="font-black text-slate-900 text-base">{displayName}</h4>
+                          {lang !== "en" && med.name_en !== displayName && (
+                            <span className="text-[11px] text-slate-400 font-medium">({med.name_en})</span>
+                          )}
+
+                          {/* Category Tag */}
+                          <span className="text-[9px] font-black bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md uppercase tracking-wider">
+                            {med.category}
                           </span>
-                        )}
+
+                          {/* Stock Status Pill */}
+                          {isLow ? (
+                            <span className="text-[10px] font-black bg-rose-100 text-rose-700 border border-rose-200 px-2 py-0.5 rounded-md flex items-center gap-1">
+                              ⚠️ {t.lowStockBadge} ({med.stock} LEFT)
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-md flex items-center gap-1">
+                              ✓ {t.healthyStockBadge}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Metadata row: Threshold, Batch, Expiry */}
+                        <div className="flex items-center gap-3 text-xs text-slate-500 mt-1.5 flex-wrap font-medium">
+                          <span>{t.minThreshold}: <b className="text-slate-800">{med.threshold} {med.unit}</b></span>
+                          {med.batch_number && <span>• Batch: <b className="text-slate-800 font-mono">{med.batch_number}</b></span>}
+                          {med.expiry_date && (
+                            <span className={expiryWarning === "expired" ? "text-rose-700 font-bold" : expiryWarning === "soon" ? "text-amber-600 font-bold" : ""}>
+                              • Exp: <b className="font-mono">{med.expiry_date}</b>
+                              {expiryWarning === "expired" && " 🚫 EXPIRED"}
+                              {expiryWarning === "soon" && " ⚠️ Expiring Soon"}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Visual Stock Level Tube / Progress Bar */}
+                        <div className="mt-2.5 max-w-md">
+                          <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 mb-1">
+                            <span>Field Stock Level: <b className={isLow ? "text-rose-600" : "text-teal-700"}>{currentStockNum} / {targetCapacity} {med.unit}</b></span>
+                            <span>{stockRatio}% Capacity</span>
+                          </div>
+                          <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden border border-slate-200/60">
+                            <div
+                              className={"h-full rounded-full transition-all duration-300 " + (
+                                isLow ? "bg-rose-500" : "bg-gradient-to-r from-[#008F83] to-[#00A896]"
+                              )}
+                              style={{ width: `${stockRatio}%` }}
+                            />
+                          </div>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-3 flex-shrink-0 self-end sm:self-center">
-                    <span className={"text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap hidden sm:inline-block " + (isLow ? "bg-rose-100 text-rose-700 border border-rose-200" : "bg-emerald-50 text-emerald-700")}>
-                      {isLow ? "⚠️ Low" : "✓ OK"}
-                    </span>
-                    <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5">
-                      <input
-                        type="number" min="0" value={stockVal}
-                        onChange={e => handleStockInputChange(med.id, e.target.value)}
-                        onBlur={() => handleStockInputBlur(med.id)}
-                        className={"w-16 text-center font-black text-sm bg-transparent focus:outline-none focus:ring-1 focus:ring-[#008F83] rounded " + (isLow ? "text-rose-700" : "text-slate-900")}
-                        aria-label={"Stock for " + med.name_en}
-                      />
-                      <span className="text-[10px] font-bold text-slate-400 select-none whitespace-nowrap">{med.unit}</span>
-                    </div>
-                    <div className="flex items-center gap-1 border-l border-slate-200 pl-2">
-                      <button type="button" onClick={() => handleOpenEditModal(med)} className="p-1.5 hover:bg-slate-100 text-slate-500 hover:text-[#008F83] rounded-lg transition-colors cursor-pointer" title={t.editItem}>
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </button>
-                      <button type="button" onClick={() => { setItemToDelete(med); setShowDeleteModal(true); }} className="p-1.5 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-lg transition-colors cursor-pointer" title={t.deleteItem}>
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+
+                    {/* Right: Tactile One-Handed Dispense Steppers & Actions */}
+                    <div className="flex items-center justify-between sm:justify-end gap-3 flex-shrink-0 pt-2 lg:pt-0 border-t lg:border-t-0 border-slate-100">
+                      {/* Tactile Stepper Box */}
+                      <div className="flex items-center bg-slate-50 border border-slate-200 rounded-2xl p-1 shadow-inner">
+                        {/* Decrement [-] Button */}
+                        <button
+                          type="button"
+                          onClick={() => handleStepStock(med.id, -1)}
+                          disabled={currentStockNum <= 0}
+                          className="w-8 h-8 rounded-xl bg-white hover:bg-rose-100 text-slate-700 hover:text-rose-700 border border-slate-200/80 flex items-center justify-center font-black transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed shadow-xs active:scale-95"
+                          title="Dispense / Deduct 1 unit"
+                        >
+                          <Minus className="w-3.5 h-3.5 stroke-[3]" />
+                        </button>
+
+                        {/* Stock Number Display & Direct Input */}
+                        <div className="px-2 flex items-center gap-1">
+                          <input
+                            type="number"
+                            min="0"
+                            value={stockVal}
+                            onChange={e => handleStockInputChange(med.id, e.target.value)}
+                            onBlur={() => handleStockInputBlur(med.id)}
+                            className={"w-14 text-center font-black text-sm bg-transparent focus:outline-none focus:ring-1 focus:ring-[#008F83] rounded " + (isLow ? "text-rose-700" : "text-slate-900")}
+                            aria-label={"Stock for " + med.name_en}
+                          />
+                          <span className="text-[10px] font-black text-slate-400 select-none uppercase tracking-wider">{med.unit}</span>
+                        </div>
+
+                        {/* Increment [+] Button */}
+                        <button
+                          type="button"
+                          onClick={() => handleStepStock(med.id, +1)}
+                          className="w-8 h-8 rounded-xl bg-white hover:bg-emerald-100 text-slate-700 hover:text-emerald-700 border border-slate-200/80 flex items-center justify-center font-black transition-all cursor-pointer shadow-xs active:scale-95"
+                          title="Add / Restock 1 unit"
+                        >
+                          <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                        </button>
+                      </div>
+
+                      {/* Edit & Delete Actions */}
+                      <div className="flex items-center gap-1 border-l border-slate-200 pl-2">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEditModal(med)}
+                          className="p-2 hover:bg-slate-100 text-slate-500 hover:text-[#008F83] rounded-xl transition-colors cursor-pointer"
+                          title={t.editItem}
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setItemToDelete(med); setShowDeleteModal(true); }}
+                          className="p-2 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-xl transition-colors cursor-pointer"
+                          title={t.deleteItem}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -489,25 +753,47 @@ export default function MedicineKitManager({ isFullPage = false, onClose, onStoc
         )}
       </div>
 
-      {/* Footer */}
-      <div className="bg-white border-t border-slate-200 px-5 sm:px-7 py-3.5 flex items-center justify-between gap-3 flex-shrink-0">
-        <button onClick={handleOpenIndentGenerator} className="px-4 py-2.5 bg-[#008F83] hover:bg-[#007A70] text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center gap-2 transition-all cursor-pointer">
-          <Send className="w-3.5 h-3.5" />
-          <span>{t.submitIndentBtn}</span>
-          {lowStockCount > 0 && <span className="bg-white text-[#008F83] px-1.5 py-0.5 rounded-full text-[10px] font-black ml-0.5">{lowStockCount}</span>}
-        </button>
-        {!isFullPage && onClose && (
-          <button onClick={onClose} className="px-5 py-2.5 bg-slate-200 hover:bg-slate-300 font-bold text-xs rounded-xl text-slate-700 transition-colors cursor-pointer">
-            {t.close}
+      {/* ── Bottom Dispatch Action Bar ── */}
+      <div className="bg-white border-t border-slate-200/90 px-5 sm:px-8 py-3.5 flex flex-col sm:flex-row items-center justify-between gap-3 flex-shrink-0">
+        <div className="flex items-center gap-2 text-xs">
+          <span className={"w-2 h-2 rounded-full " + (lowStockCount > 0 ? "bg-rose-500 animate-pulse" : "bg-teal-500")} />
+          <span className="font-bold text-slate-600">
+            {lowStockCount > 0
+              ? `Restock Requisition: ${lowStockCount} items below alert safety threshold.`
+              : `Kit Status: All frontline medicine supplies optimal.`}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2.5 w-full sm:w-auto">
+          <button
+            onClick={handleOpenIndentGenerator}
+            className="flex-1 sm:flex-initial px-5 py-2.5 bg-gradient-to-r from-[#008F83] to-[#007A70] hover:from-[#007A70] hover:to-[#006860] text-white font-black text-xs rounded-xl shadow-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+          >
+            <Send className="w-3.5 h-3.5" />
+            <span>{t.submitIndentBtn}</span>
+            {lowStockCount > 0 && (
+              <span className="bg-white text-[#008F83] px-2 py-0.5 rounded-full text-[10px] font-black">
+                {lowStockCount}
+              </span>
+            )}
           </button>
-        )}
+
+          {!isFullPage && onClose && (
+            <button
+              onClick={onClose}
+              className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 font-bold text-xs rounded-xl text-slate-700 transition-colors cursor-pointer"
+            >
+              {t.close}
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Add/Edit Modal */}
+      {/* ── Add/Edit Modal ── */}
       {showAddEditModal && (
         <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg border border-slate-200 overflow-hidden">
-            <div className="bg-[#16324F] text-white px-6 py-4 flex justify-between items-center">
+            <div className="bg-gradient-to-r from-[#112437] to-[#16324F] text-white px-6 py-4 flex justify-between items-center">
               <h3 className="font-black text-sm">{editingItem ? t.editItemTitle : t.addNewItemTitle}</h3>
               <button onClick={() => setShowAddEditModal(false)} className="text-white/80 hover:text-white cursor-pointer"><X className="w-4 h-4" /></button>
             </div>
@@ -583,7 +869,7 @@ export default function MedicineKitManager({ isFullPage = false, onClose, onStoc
         </div>
       )}
 
-      {/* Delete Modal */}
+      {/* ── Delete Modal ── */}
       {showDeleteModal && itemToDelete && (
         <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm border border-slate-200 p-6 text-center">
@@ -601,11 +887,11 @@ export default function MedicineKitManager({ isFullPage = false, onClose, onStoc
         </div>
       )}
 
-      {/* Indent Modal with Connected PHC Pipeline */}
+      {/* ── Smart Indent Modal ── */}
       {showIndentModal && (
         <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl border border-slate-200 max-h-[90vh] flex flex-col overflow-hidden">
-            <div className="bg-gradient-to-r from-[#16324F] to-[#008F83] text-white px-6 py-4 flex justify-between items-center">
+            <div className="bg-gradient-to-r from-[#112437] to-[#008F83] text-white px-6 py-4 flex justify-between items-center">
               <div>
                 <h3 className="font-black text-sm flex items-center gap-2"><Send className="w-4 h-4 text-teal-200" /> {t.indentTitle}</h3>
                 <p className="text-xs text-teal-100">{t.indentSubtitle}</p>
@@ -703,11 +989,11 @@ export default function MedicineKitManager({ isFullPage = false, onClose, onStoc
         </div>
       )}
 
-      {/* History Modal in Signal Green Theme */}
+      {/* ── Dispatched Indent Log Modal ── */}
       {showHistoryModal && (
         <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg border border-slate-200 max-h-[85vh] flex flex-col overflow-hidden">
-            <div className="bg-[#16324F] text-white px-6 py-4 flex justify-between items-center">
+            <div className="bg-[#112437] text-white px-6 py-4 flex justify-between items-center">
               <h3 className="font-black text-sm flex items-center gap-2"><FileText className="w-4 h-4 text-[#008F83]" /> Dispatched Indent Log</h3>
               <button onClick={() => setShowHistoryModal(false)} className="text-white/80 hover:text-white cursor-pointer"><X className="w-4 h-4" /></button>
             </div>

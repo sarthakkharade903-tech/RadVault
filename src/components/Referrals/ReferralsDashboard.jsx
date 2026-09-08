@@ -41,16 +41,28 @@ export default function ReferralsDashboard({ onBack, initialTab = 'list', demoMo
           patientName: d.patient_name || 'Village Resident',
           patientId: d.patient_id ? String(d.patient_id).slice(0, 8).toUpperCase() : 'ABHA-PAT',
           createdBy: d.created_by || 'ASHA Worker',
-          department: d.destination_department || 'General Medicine & OPD',
-          hospital: d.destination_hospital || 'Shrirampur Primary Health Centre',
+          department: d.destination_department || d.department || 'General Medicine & OPD',
+          hospital: d.destination_hospital || d.facility || 'Shrirampur Primary Health Centre',
           doctor: d.doctor_assigned || 'On-Duty Medical Officer',
-          priority: d.priority === 'HIGH' || d.priority === 'RED' ? 'RED' : d.priority === 'ORANGE' ? 'ORANGE' : 'GREEN',
-          status: d.status || 'Pending',
-          aiNote: d.symptoms || d.ai_note || 'Referred for specialist medical care',
-          is_pregnant: d.destination_department?.toLowerCase().includes('maternity') || d.destination_department?.toLowerCase().includes('anc'),
+          priority: (d.priority === 'URGENT' || d.priority === 'RED' || d.priority === 'EMERGENCY' || d.priority === 'HIGH')
+            ? 'RED'
+            : (d.priority === 'ORANGE' || d.priority === 'MEDIUM')
+            ? 'ORANGE'
+            : 'GREEN',
+          status: (d.status === 'COMPLETED' || d.status === 'Completed')
+            ? 'Completed'
+            : (d.status === 'ACCEPTED' || d.status === 'WAITING_FOR_DOCTOR' || d.status === 'IN_CALL' || d.status === 'Accepted' || d.status === 'Arrived' || d.status === 'Assigned')
+            ? (d.status === 'WAITING_FOR_DOCTOR' || d.status === 'IN_CALL' ? 'Accepted' : d.status)
+            : (d.status || 'Pending'),
+          rawStatus: d.status || 'SUBMITTED',
+          tokenNumber: d.token_number || null,
+          aiNote: d.symptoms || d.ai_note || d.reason || d.asha_notes || 'Referred for specialist medical care',
+          is_pregnant: (d.destination_department || d.department || '').toLowerCase().includes('maternity') || (d.destination_department || d.department || '').toLowerCase().includes('anc'),
           createdAt: new Date(d.created_at || Date.now()).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
         }));
         setReferrals(mapped);
+      } else {
+        setReferrals([]);
       }
     } catch (err) {
       console.error("[ReferralsDashboard] Unexpected fetch error:", err);
@@ -130,50 +142,29 @@ export default function ReferralsDashboard({ onBack, initialTab = 'list', demoMo
   return (
     <div className="min-h-screen bg-[#F5FBF9] font-sans text-slate-800 pb-20">
       
-      {/* ── Top Bar: Quick Mode Switcher (New Referral by default vs History) ── */}
-      <div className="bg-white border-b border-[#E2E8F0] px-4 sm:px-6 py-3.5 sticky top-0 z-20 shadow-xs">
-        <div className="max-w-3xl mx-auto flex items-center justify-between gap-2">
-          
-          <div className="flex items-center gap-2">
+      {/* ── Top Bar: Shown when in New Referral form mode ── */}
+      {activeTab === 'new' && (
+        <div className="bg-white border-b border-[#E2E8F0] px-4 sm:px-6 py-3.5 sticky top-0 z-20 shadow-xs">
+          <div className="max-w-3xl mx-auto flex items-center justify-between gap-2">
             <button
-              onClick={() => setActiveTab('new')}
-              className={`px-3.5 py-2 rounded-xl font-black text-xs transition-all flex items-center gap-1.5 cursor-pointer ${
-                activeTab === 'new'
-                  ? 'bg-[#008F83] text-white shadow-xs'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
+              onClick={() => setActiveTab('list')}
+              className="px-3.5 py-2 rounded-xl font-bold text-xs bg-slate-100 text-slate-700 hover:bg-slate-200 transition-all flex items-center gap-1.5 cursor-pointer"
             >
-              <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-              <span>{lang === 'mr' ? 'नवीन रेफरल' : lang === 'hi' ? 'नया रेफरल' : 'New Referral'}</span>
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>{lang === 'mr' ? '← सर्व रेफरल यादी' : lang === 'hi' ? '← सभी रेफरल सूची' : '← Back to Referrals'}</span>
             </button>
 
-            <button
-              onClick={() => { setActiveTab('list'); fetchReferrals(); }}
-              className={`px-3.5 py-2 rounded-xl font-bold text-xs transition-all flex items-center gap-1.5 cursor-pointer ${
-                activeTab === 'list'
-                  ? 'bg-[#008F83] text-white shadow-xs'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              <ListFilter className="w-3.5 h-3.5" />
-              <span>
-                {lang === 'mr' ? 'रेफरल यादी' : lang === 'hi' ? 'रेफरल सूची' : 'Referrals List'}
-                {referrals.length > 0 && ` (${referrals.length})`}
-              </span>
-            </button>
+            {onBack && (
+              <button
+                onClick={onBack}
+                className="text-xs font-bold text-slate-500 hover:text-slate-900 px-3 py-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 transition-colors"
+              >
+                {lang === 'mr' ? 'मुख्य पान' : lang === 'hi' ? 'होम' : 'Home'}
+              </button>
+            )}
           </div>
-
-          {onBack && (
-            <button
-              onClick={onBack}
-              className="text-xs font-bold text-slate-500 hover:text-slate-900 px-3 py-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 transition-colors"
-            >
-              {lang === 'mr' ? '← मुख्य पान' : lang === 'hi' ? '← होम' : '← Home'}
-            </button>
-          )}
-
         </div>
-      </div>
+      )}
 
       {/* Success Notification Banner */}
       {successMsg && (
@@ -209,6 +200,7 @@ export default function ReferralsDashboard({ onBack, initialTab = 'list', demoMo
             onCreateNew={() => setActiveTab('new')}
             onDeleteReferral={handleDeleteReferral}
             onBack={onBack}
+            onRefresh={fetchReferrals}
           />
         )}
       </div>

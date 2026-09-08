@@ -2,10 +2,12 @@ import React, { useState, useMemo, useEffect } from "react";
 import {
   Send, Users, Heart, Baby, AlertTriangle, RefreshCw, ChevronRight,
   Calendar, CheckCircle2, Clock, MapPin, Building2, Stethoscope,
-  Plus, Phone, Search, X, Check, FileText, ArrowRight, UserPlus, Package
+  Plus, Phone, Search, X, Check, FileText, ArrowRight, UserPlus, Package,
+  Siren, Navigation
 } from "lucide-react";
 import { computeStats, computeDueList } from "../../services/ashaService";
 import { supabase } from "../../services/supabase";
+import { parseEmergencyRecord, updateEmergencyDispatch } from "../../services/emergencyService";
 
 // ─── Pure Single-Language Dictionaries (Zero Mixed Text) ─────────
 const HOME_TRANSLATIONS = {
@@ -152,7 +154,24 @@ export default function ASHAHome({
 
   useEffect(() => {
     fetchReferrals();
+
+    const channel = supabase
+      .channel('asha_care_requests_realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'care_requests' }, () => {
+        fetchReferrals();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
+
+  const emergencySosCases = useMemo(() => {
+    return referralsList
+      .filter(r => r.source === 'EMERGENCY_SOS' && r.status !== 'RESOLVED' && r.status !== 'COMPLETED')
+      .map(parseEmergencyRecord);
+  }, [referralsList]);
 
   const handleManualSync = async () => {
     setSyncedToast(true);
@@ -301,6 +320,107 @@ export default function ASHAHome({
           {activeSubTab === "dashboard" && (
             <div className="space-y-6 animate-in fade-in">
               
+              {/* ── 🚨 CRITICAL VILLAGE EMERGENCY SOS ALERT BANNER ── */}
+              {emergencySosCases.length > 0 && (
+                <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-red-600 via-rose-600 to-red-700 text-white shadow-xl border-2 border-red-400 space-y-3.5 animate-in fade-in">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/20 pb-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-11 h-11 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-2xl shrink-0 animate-pulse">
+                        🚨
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-[10px] font-black uppercase tracking-widest bg-white text-red-700 px-2.5 py-0.5 rounded-full shadow-xs">
+                            URGENT VILLAGE EMERGENCY SOS ({emergencySosCases.length})
+                          </span>
+                          <span className="text-xs font-bold text-red-100">
+                            Immediate ASHA Escort Requested
+                          </span>
+                        </div>
+                        <h3 className="text-sm sm:text-base font-black leading-snug mt-0.5 text-white">
+                          {emergencySosCases[0].nature} · {emergencySosCases[0].cadCategory}
+                        </h3>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                      <a
+                        href={`tel:${emergencySosCases[0].phone}`}
+                        className="px-4 py-2 bg-white hover:bg-red-50 text-red-700 font-black text-xs rounded-xl shadow-md transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Phone className="w-3.5 h-3.5" />
+                        <span>Call Caller: {emergencySosCases[0].phone}</span>
+                      </a>
+
+                      {emergencySosCases[0].mapsLink && (
+                        <a
+                          href={emergencySosCases[0].mapsLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-3 py-2 bg-red-800/80 hover:bg-red-800 text-white font-black text-xs rounded-xl border border-white/30 flex items-center gap-1 cursor-pointer"
+                        >
+                          <MapPin className="w-3.5 h-3.5" />
+                          <span>GPS Location</span>
+                        </a>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            await updateEmergencyDispatch(emergencySosCases[0].id, { asha_status: 'RESPONDING' });
+                            fetchReferrals();
+                          } catch (e) {
+                            console.error(e);
+                          }
+                        }}
+                        className="px-3 py-2 bg-white/20 hover:bg-white/30 text-white font-black text-xs rounded-xl border border-white/30 flex items-center gap-1 cursor-pointer"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        <span>{emergencySosCases[0].ashaStatus === 'RESPONDING' ? 'ASHA Responding ✓' : 'Acknowledge'}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs text-red-100 pt-1">
+                    <div className="bg-white/10 p-2.5 rounded-xl">
+                      <span className="text-[10px] text-red-200 uppercase font-black block">Patient / Caller</span>
+                      <span className="font-bold text-white text-xs">{emergencySosCases[0].patient_name || 'Village Citizen'} ({emergencySosCases[0].phone})</span>
+                    </div>
+                    <div className="bg-white/10 p-2.5 rounded-xl">
+                      <span className="text-[10px] text-red-200 uppercase font-black block">Location & Landmark</span>
+                      <span className="font-bold text-white text-xs">{emergencySosCases[0].village || 'Shirwal Village'}</span>
+                    </div>
+                    <div className="bg-white/10 p-2.5 rounded-xl">
+                      <span className="text-[10px] text-red-200 uppercase font-black block">Vitals & Symptoms</span>
+                      <span className="font-bold text-white text-xs">{emergencySosCases[0].signs || emergencySosCases[0].consciousness || 'Requires urgent assessment'}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Direct Route Navigation to Shirwal PHC ── */}
+              <a
+                href="https://maps.google.com/maps?daddr=17.9800,74.0200&travelmode=driving"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-between p-3.5 rounded-2xl bg-white border border-teal-200 hover:border-[#008F83] text-[#008F83] font-black text-xs shadow-xs transition-all hover:bg-teal-50/40 cursor-pointer"
+              >
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-teal-50 text-[#008F83] flex items-center justify-center">
+                    <Navigation className="w-4 h-4" />
+                  </div>
+                  <div className="text-left">
+                    <p className="font-black text-[#16324F] text-xs">🚗 Direct Route to Shirwal PHC</p>
+                    <p className="text-[10px] text-slate-500 font-semibold">2.4 km via Shirwal Main Road · ~8 mins by auto/bike · Open 24/7</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 text-[11px] font-black text-[#008F83]">
+                  <span>Open Route</span>
+                  <ArrowRight className="w-4 h-4" />
+                </div>
+              </a>
+
               {/* ── TOP 2-COLUMN HERO OVERVIEW CARDS (INSPIRED BY REFERENCE) ── */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 

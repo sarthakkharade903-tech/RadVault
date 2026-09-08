@@ -23,7 +23,13 @@ const NAV = [
 const MAIN_SCREENS = ["home","village","refer","followup","activity","medicine"];
 
 export default function ASHAPortal({ onBack, demoMode = false }) {
-  const [screen, setScreen]               = useState("home");
+  const [screen, setScreen]               = useState(() => {
+    if (typeof window !== "undefined") {
+      const q = new URLSearchParams(window.location.search).get("screen");
+      if (q && MAIN_SCREENS.includes(q)) return q;
+    }
+    return "home";
+  });
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [patients, setPatients]           = useState([]);
   const [families, setFamilies]           = useState([]);
@@ -49,7 +55,7 @@ export default function ASHAPortal({ onBack, demoMode = false }) {
   const showNav = MAIN_SCREENS.includes(screen);
 
   return (
-    <div className="h-[100dvh] w-full overflow-hidden bg-[#F5FBF9] flex flex-col md:flex-row font-sans">
+    <div className="h-[calc(100vh-37px)] w-full overflow-hidden bg-[#F5FBF9] flex flex-col md:flex-row font-sans">
       
       {/* ── Mobile Top Bar ── */}
       <header className="md:hidden bg-white border-b border-[#E2E8F0] px-4 py-3 flex items-center justify-between shrink-0 sticky top-0 z-40">

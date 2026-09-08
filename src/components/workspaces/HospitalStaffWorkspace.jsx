@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Inbox,
   AlertTriangle,
@@ -18,10 +18,23 @@ import {
   ExternalLink,
   Sparkles,
   Ticket,
-  Clock
+  Clock,
+  Siren,
+  Volume2,
+  VolumeX,
+  MapPin,
+  Navigation,
+  Send,
+  UserCheck
 } from 'lucide-react';
 import { supabase, ensureRoleAuth } from '../../services/supabase';
 import { assignStaffTokenAndSlot } from '../../services/ashaService';
+import {
+  getActiveEmergencySOS,
+  updateEmergencyDispatch,
+  parseEmergencyRecord,
+  EMERGENCY_CATEGORIES
+} from '../../services/emergencyService';
 
 
 // Canonical Referral Status constants
@@ -158,6 +171,35 @@ const INITIAL_DEMO_REFERRALS = [
   }
 ];
 
+const DEMO_EMERGENCY_SOS = [
+  {
+    id: 'sos-demo-1',
+    refId: 'SOS-MH-8419',
+    patient_id: '00000000-0000-0000-0000-000000000000',
+    patient_name: 'Santosh Shinde',
+    phone: '9822334455',
+    village: 'Wadgaon Phata (4.2 km from PHC)',
+    gps: '19.6154,74.6532',
+    mapsLink: 'https://maps.google.com/?q=19.6154,74.6532',
+    cadCategory: 'CAT 1',
+    nature: 'Cardiac / Chest Pain / Unconscious',
+    consciousness: 'Drowsy',
+    breathing: 'Gasping',
+    signs: 'Crushing chest pressure radiating to arm, cold diaphoresis',
+    ambulanceStatus: 'NONE',
+    ambulanceEta: '10-15 mins',
+    ambulanceVehicle: '108-MH-12-8821',
+    ashaStatus: 'NONE',
+    callLogged: false,
+    doctorStatus: 'NONE',
+    status: 'PENDING_DISPATCH',
+    source: 'EMERGENCY_SOS',
+    priority: 'EMERGENCY',
+    reason: '[EMERGENCY SOS CAT 1] Cardiac / Chest Pain. Caller: 9822334455, Location: Wadgaon Phata. Consciousness: Drowsy, Breathing: Gasping.',
+    created_at: new Date(Date.now() - 4 * 60 * 1000).toISOString()
+  }
+];
+
 export default function HospitalStaffWorkspace({ 
   isDemoMode = false,
   demoDataEnabled = true,
@@ -167,7 +209,7 @@ export default function HospitalStaffWorkspace({
 }) {
   const handleBack = onBack || goHome;
   
-  // Navigation Tabs: 'home' | 'queue' | 'referrals'
+  // Navigation Tabs: 'home' | 'queue' | 'referrals' | 'emergency'
   const [activeTab, setActiveTab] = useState('home');
   const [queueFilter, setQueueFilter] = useState('ALL'); // 'ALL' | 'Pending' | 'Accepted_Arrived' | 'Completed'
   const [sourceFilter, setSourceFilter] = useState('ALL'); // 'ALL' | 'ASHA' | 'PATIENT_DIRECT' | 'TELECONSULT'
@@ -181,6 +223,16 @@ export default function HospitalStaffWorkspace({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+
+  // ─── Emergency SOS Dispatch CAD State ───
+  const [emergencyCases, setEmergencyCases] = useState([]);
+  const [allEmergencyLogs, setAllEmergencyLogs] = useState([]);
+  const [emergencyAlarmMuted, setEmergencyAlarmMuted] = useState(false);
+  const [emergencyFilter, setEmergencyFilter] = useState('ACTIVE'); // 'ACTIVE' | 'ALL' | 'RESOLVED'
+  const [actionLoadingId, setActionLoadingId] = useState(null);
+  const [dispatchModalSOS, setDispatchModalSOS] = useState(null);
+  const [ambulanceVehicleInput, setAmbulanceVehicleInput] = useState('108-MH-12-8821');
+  const [ambulanceEtaInput, setAmbulanceEtaInput] = useState('10-12 mins');
 
   // Referral Origin & Pipeline Helper
   const getReferralOrigin = useCallback((ref) => {
@@ -273,7 +325,7 @@ export default function HospitalStaffWorkspace({
 
       showToast(`✓ Official Token #${assignTokenNum} & slot ${assignSlot} assigned to ${showTokenModal.patient_name}.`);
       setShowTokenModal(null);
-      loadSupabaseData(true);
+      setTimeout(() => loadSupabaseData(true), 3000);
     } catch (err) {
       setError(`Failed to assign token: ${err.message}`);
     } finally {
@@ -361,6 +413,39 @@ export default function HospitalStaffWorkspace({
 
       if (refErr) throw refErr;
 
+      // 5. Separately Fetch Emergency SOS from care_requests (Emergency CAD Console)
+      try {
+        const { data: careData } = await supabase
+          .from('care_requests')
+          .select('*')
+          .eq('source', 'EMERGENCY_SOS')
+          .order('created_at', { ascending: false });
+
+        if (careData && careData.length > 0) {
+          const emergencies = careData.map(parseEmergencyRecord);
+          const activeEmergencies = emergencies.filter(c => c.status !== 'RESOLVED' && c.status !== 'COMPLETED');
+          setEmergencyCases(activeEmergencies);
+          setAllEmergencyLogs(emergencies);
+        } else if (isDemoMode && demoDataEnabled) {
+          setEmergencyCases(DEMO_EMERGENCY_SOS);
+          setAllEmergencyLogs(DEMO_EMERGENCY_SOS);
+        } else {
+          setEmergencyCases([]);
+          setAllEmergencyLogs([]);
+        }
+      } catch (cErr) {
+        console.warn('[HospitalStaff] Emergency SOS CAD fetch notice:', cErr.message);
+        if (isDemoMode && demoDataEnabled) {
+          setEmergencyCases(DEMO_EMERGENCY_SOS);
+          setAllEmergencyLogs(DEMO_EMERGENCY_SOS);
+        } else {
+          setEmergencyCases([]);
+          setAllEmergencyLogs([]);
+        }
+      }
+
+      // Canonical physical referrals strictly from public.referrals
+      // Strict Demo OFF discipline: Never inject demo referrals when Demo is OFF
       const combinedRefs = isDemoMode
         ? (demoDataEnabled ? INITIAL_DEMO_REFERRALS : [])
         : (refData || []);
@@ -476,7 +561,7 @@ export default function HospitalStaffWorkspace({
       setReferrals(prev => prev.map(r => r.id === refId ? { ...r, status: 'Accepted' } : r));
       setSelectedReferral(prev => (prev && prev.id === refId ? { ...prev, status: 'Accepted' } : prev));
       showToast('✓ Referral accepted successfully.');
-      loadSupabaseData(true);
+      setTimeout(() => loadSupabaseData(true), 2500);
     } catch (err) {
       console.error('[HospitalStaff] Failed to accept referral:', err);
       setError(`Failed to accept referral: ${err.message}`);
@@ -514,7 +599,7 @@ export default function HospitalStaffWorkspace({
       setReferrals(prev => prev.map(r => r.id === refId ? { ...r, status: 'Arrived' } : r));
       setSelectedReferral(prev => (prev && prev.id === refId ? { ...prev, status: 'Arrived' } : prev));
       showToast('✓ Patient marked as arrived.');
-      loadSupabaseData(true);
+      setTimeout(() => loadSupabaseData(true), 2500);
     } catch (err) {
       console.error('[HospitalStaff] Failed to mark arrival:', err);
       setError(`Failed to mark arrival: ${err.message}`);
@@ -566,15 +651,174 @@ export default function HospitalStaffWorkspace({
       setReferrals(prev => prev.map(r => r.id === refId ? { ...r, ...updatePayload } : r));
       setSelectedReferral(prev => (prev && prev.id === refId ? { ...prev, ...updatePayload } : prev));
       setShowDoctorRouteModal(null);
-      showToast(`✓ Scoped referral updated with assigned specialist: ${doctorName}`);
-      loadSupabaseData(true);
+      showToast(`✓ Patient routed to ${doctorName}. Status → Assigned. Doctor desk notified.`);
+      setTimeout(() => loadSupabaseData(true), 3000);
     } catch (err) {
       console.error('[HospitalStaff] Failed to assign specialist:', err);
       setError(`Failed to assign specialist: ${err.message}`);
     }
   };
 
+  // ─── Emergency Siren / Audio Chime (CAD Dispatch Protocol) ───
+  const playEmergencyChime = useCallback(() => {
+    if (emergencyAlarmMuted) return;
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      if (ctx.state === 'suspended') ctx.resume();
 
+      const osc1 = ctx.createOscillator();
+      const osc2 = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc1.type = 'sine';
+      osc2.type = 'sine';
+      osc1.frequency.setValueAtTime(880, ctx.currentTime);
+      osc2.frequency.setValueAtTime(659.25, ctx.currentTime + 0.16);
+
+      gain.gain.setValueAtTime(0.2, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.36);
+
+      osc1.connect(gain);
+      osc2.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc1.start(ctx.currentTime);
+      osc1.stop(ctx.currentTime + 0.16);
+      osc2.start(ctx.currentTime + 0.16);
+      osc2.stop(ctx.currentTime + 0.36);
+    } catch (_) {}
+  }, [emergencyAlarmMuted]);
+
+  // Periodic chime when unhandled emergency SOS is pending
+  useEffect(() => {
+    const hasActiveUnhandled = emergencyCases.some(
+      c => c.status === 'PENDING_DISPATCH' || !c.callLogged || c.ambulanceStatus === 'NONE'
+    );
+    if (hasActiveUnhandled && !emergencyAlarmMuted) {
+      playEmergencyChime();
+      const timer = setInterval(playEmergencyChime, 12000);
+      return () => clearInterval(timer);
+    }
+  }, [emergencyCases, emergencyAlarmMuted, playEmergencyChime]);
+
+  // ─── CAD Dispatch Action Handlers ───
+  const handleLogCall = async (sos) => {
+    setActionLoadingId(sos.id);
+    try {
+      if (isDemoMode) {
+        setEmergencyCases(prev => prev.map(c => c.id === sos.id ? { ...c, callLogged: true } : c));
+        setAllEmergencyLogs(prev => prev.map(c => c.id === sos.id ? { ...c, callLogged: true } : c));
+        showToast('📞 Direct call logged with caller');
+        return;
+      }
+      await updateEmergencyDispatch(sos.id, { call_logged: 'true' });
+      showToast('📞 Direct call logged with caller');
+      await loadSupabaseData(true);
+    } catch (err) {
+      console.error(err);
+      showToast(`Failed to log call: ${err.message}`);
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const handleDispatchAmbulance = async (sos, vehicle, eta) => {
+    setActionLoadingId(sos.id);
+    try {
+      const vNum = vehicle || ambulanceVehicleInput || '108-MH-12-8821';
+      const etaVal = eta || ambulanceEtaInput || '10-15 mins';
+      if (isDemoMode) {
+        setEmergencyCases(prev => prev.map(c => c.id === sos.id ? { ...c, ambulanceStatus: 'DISPATCHED', ambulanceVehicle: vNum, ambulanceEta: etaVal, status: 'DISPATCHED' } : c));
+        setAllEmergencyLogs(prev => prev.map(c => c.id === sos.id ? { ...c, ambulanceStatus: 'DISPATCHED', ambulanceVehicle: vNum, ambulanceEta: etaVal, status: 'DISPATCHED' } : c));
+        showToast(`🚑 108 Ambulance Dispatched (${vNum} · ETA ${etaVal})`);
+        setDispatchModalSOS(null);
+        return;
+      }
+      await updateEmergencyDispatch(sos.id, {
+        ambulance_status: 'DISPATCHED',
+        ambulance_vehicle: vNum,
+        ambulance_eta: etaVal,
+        status: 'DISPATCHED'
+      });
+      showToast(`🚑 108 Ambulance Dispatched (${vNum} · ETA ${etaVal})`);
+      setDispatchModalSOS(null);
+      await loadSupabaseData(true);
+    } catch (err) {
+      console.error(err);
+      showToast(`Ambulance dispatch error: ${err.message}`);
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const handleAlertASHA = async (sos) => {
+    setActionLoadingId(sos.id);
+    try {
+      const msg = `🚨 *EMERGENCY SOS DISPATCH ALERT*\n*Patient:* ${sos.patient_name || 'Citizen'}\n*Phone:* ${sos.phone}\n*Emergency:* ${sos.nature} (${sos.cadCategory})\n*Location:* ${sos.village}\n*GPS Map:* ${sos.mapsLink || 'Near PHC'}\n*Signs:* ${sos.signs || 'Immediate response needed'}\n*Hospital:* Shrirampur PHC\nPlease escort or reach immediately!`;
+      const waUrl = `https://wa.me/?text=${encodeURIComponent(msg)}`;
+      window.open(waUrl, '_blank');
+
+      if (isDemoMode) {
+        setEmergencyCases(prev => prev.map(c => c.id === sos.id ? { ...c, ashaStatus: 'ALERTED' } : c));
+        setAllEmergencyLogs(prev => prev.map(c => c.id === sos.id ? { ...c, ashaStatus: 'ALERTED' } : c));
+        showToast('👩‍⚕️ Village ASHA Escort alerted with GPS location');
+        return;
+      }
+      await updateEmergencyDispatch(sos.id, { asha_status: 'ALERTED' });
+      showToast('👩‍⚕️ Village ASHA Escort alerted with GPS location');
+      await loadSupabaseData(true);
+    } catch (err) {
+      console.error(err);
+      showToast(`Failed to alert ASHA: ${err.message}`);
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const handleEscalateDoctor = async (sos) => {
+    setActionLoadingId(sos.id);
+    try {
+      if (isDemoMode) {
+        setEmergencyCases(prev => prev.map(c => c.id === sos.id ? { ...c, doctorStatus: 'NOTIFIED', doctor_assigned: 'Dr. Arvind Kulkarni' } : c));
+        setAllEmergencyLogs(prev => prev.map(c => c.id === sos.id ? { ...c, doctorStatus: 'NOTIFIED', doctor_assigned: 'Dr. Arvind Kulkarni' } : c));
+        showToast('🩺 Escalated to Emergency Medical Officer / Doctor Desk');
+        return;
+      }
+      await updateEmergencyDispatch(sos.id, {
+        doctor_status: 'NOTIFIED',
+        doctor_assigned: 'Dr. Arvind Kulkarni'
+      });
+      showToast('🩺 Escalated to Emergency Medical Officer / Doctor Desk');
+      await loadSupabaseData(true);
+    } catch (err) {
+      console.error(err);
+      showToast(`Doctor routing error: ${err.message}`);
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const handleResolveSOS = async (sos) => {
+    setActionLoadingId(sos.id);
+    try {
+      if (isDemoMode) {
+        setEmergencyCases(prev => prev.filter(c => c.id !== sos.id));
+        setAllEmergencyLogs(prev => prev.map(c => c.id === sos.id ? { ...c, status: 'RESOLVED' } : c));
+        showToast('✅ Emergency stabilized & resolved');
+        return;
+      }
+      await updateEmergencyDispatch(sos.id, { status: 'RESOLVED' });
+      showToast('✅ Emergency stabilized & resolved');
+      await loadSupabaseData(true);
+    } catch (err) {
+      console.error(err);
+      showToast(`Failed to resolve SOS: ${err.message}`);
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
 
   // Memos for metrics
   const counts = useMemo(() => {
@@ -626,6 +870,18 @@ export default function HospitalStaffWorkspace({
     
     return list;
   }, [referrals, activeTab, queueFilter, sourceFilter, searchQuery, getReferralOrigin]);
+
+  // Scoped emergency cases for CAD Console
+  const filteredEmergencyList = useMemo(() => {
+    const list = allEmergencyLogs.length > 0 ? allEmergencyLogs : emergencyCases;
+    if (emergencyFilter === 'ACTIVE') {
+      return list.filter(c => c.status !== 'RESOLVED' && c.status !== 'COMPLETED');
+    }
+    if (emergencyFilter === 'RESOLVED') {
+      return list.filter(c => c.status === 'RESOLVED' || c.status === 'COMPLETED');
+    }
+    return list;
+  }, [allEmergencyLogs, emergencyCases, emergencyFilter]);
 
   if (loading) {
     return (
@@ -701,12 +957,175 @@ export default function HospitalStaffWorkspace({
         </div>
       )}
 
+      {/* ── HIGH PRIORITY 24x7 EMERGENCY SOS COMMAND BANNER ── */}
+      {emergencyCases.length > 0 && (
+        <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-red-600 via-rose-600 to-red-700 text-white shadow-xl border-2 border-red-400 space-y-4 animate-in fade-in duration-200">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/20 pb-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-xl shrink-0 animate-pulse">
+                🚨
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[10px] font-black uppercase tracking-widest bg-white text-red-700 px-2.5 py-0.5 rounded-full shadow-xs">
+                    CRITICAL EMERGENCY SOS ALERT
+                  </span>
+                  <span className="text-xs font-bold text-red-100">
+                    {emergencyCases.length} Active Call{emergencyCases.length > 1 ? 's' : ''} Pending Dispatch
+                  </span>
+                </div>
+                <p className="text-xs font-black text-white mt-0.5">
+                  Primary Dispatch Desk: Shrirampur Casualty & 108 CAD Network
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 self-start sm:self-auto">
+              <button
+                type="button"
+                onClick={() => setEmergencyAlarmMuted(prev => !prev)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer border transition-colors ${
+                  emergencyAlarmMuted
+                    ? 'bg-white/20 text-white border-white/30 hover:bg-white/30'
+                    : 'bg-white text-red-700 border-white hover:bg-red-50 shadow-sm'
+                }`}
+              >
+                {emergencyAlarmMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5 animate-bounce" />}
+                <span>{emergencyAlarmMuted ? 'Unmute Siren' : 'Mute Siren'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('emergency')}
+                className="px-3 py-1.5 bg-black/30 hover:bg-black/40 text-white rounded-xl text-xs font-black border border-white/30 cursor-pointer transition-colors"
+              >
+                Open CAD Console
+              </button>
+            </div>
+          </div>
+
+          {/* Topmost emergency case card in banner */}
+          {(() => {
+            const topCase = emergencyCases[0];
+            return (
+              <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-4 border border-white/20 space-y-3">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[10px] font-mono font-bold bg-white/20 px-2 py-0.5 rounded text-white">
+                        {topCase.refId || 'SOS-01'}
+                      </span>
+                      <span className="text-sm font-black text-white">
+                        {topCase.patient_name || 'Emergency Caller'}
+                      </span>
+                      <span className="text-xs font-bold text-red-100">
+                        · {topCase.nature}
+                      </span>
+                      <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-red-950 text-red-200 border border-red-400/50">
+                        {topCase.cadCategory} · Target &lt; 8m
+                      </span>
+                    </div>
+                    <div className="text-xs text-red-100 font-medium mt-1 flex items-center gap-2 flex-wrap">
+                      <span>📍 {topCase.village}</span>
+                      {topCase.mapsLink && (
+                        <a
+                          href={topCase.mapsLink}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="underline text-white font-bold flex items-center gap-1 hover:text-amber-200"
+                        >
+                          <MapPin className="w-3 h-3" />
+                          <span>View GPS Pin ({topCase.gps})</span>
+                        </a>
+                      )}
+                      <span>·</span>
+                      <span className="font-bold bg-white/20 px-1.5 py-0.5 rounded text-[11px]">
+                        Breathing: {topCase.breathing}
+                      </span>
+                      <span className="font-bold bg-white/20 px-1.5 py-0.5 rounded text-[11px]">
+                        Consciousness: {topCase.consciousness}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Quick Dispatch Action Buttons */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <a
+                      href={`tel:${topCase.phone}`}
+                      onClick={() => handleLogCall(topCase)}
+                      className="px-3 py-2 bg-white hover:bg-red-50 text-red-700 font-black text-xs rounded-xl shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Phone className="w-3.5 h-3.5" />
+                      <span>Call {topCase.phone || 'Caller'}</span>
+                    </a>
+
+                    <button
+                      type="button"
+                      onClick={() => setDispatchModalSOS(topCase)}
+                      className={`px-3 py-2 text-xs font-black rounded-xl transition-all shadow-md flex items-center gap-1.5 cursor-pointer ${
+                        topCase.ambulanceStatus === 'DISPATCHED'
+                          ? 'bg-emerald-500 text-white'
+                          : 'bg-amber-400 hover:bg-amber-300 text-slate-900'
+                      }`}
+                    >
+                      <Siren className="w-3.5 h-3.5" />
+                      <span>{topCase.ambulanceStatus === 'DISPATCHED' ? `Ambulance Dispatched (${topCase.ambulanceEta})` : 'Dispatch 108'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleAlertASHA(topCase)}
+                      className={`px-3 py-2 text-xs font-black rounded-xl transition-all shadow-md flex items-center gap-1.5 cursor-pointer ${
+                        topCase.ashaStatus === 'ALERTED'
+                          ? 'bg-teal-700 text-white'
+                          : 'bg-white/20 hover:bg-white/30 text-white'
+                      }`}
+                    >
+                      <UserCheck className="w-3.5 h-3.5" />
+                      <span>{topCase.ashaStatus === 'ALERTED' ? 'ASHA Alerted' : 'Alert ASHA'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleEscalateDoctor(topCase)}
+                      className={`px-3 py-2 text-xs font-black rounded-xl transition-all shadow-md flex items-center gap-1.5 cursor-pointer ${
+                        topCase.doctorStatus === 'NOTIFIED'
+                          ? 'bg-purple-800 text-white'
+                          : 'bg-white/20 hover:bg-white/30 text-white'
+                      }`}
+                    >
+                      <Stethoscope className="w-3.5 h-3.5" />
+                      <span>{topCase.doctorStatus === 'NOTIFIED' ? 'Doctor Alerted' : 'Route to Doctor'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={actionLoadingId === topCase.id}
+                      onClick={() => handleResolveSOS(topCase)}
+                      className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs rounded-xl shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>Resolve</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
       {/* ── Sub Navigation Tabs ── */}
-      <div className="flex items-center gap-2 border-b border-slate-200 pb-1 text-xs">
+      <div className="flex items-center gap-2 border-b border-slate-200 pb-1 text-xs overflow-x-auto scrollbar-hide">
         {[
           { key: 'home', label: 'Home' },
           { key: 'queue', label: 'Patient Queue' },
-          { key: 'referrals', label: 'Referral Log' }
+          { key: 'referrals', label: 'Referral Log' },
+          {
+            key: 'emergency',
+            label: `🚨 Emergency CAD${emergencyCases.length > 0 ? ` (${emergencyCases.length})` : ''}`,
+            isEmergency: true
+          }
         ].map(tab => (
           <button
             key={tab.key}
@@ -714,10 +1133,10 @@ export default function HospitalStaffWorkspace({
               setActiveTab(tab.key);
               setSearchQuery('');
             }}
-            className={`px-4 py-2 font-black border-b-2 transition-colors cursor-pointer ${
+            className={`px-4 py-2 font-black border-b-2 transition-colors cursor-pointer shrink-0 ${
               activeTab === tab.key
-                ? 'border-[#008080] text-[#008080]'
-                : 'border-transparent text-slate-500 hover:text-slate-900'
+                ? tab.isEmergency ? 'border-red-600 text-red-600' : 'border-[#008080] text-[#008080]'
+                : tab.isEmergency ? 'border-transparent text-red-600 hover:text-red-700' : 'border-transparent text-slate-500 hover:text-slate-900'
             }`}
           >
             {tab.label}
@@ -1232,6 +1651,437 @@ export default function HospitalStaffWorkspace({
                 No matching referral history records found.
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── TAB 4: 24x7 EMERGENCY DISPATCH DESK (CAD CONSOLE) ── */}
+      {activeTab === 'emergency' && (
+        <div className="space-y-6 animate-in fade-in duration-150">
+          
+          {/* Header & Quick Filter Pills */}
+          <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-2xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3.5">
+                <div className="w-12 h-12 bg-red-50 border border-red-200 rounded-2xl flex items-center justify-center text-2xl shrink-0 text-red-600">
+                  <Siren className="w-6 h-6 animate-pulse" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-base font-black text-slate-900 leading-tight">
+                      Computer-Aided Dispatch (CAD) Operations Desk
+                    </h2>
+                    <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-red-100 text-red-800 border border-red-200">
+                      Live Dispatch Active
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 font-bold mt-1">
+                    Direct helpline calls, 108 Ambulance tracking &amp; ASHA emergency escort pipeline
+                  </p>
+                </div>
+              </div>
+
+              {/* Status Filter Buttons */}
+              <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-2xl self-start sm:self-auto text-xs font-black">
+                {[
+                  { key: 'ACTIVE', label: `Active (${emergencyCases.length})` },
+                  { key: 'ALL', label: `All History (${allEmergencyLogs.length})` },
+                  { key: 'RESOLVED', label: 'Resolved' }
+                ].map(f => (
+                  <button
+                    key={f.key}
+                    onClick={() => setEmergencyFilter(f.key)}
+                    className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
+                      emergencyFilter === f.key
+                        ? 'bg-white text-slate-900 shadow-xs'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Quick Operational Metrics */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-slate-100">
+              <div className="p-3 bg-red-50/60 rounded-2xl border border-red-100">
+                <span className="text-[10px] font-black uppercase text-red-700 block">Pending Immediate Action</span>
+                <span className="text-xl font-black text-red-900 mt-0.5 block">
+                  {emergencyCases.filter(c => c.status === 'PENDING_DISPATCH' || c.ambulanceStatus === 'NONE').length}
+                </span>
+              </div>
+              <div className="p-3 bg-amber-50/60 rounded-2xl border border-amber-100">
+                <span className="text-[10px] font-black uppercase text-amber-700 block">108 Ambulances En Route</span>
+                <span className="text-xl font-black text-amber-900 mt-0.5 block">
+                  {allEmergencyLogs.filter(c => c.ambulanceStatus === 'DISPATCHED').length}
+                </span>
+              </div>
+              <div className="p-3 bg-teal-50/60 rounded-2xl border border-teal-100">
+                <span className="text-[10px] font-black uppercase text-teal-700 block">ASHA Escorts Mobilized</span>
+                <span className="text-xl font-black text-teal-900 mt-0.5 block">
+                  {allEmergencyLogs.filter(c => c.ashaStatus === 'ALERTED').length}
+                </span>
+              </div>
+              <div className="p-3 bg-emerald-50/60 rounded-2xl border border-emerald-100">
+                <span className="text-[10px] font-black uppercase text-emerald-700 block">Stabilized &amp; Resolved</span>
+                <span className="text-xl font-black text-emerald-900 mt-0.5 block">
+                  {allEmergencyLogs.filter(c => c.status === 'RESOLVED' || c.status === 'COMPLETED').length}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Emergency Cards Stream */}
+          <div className="space-y-4">
+            {filteredEmergencyList.length > 0 ? (
+              filteredEmergencyList.map(sos => {
+                const isCat1 = sos.cadCategory === 'CAT 1';
+                const isResolved = sos.status === 'RESOLVED' || sos.status === 'COMPLETED';
+
+                return (
+                  <div
+                    key={sos.id}
+                    className={`bg-white rounded-3xl p-5 border-2 transition-all shadow-sm space-y-4 ${
+                      isResolved
+                        ? 'border-emerald-200 opacity-80'
+                        : isCat1
+                        ? 'border-red-300 shadow-md ring-1 ring-red-200'
+                        : 'border-amber-300 shadow-sm'
+                    }`}
+                  >
+                    {/* Header Row */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                      <div className="flex items-center gap-2.5 flex-wrap">
+                        <span className="font-mono text-xs font-bold bg-slate-900 text-white px-2 py-0.5 rounded-md">
+                          {sos.refId || 'SOS-01'}
+                        </span>
+                        <h3 className="font-black text-base text-slate-900">
+                          {sos.patient_name || 'Emergency Caller'}
+                        </h3>
+                        <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full border ${
+                          isCat1
+                            ? 'bg-red-600 text-white border-red-700'
+                            : 'bg-amber-500 text-white border-amber-600'
+                        }`}>
+                          {sos.cadCategory} · {sos.nature}
+                        </span>
+                        <span className="text-xs text-slate-400 font-bold">
+                          {new Date(sos.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+
+                      {/* Status badge */}
+                      <span className={`text-xs font-black px-3 py-1 rounded-full border ${
+                        isResolved
+                          ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                          : sos.ambulanceStatus === 'DISPATCHED'
+                          ? 'bg-amber-100 text-amber-900 border-amber-300 animate-pulse'
+                          : 'bg-red-100 text-red-800 border-red-300 animate-pulse'
+                      }`}>
+                        {isResolved ? '✓ Case Resolved / Stabilized' : sos.ambulanceStatus === 'DISPATCHED' ? `Ambulance Dispatched (ETA ${sos.ambulanceEta})` : 'Pending Dispatch Action'}
+                      </span>
+                    </div>
+
+                    {/* Core Triage Information Grid */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                      
+                      {/* Column 1: Contact & Location */}
+                      <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-100 space-y-2">
+                        <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider block">
+                          Caller &amp; Geolocation
+                        </span>
+                        <div className="space-y-1 text-slate-700">
+                          <p className="flex items-center gap-1.5 font-bold">
+                            <Phone className="w-3.5 h-3.5 text-[#008080]" />
+                            <a href={`tel:${sos.phone}`} onClick={() => handleLogCall(sos)} className="hover:underline text-slate-900 font-black">
+                              {sos.phone || 'No phone provided'}
+                            </a>
+                          </p>
+                          <p className="flex items-center gap-1.5 text-slate-600">
+                            <MapPin className="w-3.5 h-3.5 text-red-500" />
+                            <span>{sos.village}</span>
+                          </p>
+                          {sos.mapsLink && (
+                            <a
+                              href={sos.mapsLink}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1 text-[11px] font-black text-[#008080] hover:underline pt-0.5"
+                            >
+                              <Navigation className="w-3 h-3" />
+                              <span>Open Live GPS in Google Maps ({sos.gps})</span>
+                            </a>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Column 2: Rapid Clinical Assessment */}
+                      <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-100 space-y-2">
+                        <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider block">
+                          Initial Triage Assessment
+                        </span>
+                        <div className="space-y-1.5">
+                          <div className="flex items-center gap-2">
+                            <span className="text-slate-500 font-medium">Breathing:</span>
+                            <span className={`font-black px-2 py-0.5 rounded text-[11px] ${
+                              sos.breathing === 'Not Breathing' ? 'bg-red-600 text-white' : sos.breathing === 'Gasping' ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'
+                            }`}>
+                              {sos.breathing}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-slate-500 font-medium">Consciousness:</span>
+                            <span className={`font-black px-2 py-0.5 rounded text-[11px] ${
+                              sos.consciousness === 'Unconscious' ? 'bg-red-600 text-white' : sos.consciousness === 'Drowsy' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
+                            }`}>
+                              {sos.consciousness}
+                            </span>
+                          </div>
+                          {sos.signs && (
+                            <p className="text-[11px] text-red-700 font-bold leading-tight">
+                              ⚠️ Danger Signs: {sos.signs}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Column 3: Multi-Agency Dispatch Status Matrix */}
+                      <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-100 space-y-2">
+                        <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider block">
+                          CAD Dispatch Matrix
+                        </span>
+                        <div className="space-y-1.5 text-[11px]">
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-600">📞 Phone Call:</span>
+                            <span className={`font-black px-2 py-0.5 rounded ${sos.callLogged ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                              {sos.callLogged ? 'Call Logged' : 'Not Called Yet'}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-600">🚑 108 Ambulance:</span>
+                            <span className={`font-black px-2 py-0.5 rounded ${sos.ambulanceStatus === 'DISPATCHED' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'}`}>
+                              {sos.ambulanceStatus === 'DISPATCHED' ? `${sos.ambulanceVehicle || '108'} (${sos.ambulanceEta})` : 'Not Dispatched'}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-600">👩‍⚕️ Village ASHA:</span>
+                            <span className={`font-black px-2 py-0.5 rounded ${sos.ashaStatus === 'ALERTED' ? 'bg-teal-100 text-teal-800' : 'bg-slate-200 text-slate-700'}`}>
+                              {sos.ashaStatus === 'ALERTED' ? 'Alerted via WhatsApp' : 'Pending Alert'}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-600">🩺 Doctor Escorted:</span>
+                            <span className={`font-black px-2 py-0.5 rounded ${sos.doctorStatus === 'NOTIFIED' ? 'bg-purple-100 text-purple-800' : 'bg-slate-200 text-slate-700'}`}>
+                              {sos.doctorStatus === 'NOTIFIED' ? 'Doctor Notified' : 'Casualty Desk'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                    </div>
+
+                    {/* Dispatch Control Bar */}
+                    <div className="flex flex-wrap items-center justify-between gap-2.5 pt-2 border-t border-slate-100">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {/* 1. Direct Call */}
+                        <a
+                          href={`tel:${sos.phone}`}
+                          onClick={() => handleLogCall(sos)}
+                          className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-black text-xs rounded-xl shadow-xs transition-transform active:scale-95 flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Phone className="w-3.5 h-3.5" />
+                          <span>Call Patient</span>
+                        </a>
+
+                        {/* 2. Dispatch 108 Ambulance */}
+                        <button
+                          type="button"
+                          onClick={() => setDispatchModalSOS(sos)}
+                          className={`px-3.5 py-2 text-xs font-black rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer ${
+                            sos.ambulanceStatus === 'DISPATCHED'
+                              ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                              : 'bg-red-600 hover:bg-red-700 text-white animate-pulse'
+                          }`}
+                        >
+                          <Siren className="w-3.5 h-3.5" />
+                          <span>{sos.ambulanceStatus === 'DISPATCHED' ? `Update Ambulance (${sos.ambulanceEta})` : 'Dispatch 108 Ambulance'}</span>
+                        </button>
+
+                        {/* 3. Alert Village ASHA Escort */}
+                        <button
+                          type="button"
+                          onClick={() => handleAlertASHA(sos)}
+                          className={`px-3.5 py-2 text-xs font-black rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer ${
+                            sos.ashaStatus === 'ALERTED'
+                              ? 'bg-teal-600 text-white'
+                              : 'bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200'
+                          }`}
+                        >
+                          <Send className="w-3.5 h-3.5" />
+                          <span>{sos.ashaStatus === 'ALERTED' ? 'Alerted ASHA (Re-send)' : 'Alert Village ASHA (WhatsApp)'}</span>
+                        </button>
+
+                        {/* 4. Escalate to Doctor */}
+                        <button
+                          type="button"
+                          onClick={() => handleEscalateDoctor(sos)}
+                          className={`px-3.5 py-2 text-xs font-black rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer ${
+                            sos.doctorStatus === 'NOTIFIED'
+                              ? 'bg-purple-700 text-white'
+                              : 'bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200'
+                          }`}
+                        >
+                          <Stethoscope className="w-3.5 h-3.5" />
+                          <span>{sos.doctorStatus === 'NOTIFIED' ? 'Doctor Notified' : 'Escalate to Doctor'}</span>
+                        </button>
+                      </div>
+
+                      {/* 5. Mark Resolved */}
+                      {!isResolved ? (
+                        <button
+                          type="button"
+                          disabled={actionLoadingId === sos.id}
+                          onClick={() => handleResolveSOS(sos)}
+                          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer shrink-0"
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>Mark Case Stabilized &amp; Resolved</span>
+                        </button>
+                      ) : (
+                        <span className="text-xs font-black text-emerald-700 flex items-center gap-1">
+                          <CheckCircle2 className="w-4 h-4" />
+                          <span>Closed &amp; Archived</span>
+                        </span>
+                      )}
+                    </div>
+
+                  </div>
+                );
+              })
+            ) : (
+              <div className="p-12 text-center bg-white border border-slate-200 rounded-3xl space-y-2">
+                <span className="text-4xl">🟢</span>
+                <h3 className="font-black text-sm text-slate-800">No Active Emergency Calls</h3>
+                <p className="text-xs text-slate-400 font-medium">
+                  The 24x7 CAD pipeline is standby. Incoming SOS alerts will sound and trigger here in real-time.
+                </p>
+              </div>
+            )}
+          </div>
+
+        </div>
+      )}
+
+      {/* ─── MODAL: 108 AMBULANCE DISPATCH ASSIGNMENT ─── */}
+      {dispatchModalSOS && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl max-w-lg w-full border border-slate-200 shadow-2xl overflow-hidden space-y-5 p-6">
+            <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-red-100 text-red-600 flex items-center justify-center font-black text-lg">
+                  🚑
+                </div>
+                <div>
+                  <h3 className="font-black text-base text-slate-900 leading-tight">
+                    Dispatch 108 Emergency Ambulance
+                  </h3>
+                  <p className="text-xs text-slate-500 font-bold mt-0.5">
+                    Assign vehicle &amp; estimated arrival time for CAD dispatch
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDispatchModalSOS(null)}
+                className="p-1.5 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs">
+              {/* Target caller summary */}
+              <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 space-y-1">
+                <p className="font-black text-slate-900">
+                  Patient: {dispatchModalSOS.patient_name || 'Emergency Caller'} · {dispatchModalSOS.nature}
+                </p>
+                <p className="text-slate-600">
+                  📍 Destination: {dispatchModalSOS.village} ({dispatchModalSOS.gps || 'Near PHC'})
+                </p>
+                <p className="text-slate-600 font-bold">
+                  📞 Caller: {dispatchModalSOS.phone}
+                </p>
+              </div>
+
+              {/* 108 Vehicle Plate */}
+              <div className="space-y-1.5">
+                <label className="font-black text-slate-700 uppercase tracking-wider text-[10px]">
+                  108 Ambulance Registration Plate
+                </label>
+                <input
+                  type="text"
+                  value={ambulanceVehicleInput}
+                  onChange={(e) => setAmbulanceVehicleInput(e.target.value)}
+                  placeholder="e.g. 108-MH-12-8821"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 focus:border-red-500 rounded-xl text-xs font-bold text-slate-900 outline-none"
+                />
+              </div>
+
+              {/* ETA Presets */}
+              <div className="space-y-1.5">
+                <label className="font-black text-slate-700 uppercase tracking-wider text-[10px]">
+                  Estimated Time of Arrival (ETA)
+                </label>
+                <div className="flex gap-2 flex-wrap">
+                  {['6-8 mins', '10-12 mins', '15 mins', '20-25 mins'].map(preset => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setAmbulanceEtaInput(preset)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                        ambulanceEtaInput === preset
+                          ? 'bg-red-600 text-white border-red-600 shadow-xs'
+                          : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  type="text"
+                  value={ambulanceEtaInput}
+                  onChange={(e) => setAmbulanceEtaInput(e.target.value)}
+                  placeholder="Custom ETA (e.g. 10 mins)"
+                  className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 focus:border-red-500 rounded-xl text-xs font-bold text-slate-900 outline-none mt-1"
+                />
+              </div>
+
+              {/* Paramedic note */}
+              <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px] font-medium leading-relaxed">
+                🚨 <strong>Foreign CAD Dispatch Standard:</strong> Once confirmed, ETA and vehicle plate number are broadcast immediately to the caller's live tracking screen in real-time.
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setDispatchModalSOS(null)}
+                className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={actionLoadingId === dispatchModalSOS.id}
+                onClick={() => handleDispatchAmbulance(dispatchModalSOS, ambulanceVehicleInput, ambulanceEtaInput)}
+                className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-black text-xs rounded-xl shadow-md transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <Siren className="w-3.5 h-3.5" />
+                <span>Confirm 108 Dispatch</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
