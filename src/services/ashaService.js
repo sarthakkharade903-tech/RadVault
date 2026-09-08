@@ -1095,6 +1095,8 @@ export async function createWaitingTeleconsult(payload) {
   return { session, careReq, token, id: careReq?.id || session?.id, error: careErr };
 }
 
+let teleconsultSessionsTableAvailable = true;
+
 /**
  * Fetch all active teleconsultations waiting for doctor or in call
  * @param {string|null} facilityFilter - optional facility name/id to scope results
@@ -1158,15 +1160,25 @@ export async function getWaitingTeleconsultSessions(facilityFilter = null) {
   }
 
   // 2. Secondary: Query teleconsult_sessions if table exists
-  try {
-    const { data, error } = await supabase
-      .from('teleconsult_sessions')
-      .select('*')
-      .in('session_status', ['WAITING_FOR_DOCTOR', 'IN_CALL'])
-      .order('created_at', { ascending: false });
+  if (teleconsultSessionsTableAvailable) {
+    try {
+      const { data, error } = await supabase
+        .from('teleconsult_sessions')
+        .select('*')
+        .in('session_status', ['WAITING_FOR_DOCTOR', 'IN_CALL'])
+        .order('created_at', { ascending: false });
 
-    if (data && data.length > 0) return { data, error: null };
-  } catch (_) {}
+      if (error) {
+        if (error.code === 'PGRST205' || error.code === '42P01') {
+          teleconsultSessionsTableAvailable = false;
+        }
+      } else if (data && data.length > 0) {
+        return { data, error: null };
+      }
+    } catch (_) {
+      teleconsultSessionsTableAvailable = false;
+    }
+  }
 
   return { data: [], error: null };
 }

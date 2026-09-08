@@ -843,6 +843,19 @@ export default function DoctorWorkspace({
     return list;
   }, [referrals, activeTab, queueFilter, searchQuery]);
 
+  const newlyAssignedCases = useMemo(() => {
+    if (!doctorProfile?.id) return [];
+    return referrals
+      .filter(r => {
+        // Canonical rule: NEW ASSIGNMENT requires status 'Assigned' and authoritative doctor_id match
+        // Facility-only matching is strictly forbidden; conflicting doctor_id is strictly rejected.
+        return r.status === 'Assigned' && r.doctor_id === doctorProfile.id;
+      })
+      .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+  }, [referrals, doctorProfile]);
+
+  const newestAssignment = newlyAssignedCases[0] || null;
+
   const nextPatient = useMemo(() => {
     return referrals
       .filter(r => r.status === 'Arrived' || r.status === 'Assigned' || r.status === 'In Consultation')
@@ -1121,17 +1134,77 @@ export default function DoctorWorkspace({
                   </div>
                 </div>
 
+                {/* ─── 1. NEW ASSIGNMENT SECTION (NEWEST WORK ASSIGNED TO DOCTOR) ─── */}
+                {newestAssignment && (
+                  <div
+                    data-referral-id={newestAssignment.id}
+                    className="bg-[#052E26] text-white rounded-3xl p-5 sm:p-6 border border-emerald-700/80 shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-5 relative overflow-hidden animate-in fade-in slide-in-from-top-2"
+                  >
+                    <div className="space-y-2 relative z-10">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[10px] uppercase font-black tracking-wider bg-emerald-500/20 text-emerald-300 px-3 py-0.5 rounded-full border border-emerald-500/40 flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping shrink-0" />
+                          NEW ASSIGNMENT
+                        </span>
+                        <span className="text-xs font-bold text-slate-300 font-mono">
+                          ID: {String(newestAssignment.id).slice(0, 8).toUpperCase()}
+                        </span>
+                        <span className="text-[10px] font-black px-2.5 py-0.5 rounded border bg-emerald-900/80 text-emerald-200 border-emerald-700">
+                          {newestAssignment.priority_label || newestAssignment.priority}
+                        </span>
+                        <span className="text-xs font-bold text-emerald-400">
+                          Status: {newestAssignment.status}
+                        </span>
+                      </div>
+
+                      <h3 className="text-xl font-black text-white">{newestAssignment.patient_name}</h3>
+
+                      <p className="text-xs text-slate-300 font-medium max-w-xl line-clamp-2">
+                        <strong>Complaint:</strong> {newestAssignment.symptoms || 'Physical clinical referral dispatched from frontline.'}
+                      </p>
+
+                      <div className="flex items-center gap-3 text-[11px] font-bold text-slate-400 pt-0.5">
+                        <span>Department: <strong className="text-white">{newestAssignment.destination_department || 'General Medicine'}</strong></span>
+                        {newlyAssignedCases.length > 1 && (
+                          <span className="text-emerald-300 font-black">
+                            • {newlyAssignedCases.length} assigned cases waiting in queue
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 shrink-0 relative z-10">
+                      <button
+                        data-referral-id={newestAssignment.id}
+                        data-action="open-case"
+                        onClick={() => handleOpenCase(newestAssignment)}
+                        className="px-6 py-3 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black text-xs rounded-2xl shadow-md transition-transform active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <Stethoscope className="w-4 h-4" />
+                        <span>OPEN CASE</span>
+                        <ArrowRight className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* ─── 2. NEXT CLINICAL CASE (HIGHEST CLINICAL PRIORITY) ─── */}
                 {nextPatient ? (
                   <div
                     data-referral-id={nextPatient.id}
                     className="bg-slate-900 text-white rounded-3xl p-6 border border-slate-800 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-5"
                   >
                     <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[9px] uppercase font-black tracking-wider bg-[#7C3AED] text-purple-100 px-2.5 py-0.5 rounded-full border border-[#7C3AED]/50 animate-pulse">
-                          ⚡ Immediate Case Ready
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[9px] uppercase font-black tracking-wider bg-[#7C3AED] text-purple-100 px-2.5 py-0.5 rounded-full border border-[#7C3AED]/50">
+                          ⚡ NEXT CLINICAL CASE (HIGHEST PRIORITY)
                         </span>
                         <span className="text-xs font-bold text-slate-400">Status: {nextPatient.status}</span>
+                        {newestAssignment && nextPatient.id === newestAssignment.id && (
+                          <span className="text-[9px] font-black bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded border border-emerald-500/30">
+                            Same as New Assignment
+                          </span>
+                        )}
                       </div>
                       <h3 className="text-xl font-black">{nextPatient.patient_name}</h3>
                       <p className="text-xs text-slate-300 font-medium max-w-xl line-clamp-2">
@@ -1159,14 +1232,29 @@ export default function DoctorWorkspace({
                   </div>
                 ) : (
                   <div className="bg-white border border-slate-200 rounded-3xl p-8 text-center text-xs text-slate-400 font-medium">
-                    ✓ All assigned patients have been attended. No urgent cases waiting.
+                    {counts.waiting > 0 ? (
+                      <span className="text-slate-600 font-bold">
+                        ✓ No urgent red-priority cases waiting. {counts.waiting} active case{counts.waiting > 1 ? 's' : ''} in queue.
+                      </span>
+                    ) : (
+                      <span>✓ All assigned patients have been attended. No cases waiting.</span>
+                    )}
                   </div>
                 )}
 
+                {/* ─── 3. ACTIVE QUEUE OVERVIEW ─── */}
                 <div className="bg-white border border-slate-200 rounded-3xl p-5 space-y-4 shadow-2xs">
                   <div className="flex items-center justify-between">
-                    <h2 className="text-xs font-black uppercase text-slate-400 tracking-wider">Assigned Patient Cases</h2>
-                    <span className="text-[11px] font-bold text-slate-400">{referrals.length} total referrals</span>
+                    <div>
+                      <h2 className="text-xs font-black uppercase text-slate-600 tracking-wider">Active Queue Overview</h2>
+                      <p className="text-[11px] text-slate-400 font-medium mt-0.5">Physical hospital referrals assigned for consultation</p>
+                    </div>
+                    <button
+                      onClick={() => { setActiveTab('cases'); setQueueFilter('Active'); }}
+                      className="text-xs font-black text-[#7C3AED] hover:underline cursor-pointer"
+                    >
+                      View Full Queue ({counts.waiting}) →
+                    </button>
                   </div>
 
                   {referrals.length > 0 ? (
