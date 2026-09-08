@@ -33,14 +33,17 @@ export async function ensureRoleAuth(roleName) {
     return inFlightAuth;
   }
 
+  // 1. Fast local session inspection — 0ms latency if already logged in as this role
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user && session.user.email?.toLowerCase() === creds.email.toLowerCase()) {
+      return { user: session.user, error: null };
+    }
+  } catch (_) {}
+
   inFlightRole = roleName;
   inFlightAuth = (async () => {
     try {
-      const { data: { user: currentUser } } = await supabase.auth.getUser();
-      if (currentUser && currentUser.email?.toLowerCase() === creds.email.toLowerCase()) {
-        return { user: currentUser, error: null };
-      }
-
       const { data, error } = await supabase.auth.signInWithPassword({
         email: creds.email,
         password: creds.password

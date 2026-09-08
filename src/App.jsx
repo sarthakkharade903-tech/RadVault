@@ -128,6 +128,7 @@ function LandingPage({ onSelectPortal, onOpenEmergencySOS }) {
                 return (
                   <button
                     key={key}
+                    data-portal={key}
                     onClick={() => onSelectPortal(key)}
                     onMouseEnter={() => setHoveredPortal(key)}
                     onFocus={() => setHoveredPortal(key)}
@@ -343,6 +344,7 @@ function App() {
 
           {activePortal !== "home" && (
             <button
+              data-action="all-portals"
               onClick={goHome}
               className="text-slate-400 hover:text-white font-semibold text-[11px] underline ml-1 cursor-pointer"
             >

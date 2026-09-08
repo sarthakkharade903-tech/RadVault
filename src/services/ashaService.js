@@ -1,4 +1,4 @@
-import { supabase, ensureRoleAuth } from './supabase';
+import { supabase } from './supabase';
 
 // â”€â”€ ABHA ID Generator â”€â”€
 // Generates a mock 14-digit ABHA number in the format XX-XXXX-XXXX-XXXX
@@ -64,54 +64,95 @@ export async function getVillagePatients() {
 
 /**
  * Ensure a village_patient also exists in the clinical `patients` table.
- * Creates a minimal record if one does not exist.
+ * Authoritative identity synchronization: patients.id === village_patients.id.
+ * No fabricated demographics, strict UUID check, and verified re-read.
  */
 export async function ensureClinicalPatient(patient) {
-  if (!patient || !patient.id) return null;
+  if (!patient || !patient.id) {
+    throw new Error('ensureClinicalPatient: patient object with valid id UUID is required.');
+  }
 
-  try {
-    await ensureRoleAuth('asha');
-  } catch (_) {}
+  const isValidUuid = (val) => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+  if (!isValidUuid(patient.id)) {
+    throw new Error(`ensureClinicalPatient requires a valid UUID, received: ${patient.id}`);
+  }
 
-  const { data: existing } = await supabase
+  // 1. Strict primary key query on patients.id = patient.id
+  const { data: existing, error: findErr } = await supabase
     .from('patients')
-    .select('id, unified_id, full_name')
+    .select('id, unified_id, full_name, age, gender, blood_group, phone_number')
     .eq('id', patient.id)
     .maybeSingle();
 
-  if (existing) return existing;
+  if (findErr) {
+    console.error('[ashaService] ensureClinicalPatient query error:', findErr.message);
+    throw findErr;
+  }
+
+  if (existing) {
+    return existing;
+  }
+
+  // 2. Fetch demographic details from village_patients if missing from caller
+  let sourceVp = null;
+  if (!patient.name || patient.age_years === undefined || !patient.gender) {
+    const { data: vpData } = await supabase
+      .from('village_patients')
+      .select('name, age_years, gender, mobile, blood_group')
+      .eq('id', patient.id)
+      .maybeSingle();
+    sourceVp = vpData;
+  }
+
+  const resolvedName = patient.name || patient.full_name || sourceVp?.name || null;
+  const resolvedAge = (patient.age_years !== undefined && patient.age_years !== null)
+    ? Number(patient.age_years)
+    : ((patient.age !== undefined && patient.age !== null)
+      ? Number(patient.age)
+      : (sourceVp?.age_years !== undefined && sourceVp?.age_years !== null ? Number(sourceVp.age_years) : 0));
+  const resolvedGender = patient.gender || sourceVp?.gender || null;
+  const resolvedPhone = patient.mobile || patient.phone || patient.phone_number || sourceVp?.mobile || null;
+  const resolvedBloodGroup = patient.blood_group || sourceVp?.blood_group || null;
 
   const unifiedId = `MH-P-${Math.floor(100000 + Math.random() * 900000)}`;
   const clinicalPayload = {
-    id: patient.id,
+    id: patient.id, // Exact canonical UUID preserved
     unified_id: unifiedId,
-    full_name: patient.name || patient.full_name || 'Village Resident',
-    age: Number(patient.age_years || patient.age) || 30,
-    gender: patient.gender || 'Other',
-    blood_group: patient.blood_group || null,
-    phone_number: patient.mobile || patient.phone || patient.phone_number || '9876543210',
+    full_name: resolvedName,
+    age: resolvedAge, // 0 if unrecorded to satisfy Postgres NOT NULL constraint, never fabricated
+    gender: resolvedGender, // null if unknown, never fabricated
+    blood_group: resolvedBloodGroup,
+    phone_number: resolvedPhone, // null if unknown, never fabricated
     village_id: 'e1111111-1111-1111-1111-111111111111',
     vitals: patient.vitals || {}
   };
 
-  const { data: created, error } = await supabase
+  const { data: created, error: insertErr } = await supabase
     .from('patients')
     .insert([clinicalPayload])
     .select()
     .single();
 
-  if (error) {
-    console.error('[ashaService] ensureClinicalPatient error:', error.message);
-    throw error;
+  if (insertErr) {
+    console.error('[ashaService] ensureClinicalPatient insert error:', insertErr.message);
+    throw insertErr;
   }
 
-  return created;
+  // 3. Re-read inserted patient and confirm exact UUID equality
+  const { data: verified, error: verifyErr } = await supabase
+    .from('patients')
+    .select('id, unified_id, full_name, age, gender, blood_group, phone_number')
+    .eq('id', patient.id)
+    .single();
+
+  if (verifyErr || !verified || verified.id !== patient.id) {
+    throw new Error(`Clinical patient record verification failed after insertion for UUID ${patient.id}`);
+  }
+
+  return verified;
 }
 
 export async function addPatient(payload) {
-  try {
-    await ensureRoleAuth('asha');
-  } catch (_) {}
   // Auto-generate ABHA ID if not provided, normalize mobile vs phone
   const cleanPayload = { ...payload };
   if (cleanPayload.phone && !cleanPayload.mobile) {
@@ -294,14 +335,6 @@ export async function getCareRequests(patientId, patientName = null) {
 
     if (byId && byId.length > 0) {
       combined.push(...byId);
-    } else if (patientName) {
-      // Fallback: query care_requests by patient_name if UUID match returned nothing
-      const { data: byName } = await supabase
-        .from('care_requests')
-        .select('*')
-        .ilike('patient_name', patientName)
-        .order('created_at', { ascending: false });
-      if (byName && byName.length > 0) combined.push(...byName);
     }
   } catch (err) {
     console.warn('[ashaService] care_requests fetch notice:', err.message);
@@ -344,27 +377,154 @@ export async function getCareRequests(patientId, patientName = null) {
 }
 
 
+// Concurrency guard to prevent duplicate rapid dispatches for same patient & facility
+const inFlightReferralDispatches = new Map();
+
 /**
- * Create a new care request (ASHA referral or self-booking)
+ * CANONICAL Physical ASHA Referral Dispatch
+ * Direct single write to public.referrals
+ * @param {Object} payload - { patient_id, patient_name, age, gender, blood_group, phone, created_by, destination_facility_id, destination_hospital, department, priority, reason, asha_notes, vitals, ai_note }
+ */
+export async function createPhysicalReferral(payload) {
+  if (!payload.patient_id) {
+    return { data: null, error: new Error("Please select a registered patient before dispatching referral.") };
+  }
+
+  const isValidUuid = (val) => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+
+  if (!isValidUuid(payload.patient_id)) {
+    return { data: null, error: new Error(`Invalid patient identifier format (UUID required): ${payload.patient_id}`) };
+  }
+
+  if (!payload.destination_facility_id || !isValidUuid(payload.destination_facility_id)) {
+    return { data: null, error: new Error("Please select a valid registered destination facility.") };
+  }
+
+  // Idempotency check: prevent duplicate simultaneous dispatch actions
+  const dispatchKey = `${payload.patient_id}_${payload.destination_facility_id}`;
+  if (inFlightReferralDispatches.has(dispatchKey)) {
+    console.warn('[ashaService] Duplicate in-flight referral dispatch detected for:', dispatchKey);
+    return inFlightReferralDispatches.get(dispatchKey);
+  }
+
+  const dispatchPromise = (async () => {
+    try {
+      // 1. Authoritative Clinical Patient Synchronization (ensures patients.id === village_patients.id)
+      let clinicalPatient = null;
+      try {
+        clinicalPatient = await ensureClinicalPatient({
+          id: payload.patient_id,
+          name: payload.patient_name,
+          age: payload.age,
+          gender: payload.gender,
+          blood_group: payload.blood_group,
+          phone: payload.phone || payload.phone_number || payload.mobile,
+          vitals: payload.vitals
+        });
+      } catch (ptErr) {
+        console.error('[ashaService] Clinical patient sync error in referral dispatch:', ptErr.message);
+        return { data: null, error: new Error(`Clinical patient record bridge failed: ${ptErr.message}`) };
+      }
+
+      if (!clinicalPatient?.id || !isValidUuid(clinicalPatient.id)) {
+        return { data: null, error: new Error("Clinical patient synchronization failed: No confirmed clinical patient record exists.") };
+      }
+
+      const targetPatientId = clinicalPatient.id;
+
+      const isHigh = payload.priority === 'URGENT' || payload.priority === 'HIGH' || payload.priority === 'RED';
+      const isMedium = payload.priority === 'MEDIUM' || payload.priority === 'ORANGE';
+      const normalizedPriority = isHigh ? 'HIGH' : isMedium ? 'ORANGE' : 'GREEN';
+      const priorityLabel = isHigh ? '🔴 Emergency / Immediate Attention' : isMedium ? '🟡 Urgent / Within 24 Hours' : '🟢 Routine / Local Care';
+
+      const defaultCreatedBy = payload.created_by || 'ASHA Worker (Priya Deshmukh)';
+      const hospitalName = payload.destination_hospital || payload.facility || 'Shrirampur Primary Health Centre';
+
+      const referralData = {
+        patient_id: targetPatientId,
+        patient_name: payload.patient_name || clinicalPatient?.full_name || null,
+        created_by: defaultCreatedBy,
+        destination_hospital: hospitalName,
+        destination_facility_id: payload.destination_facility_id,
+        destination_department: payload.department || payload.destination_department || 'General Medicine',
+        doctor_assigned: payload.doctor_assigned || null,
+        ...(payload.doctor_id && isValidUuid(payload.doctor_id) ? { doctor_id: payload.doctor_id } : {}),
+        priority: normalizedPriority,
+        priority_label: priorityLabel,
+        status: 'Pending',
+        symptoms: payload.reason || payload.asha_notes || 'Referred for medical evaluation',
+        vitals: payload.vitals || null,
+        ai_note: payload.ai_note || payload.reason || null
+      };
+
+      const { data: refData, error: refInsertErr } = await supabase
+        .from('referrals')
+        .insert([referralData])
+        .select()
+        .single();
+
+      if (refInsertErr) {
+        console.error('[ashaService] Canonical referral insert error:', refInsertErr);
+        return { data: null, error: refInsertErr };
+      }
+
+      // Strict Post-Insert Verification (Section 7)
+      if (!refData || !refData.id || !isValidUuid(refData.id)) {
+        return { data: null, error: new Error("Referral creation verification failed: Database did not return a valid referral record.") };
+      }
+      if (refData.patient_id !== targetPatientId) {
+        return { data: null, error: new Error(`Referral verification failed: patient_id mismatch (expected ${targetPatientId}, got ${refData.patient_id})`) };
+      }
+      if (refData.destination_facility_id !== payload.destination_facility_id) {
+        return { data: null, error: new Error(`Referral verification failed: facility_id mismatch (expected ${payload.destination_facility_id}, got ${refData.destination_facility_id})`) };
+      }
+      if (payload.doctor_id && refData.doctor_id !== payload.doctor_id) {
+        return { data: null, error: new Error(`Referral verification failed: doctor_id mismatch (expected ${payload.doctor_id}, got ${refData.doctor_id})`) };
+      }
+
+      // 2. Record encounter (best-effort audit, non-blocking)
+      if (refData?.id) {
+        supabase.from('encounters').insert([{
+          patient_id: targetPatientId,
+          asha_id: 'a3333333-3333-3333-3333-333333333333',
+          date: new Date().toISOString(),
+          complaint: payload.reason || payload.asha_notes || 'Triage Referral Assessment',
+          symptoms: [payload.reason || 'Frontline Triage Assessment'],
+          vitals: payload.vitals || {},
+          priority: normalizedPriority,
+          priority_label: priorityLabel,
+          outcome: 'REFERRAL_CREATED',
+          referral_id: refData.id
+        }]).then(() => {}).catch(err => console.warn('[ashaService] Non-blocking encounter record notice:', err.message));
+      }
+
+      return { data: refData, error: null };
+    } finally {
+      // Release in-flight lock after brief window (3s) to allow subsequent legitimate dispatches
+      setTimeout(() => {
+        inFlightReferralDispatches.delete(dispatchKey);
+      }, 3000);
+    }
+  })();
+
+  inFlightReferralDispatches.set(dispatchKey, dispatchPromise);
+  return dispatchPromise;
+}
+
+/**
+ * Create a new care request (Reserved strictly for CareHub, Teleconsultation, and Self-Booking)
  * @param {Object} payload - { patient_id, patient_name, source, facility, department, slot_preference, reason, priority, created_by, asha_notes }
  */
 export async function createCareRequest(payload) {
-  // Ensure ASHA worker is authenticated for Supabase RLS
-  try {
-    await ensureRoleAuth('asha');
-  } catch (authErr) {
-    console.warn('[ashaService] Auth check warning:', authErr);
-  }
-
   if (!payload.patient_id && (!payload.source || payload.source === 'ASHA_REFERRED')) {
-    return { data: null, error: new Error("Please select a registered patient before dispatching referral.") };
+    return { data: null, error: new Error("Please select a registered patient before booking care request.") };
   }
 
   const defaultCreatedBy =
     payload.created_by ||
     (payload.source === 'PATIENT_DIRECT' ? 'Direct Patient (Self-Booking)' :
      payload.source === 'TELECONSULT' ? 'Virtual Teleconsultation (eSanjeevani)' :
-     'ASHA Worker (Priya Deshmukh)');
+     'Direct Patient Portal');
 
   const isValidUuid = (val) => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
 
@@ -382,24 +542,20 @@ export async function createCareRequest(payload) {
         vitals: payload.vitals
       });
     } catch (ptErr) {
-      console.warn('[ashaService] Clinical patient sync notice in referral dispatch:', ptErr.message);
+      console.warn('[ashaService] Clinical patient sync notice in care request:', ptErr.message);
     }
   }
 
-  let resolvedPatientId = clinicalPatient?.id || payload.patient_id;
-  if (!resolvedPatientId || !isValidUuid(resolvedPatientId)) {
-    try {
-      const { data: vp } = await supabase.from('village_patients').select('id').limit(1);
-      if (vp && vp.length > 0) resolvedPatientId = vp[0].id;
-    } catch (_) {}
+  const targetPatientId = clinicalPatient?.id || payload.patient_id;
+  if (!targetPatientId || !isValidUuid(targetPatientId)) {
+    return { data: null, error: new Error("Valid registered patient ID is required to create a care request.") };
   }
-  const targetPatientId = resolvedPatientId;
 
   // 2. Sanitize payload strictly for care_requests table columns
   const careRequestRecord = {
     patient_id: targetPatientId,
     patient_name: payload.patient_name || clinicalPatient?.full_name || 'Village Patient',
-    source: payload.source || 'ASHA_REFERRED',
+    source: payload.source || 'PATIENT_DIRECT',
     created_by: defaultCreatedBy,
     facility: payload.facility || payload.destination_hospital || 'Shrirampur Primary Health Centre',
     department: payload.department || 'General Medicine',
@@ -407,9 +563,8 @@ export async function createCareRequest(payload) {
     appointment_date: payload.appointment_date || null,
     doctor_assigned: payload.doctor_assigned || null,
     priority: payload.priority || 'ROUTINE',
-    reason: payload.reason || payload.asha_notes || 'Referred for medical evaluation',
+    reason: payload.reason || payload.asha_notes || 'Scheduled medical appointment',
     asha_notes: payload.asha_notes || payload.reason || '',
-    // Respect payload.status — teleconsults come in as COMPLETED or WAITING_FOR_DOCTOR directly
     status: payload.status || 'SUBMITTED',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -424,83 +579,10 @@ export async function createCareRequest(payload) {
 
   if (careReqErr) {
     console.error('[ashaService] care_requests insert error:', careReqErr);
-    if (!payload.source || payload.source === 'ASHA_REFERRED') {
-      return { data: null, error: careReqErr };
-    }
+    return { data: null, error: careReqErr };
   }
 
-  // 3. Insert into public.referrals for Hospital Staff & Doctor specialist pipeline
-  const isHigh = payload.priority === 'URGENT' || payload.priority === 'HIGH' || payload.priority === 'RED';
-  const isMedium = payload.priority === 'MEDIUM' || payload.priority === 'ORANGE';
-  const normalizedPriority = isHigh ? 'HIGH' : isMedium ? 'ORANGE' : 'GREEN';
-  const priorityLabel = isHigh ? '🔴 Emergency / Immediate Attention' : isMedium ? '🟡 Urgent / Within 24 Hours' : '🟢 Routine / Local Care';
-
-  const facilityId = (payload.destination_facility_id && isValidUuid(payload.destination_facility_id))
-    ? payload.destination_facility_id
-    : 'f1111111-1111-1111-1111-111111111111';
-  const hospitalName = payload.facility || payload.destination_hospital || 'Shrirampur Primary Health Centre';
-
-  const referralData = {
-    patient_id: targetPatientId,
-    patient_name: payload.patient_name || clinicalPatient?.full_name || 'Village Patient',
-    created_by: defaultCreatedBy,
-    destination_hospital: hospitalName,
-    destination_facility_id: facilityId,
-    destination_department: payload.department || 'General Medicine',
-    doctor_assigned: payload.doctor_assigned || null,
-    priority: normalizedPriority,
-    priority_label: priorityLabel,
-    status: 'Pending',
-    symptoms: payload.reason || payload.asha_notes || (payload.source === 'TELECONSULT' ? 'Virtual teleconsultation requested by patient' : 'Referred for medical evaluation'),
-    vitals: payload.vitals || null,
-    ai_note: payload.ai_note || payload.reason || null
-  };
-
-  let createdReferral = null;
-  const { data: refData, error: refInsertErr } = await supabase
-    .from('referrals')
-    .insert([referralData])
-    .select()
-    .single();
-
-  if (refInsertErr) {
-    console.error('[ashaService] Referral insert error:', refInsertErr);
-    if (!payload.source || payload.source === 'ASHA_REFERRED') {
-      return { data: null, error: refInsertErr };
-    }
-  } else {
-    createdReferral = refData;
-  }
-
-  // 4. Record encounter (best-effort audit)
-  if (createdReferral?.id) {
-    try {
-      await supabase.from('encounters').insert([{
-        patient_id: targetPatientId,
-        asha_id: 'a3333333-3333-3333-3333-333333333333',
-        date: new Date().toISOString(),
-        complaint: payload.reason || payload.asha_notes || 'Triage Referral Assessment',
-        symptoms: [payload.reason || 'Frontline Triage Assessment'],
-        vitals: payload.vitals || {},
-        priority: normalizedPriority,
-        priority_label: priorityLabel,
-        outcome: 'REFERRAL_CREATED',
-        referral_id: createdReferral.id
-      }]);
-    } catch (encErr) {
-      // Non-blocking
-    }
-  }
-
-  const responseData = createdReferral ? {
-    ...careReqData,
-    ...createdReferral,
-    id: createdReferral.id,
-    care_request_id: careReqData?.id,
-    referral_id: createdReferral.id
-  } : careReqData;
-
-  return { data: responseData, error: null };
+  return { data: careReqData, error: null };
 }
 
 /**
@@ -802,8 +884,6 @@ export async function getMedicineIndents() {
  */
 export async function getDoctorFollowUps() {
   try {
-    await ensureRoleAuth('asha');
-
     const formatted = [];
 
     // 1. Fetch real doctor follow-ups from consultations table
@@ -894,7 +974,6 @@ export async function getDoctorFollowUps() {
  * Mark a follow-up encounter or consultation as completed in Supabase.
  */
 export async function completeFollowUp(encounterOrConsultId, resolutionNote = '') {
-  await ensureRoleAuth('asha');
   try {
     await supabase
       .from('encounters')
@@ -963,12 +1042,9 @@ export async function createWaitingTeleconsult(payload) {
   const token = payload.token || `eS-SHIR-${Math.floor(100 + Math.random() * 900)}`;
 
   const isValidUuid = (val) => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
-  let resolvedPatientId = payload.patient_id;
+  const resolvedPatientId = payload.patient_id;
   if (!resolvedPatientId || !isValidUuid(resolvedPatientId)) {
-    try {
-      const { data: vp } = await supabase.from('village_patients').select('id').limit(1);
-      if (vp && vp.length > 0) resolvedPatientId = vp[0].id;
-    } catch (_) {}
+    return { session: null, careReq: null, token: null, id: null, error: new Error("Valid registered patient ID is required to start teleconsultation.") };
   }
 
   const vitalsJson = JSON.stringify(payload.vitals_snapshot || {});
@@ -978,7 +1054,7 @@ export async function createWaitingTeleconsult(payload) {
   const { data: careReq, error: careErr } = await createCareRequest({
     patient_id: resolvedPatientId,
     patient_name: payload.patient_name || 'Village Patient',
-    facility: payload.facility || 'Primary Health Centre - Shirwal',
+    facility: payload.facility || 'Shrirampur Primary Health Centre',
     department: 'Tele-Health Virtual OPD',
     priority: payload.priority || 'ROUTINE',
     reason: `Virtual Teleconsultation [Token: ${token}]: ${payload.chief_complaint}`,
@@ -995,13 +1071,13 @@ export async function createWaitingTeleconsult(payload) {
     const sessionRecord = {
       patient_id: resolvedPatientId,
       patient_name: payload.patient_name || 'Village Patient',
-      facility: payload.facility || 'Primary Health Centre - Shirwal',
+      facility: payload.facility || 'Shrirampur Primary Health Centre',
       chief_complaint: payload.chief_complaint || 'General Consultation',
       additional_notes: payload.additional_notes || null,
       vitals_snapshot: payload.vitals_snapshot || {},
       session_duration_sec: 0,
       session_status: 'WAITING_FOR_DOCTOR',
-      doctor_name: 'On-Duty Medical Officer (Shirwal PHC)',
+      doctor_name: 'On-Duty Medical Officer',
       token,
       care_request_id: careReq?.id || null,
       created_at: new Date().toISOString(),
@@ -1021,16 +1097,23 @@ export async function createWaitingTeleconsult(payload) {
 
 /**
  * Fetch all active teleconsultations waiting for doctor or in call
+ * @param {string|null} facilityFilter - optional facility name/id to scope results
  */
-export async function getWaitingTeleconsultSessions() {
+export async function getWaitingTeleconsultSessions(facilityFilter = null) {
   // 1. Primary: Query care_requests for source = 'TELECONSULT'
   try {
-    const { data: careReqs } = await supabase
+    let query = supabase
       .from('care_requests')
       .select('*')
       .eq('source', 'TELECONSULT')
       .in('status', ['WAITING_FOR_DOCTOR', 'IN_CALL'])
       .order('created_at', { ascending: false });
+
+    if (facilityFilter && typeof facilityFilter === 'string' && facilityFilter.trim()) {
+      query = query.ilike('facility', `%${facilityFilter.trim()}%`);
+    }
+
+    const { data: careReqs } = await query;
 
     if (careReqs && careReqs.length > 0) {
       const normalized = careReqs.map(r => {
@@ -1178,12 +1261,12 @@ export async function doctorCompleteTeleconsult(sessionId, payload) {
 
 /**
  * Hospital Staff assigns official Token Number, Staggered Arrival Time Slot & Counter
+ * Strictly scoped to the authoritative referral ID (never multi-row patient_id).
  */
 export async function assignStaffTokenAndSlot(payload) {
   const {
     careRequestId,
     referralId,
-    patientId,
     tokenNumber,
     arrivalSlot,
     room = 'OPD Room 2',
@@ -1193,11 +1276,59 @@ export async function assignStaffTokenAndSlot(payload) {
 
   const notesString = `TOKEN:${tokenNumber} | SLOT:${arrivalSlot} | ROOM:${room} | INSTRUCTION:${instructions}`;
   const slotPreference = `Token #${tokenNumber} · ${arrivalSlot}`;
-  const targetId = careRequestId || referralId;
+  const targetReferralId = referralId || careRequestId;
 
-  // 1. Update care_requests by targetId (direct row ID)
+  if (!targetReferralId) {
+    return {
+      success: false,
+      error: new Error('Referral ID is required for token and slot assignment.'),
+      tokenNumber,
+      arrivalSlot
+    };
+  }
+
+  let updatedReferral = null;
   let updatedCareReq = null;
-  if (targetId) {
+
+  // 1. Authoritative Referral Mutation strictly by exact primary key (id = targetReferralId)
+  try {
+    const { data: refData, error: refErr } = await supabase
+      .from('referrals')
+      .update({
+        status: 'Accepted',
+        doctor_assigned: `${doctorAssigned} (${room})`,
+        ai_note: notesString
+      })
+      .eq('id', targetReferralId)
+      .select('id, patient_id, status, doctor_assigned')
+      .single();
+
+    if (refErr) {
+      console.error('[ashaService] Referral token update error:', refErr);
+      return {
+        success: false,
+        error: new Error(`Failed to update referral: ${refErr.message}`),
+        tokenNumber,
+        arrivalSlot
+      };
+    }
+
+    if (!refData || refData.id !== targetReferralId) {
+      return {
+        success: false,
+        error: new Error(`Referral verification failed: expected ID ${targetReferralId}`),
+        tokenNumber,
+        arrivalSlot
+      };
+    }
+    updatedReferral = refData;
+  } catch (err) {
+    console.error('[ashaService] assignStaffTokenAndSlot referral exception:', err);
+    return { success: false, error: err, tokenNumber, arrivalSlot };
+  }
+
+  // 2. Authoritative Care Request Mutation if distinct careRequestId supplied
+  if (careRequestId && careRequestId !== targetReferralId) {
     try {
       const { data } = await supabase
         .from('care_requests')
@@ -1208,7 +1339,7 @@ export async function assignStaffTokenAndSlot(payload) {
           asha_notes: notesString,
           updated_at: new Date().toISOString()
         })
-        .eq('id', targetId)
+        .eq('id', careRequestId)
         .select()
         .maybeSingle();
       updatedCareReq = data;
@@ -1217,52 +1348,7 @@ export async function assignStaffTokenAndSlot(payload) {
     }
   }
 
-  // 2. Also update care_requests by patientId (if provided)
-  if (patientId) {
-    try {
-      const { data } = await supabase
-        .from('care_requests')
-        .update({
-          status: 'ACCEPTED',
-          slot_preference: slotPreference,
-          doctor_assigned: `${doctorAssigned} (${room})`,
-          asha_notes: notesString,
-          updated_at: new Date().toISOString()
-        })
-        .eq('patient_id', patientId)
-        .select()
-        .maybeSingle();
-      if (!updatedCareReq) updatedCareReq = data;
-    } catch (e) {
-      console.warn('[ashaService] care_requests update by patientId notice:', e.message);
-    }
-  }
-
-  // 3. Also update referrals table by targetId and patientId
-  try {
-    if (targetId) {
-      await supabase
-        .from('referrals')
-        .update({
-          status: 'Accepted',
-          doctor_assigned: `${doctorAssigned} (${room})`,
-          ai_note: notesString
-        })
-        .eq('id', targetId);
-    }
-    if (patientId) {
-      await supabase
-        .from('referrals')
-        .update({
-          status: 'Accepted',
-          doctor_assigned: `${doctorAssigned} (${room})`,
-          ai_note: notesString
-        })
-        .eq('patient_id', patientId);
-    }
-  } catch (_) {}
-
-  return { success: true, updatedCareReq, tokenNumber, arrivalSlot };
+  return { success: true, updatedReferral, updatedCareReq, tokenNumber, arrivalSlot };
 }
 
 
@@ -1271,7 +1357,8 @@ export async function assignStaffTokenAndSlot(payload) {
  * @param {string} patientId - village_patients.id UUID
  * @param {string} [patientName] - optional fallback by name
  */
-export async function getTeleconsultSessions(patientId, patientName = null) {
+export async function getTeleconsultSessions(patientId) {
+  if (!patientId) return { data: [], error: null };
   const { data: byId, error } = await supabase
     .from('teleconsult_sessions')
     .select('*')
@@ -1279,17 +1366,7 @@ export async function getTeleconsultSessions(patientId, patientName = null) {
     .order('created_at', { ascending: false });
 
   if (error) return { data: [], error };
-  if (byId && byId.length > 0) return { data: byId, error: null };
-
-  if (!patientName) return { data: [], error: null };
-
-  const { data: byName, error: nameErr } = await supabase
-    .from('teleconsult_sessions')
-    .select('*')
-    .ilike('patient_name', patientName)
-    .order('created_at', { ascending: false });
-
-  return { data: byName || [], error: nameErr };
+  return { data: byId || [], error: null };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1304,8 +1381,13 @@ export async function getTeleconsultSessions(patientId, patientName = null) {
  * - Past triage encounters (from encounters)
  */
 export async function getFullPatientClinicalDocket(patientId, patientName = null) {
+  const isValidUuid = (val) => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+
   const result = {
+    resolved: false,
+    error: null,
     profile: null,
+    displayName: patientName || null,
     vitals: [],
     pastConsultations: [],
     teleconsults: [],
@@ -1319,95 +1401,118 @@ export async function getFullPatientClinicalDocket(patientId, patientName = null
     abhaId: null,
   };
 
-  if (!patientId && !patientName) return result;
+  // HARDENING: Clinical identity must be UUID-only. Never fallback to patient_name matching.
+  if (!patientId || !isValidUuid(patientId)) {
+    result.error = !patientId
+      ? 'Patient identifier is missing.'
+      : `Invalid clinical identifier format (not a UUID): ${patientId}`;
+    return result;
+  }
 
   try {
-    // 1. Get village_patients profile (has allergies, medications, chronic conditions)
-    let villagePatient = null;
+    // 1. Query village_patients strictly by exact UUID
+    let clinicalProfile = null;
+    const { data: vp, error: vpErr } = await supabase
+      .from('village_patients')
+      .select('id, name, age_years, gender, blood_group, mobile, abha_id, allergies, current_medications, chronic_conditions, has_chronic, is_pregnant, tb_symptoms')
+      .eq('id', patientId)
+      .maybeSingle();
 
-    if (patientId) {
-      const { data: vp } = await supabase
-        .from('village_patients')
-        .select('id, name, age_years, gender, blood_group, mobile, abha_id, allergies, current_medications, chronic_conditions, has_chronic, is_pregnant, tb_symptoms')
+    if (vpErr) {
+      console.warn('[ashaService] village_patients query error:', vpErr.message);
+    }
+
+    if (vp) {
+      clinicalProfile = vp;
+    } else {
+      // Check canonical patients table strictly by exact UUID if not in village_patients
+      const { data: pt, error: ptErr } = await supabase
+        .from('patients')
+        .select('id, full_name, age, gender, blood_group, phone_number, vitals')
         .eq('id', patientId)
         .maybeSingle();
-      villagePatient = vp;
+
+      if (ptErr) console.warn('[ashaService] patients query error:', ptErr.message);
+
+      if (pt) {
+        clinicalProfile = {
+          id: pt.id,
+          name: pt.full_name,
+          age_years: pt.age,
+          gender: pt.gender,
+          blood_group: pt.blood_group,
+          mobile: pt.phone_number,
+          allergies: '',
+          current_medications: '',
+          chronic_conditions: [],
+          has_chronic: false,
+          is_pregnant: false,
+          tb_symptoms: false,
+          abha_id: null
+        };
+      }
     }
 
-    if (!villagePatient && patientName) {
-      const { data: vp } = await supabase
-        .from('village_patients')
-        .select('id, name, age_years, gender, blood_group, mobile, abha_id, allergies, current_medications, chronic_conditions, has_chronic, is_pregnant, tb_symptoms')
-        .ilike('name', `%${patientName}%`)
-        .limit(1)
-        .maybeSingle();
-      villagePatient = vp;
+    // If still unresolved, DO NOT search by name. Mark as unresolved.
+    if (!clinicalProfile) {
+      result.error = `Clinical identity unresolved: No registered patient record matches UUID ${patientId}.`;
+      return result;
     }
 
-    if (villagePatient) {
-      result.profile = villagePatient;
-      result.allergies = villagePatient.allergies || '';
-      result.currentMedications = villagePatient.current_medications || '';
-      result.chronicConditions = Array.isArray(villagePatient.chronic_conditions)
-        ? villagePatient.chronic_conditions
-        : (villagePatient.chronic_conditions ? [villagePatient.chronic_conditions] : []);
-      if (villagePatient.is_pregnant) result.chronicConditions.push('Pregnant');
-      if (villagePatient.tb_symptoms) result.chronicConditions.push('TB Suspect');
-      result.bloodGroup = villagePatient.blood_group || null;
-      result.age = villagePatient.age_years || null;
-      result.gender = villagePatient.gender || null;
-      result.abhaId = villagePatient.abha_id || null;
-    }
+    result.resolved = true;
+    result.profile = clinicalProfile;
+    result.allergies = clinicalProfile.allergies || '';
+    result.currentMedications = clinicalProfile.current_medications || '';
+    result.chronicConditions = Array.isArray(clinicalProfile.chronic_conditions)
+      ? clinicalProfile.chronic_conditions
+      : (clinicalProfile.chronic_conditions ? [clinicalProfile.chronic_conditions] : []);
+    if (clinicalProfile.is_pregnant) result.chronicConditions.push('Pregnant');
+    if (clinicalProfile.tb_symptoms) result.chronicConditions.push('TB Suspect');
+    result.bloodGroup = clinicalProfile.blood_group || null;
+    result.age = clinicalProfile.age_years || null;
+    result.gender = clinicalProfile.gender || null;
+    result.abhaId = clinicalProfile.abha_id || null;
 
-    const resolvedId = patientId || villagePatient?.id;
+    // 2. Vitals history strictly by verified patientId UUID
+    const { data: vitals } = await supabase
+      .from('vitals_history')
+      .select('recorded_at, bp_systolic, bp_diastolic, pulse_bpm, spo2_pct, temperature_c, blood_glucose_mgdl')
+      .eq('patient_id', patientId)
+      .order('recorded_at', { ascending: false })
+      .limit(5);
+    result.vitals = vitals || [];
 
-    // 2. Vitals history (last 5 readings)
-    if (resolvedId) {
-      const { data: vitals } = await supabase
-        .from('vitals_history')
-        .select('recorded_at, bp_systolic, bp_diastolic, pulse_bpm, spo2_pct, temperature_c, blood_glucose_mgdl')
-        .eq('patient_id', resolvedId)
-        .order('recorded_at', { ascending: false })
-        .limit(5);
-      result.vitals = vitals || [];
-    }
+    // 3. Past consultations strictly by verified patientId UUID
+    const { data: cons } = await supabase
+      .from('consultations')
+      .select('id, diagnosis, clinical_assessment, treatment_advice, prescriptions, created_at, doctor_id, follow_up_recommended_date')
+      .eq('patient_id', patientId)
+      .order('created_at', { ascending: false })
+      .limit(5);
+    result.pastConsultations = cons || [];
 
-    // 3. Past consultations (from consultations table)
-    if (resolvedId) {
-      const { data: cons } = await supabase
-        .from('consultations')
-        .select('id, diagnosis, clinical_assessment, treatment_advice, prescriptions, created_at, doctor_id, follow_up_recommended_date')
-        .eq('patient_id', resolvedId)
-        .order('created_at', { ascending: false })
-        .limit(5);
-      result.pastConsultations = cons || [];
-    }
+    // 4. Past teleconsultations strictly by verified patientId UUID
+    const { data: tele } = await supabase
+      .from('teleconsult_sessions')
+      .select('id, diagnosis, rx_medicines, doctor_advice, doctor_name, session_status, created_at, chief_complaint')
+      .eq('patient_id', patientId)
+      .eq('session_status', 'COMPLETED')
+      .order('created_at', { ascending: false })
+      .limit(5);
+    result.teleconsults = tele || [];
 
-    // 4. Past teleconsultations (from teleconsult_sessions)
-    if (resolvedId) {
-      const { data: tele } = await supabase
-        .from('teleconsult_sessions')
-        .select('id, diagnosis, rx_medicines, doctor_advice, doctor_name, session_status, created_at, chief_complaint')
-        .eq('patient_id', resolvedId)
-        .eq('session_status', 'COMPLETED')
-        .order('created_at', { ascending: false })
-        .limit(5);
-      result.teleconsults = tele || [];
-    }
-
-    // 5. Past ASHA triage encounters
-    if (resolvedId) {
-      const { data: enc } = await supabase
-        .from('encounters')
-        .select('id, complaint, priority, symptoms, danger_signs, vitals, outcome, created_at')
-        .eq('patient_id', resolvedId)
-        .order('created_at', { ascending: false })
-        .limit(4);
-      result.encounters = enc || [];
-    }
+    // 5. Past ASHA triage encounters strictly by verified patientId UUID
+    const { data: enc } = await supabase
+      .from('encounters')
+      .select('id, complaint, priority, symptoms, danger_signs, vitals, outcome, created_at')
+      .eq('patient_id', patientId)
+      .order('created_at', { ascending: false })
+      .limit(4);
+    result.encounters = enc || [];
 
   } catch (err) {
     console.warn('[ashaService] getFullPatientClinicalDocket error:', err.message);
+    result.error = err.message;
   }
 
   return result;
@@ -1495,5 +1600,3 @@ Return ONLY valid JSON with this exact structure (no markdown, no explanation):
     return { error: err.message, summary: null };
   }
 }
-
-

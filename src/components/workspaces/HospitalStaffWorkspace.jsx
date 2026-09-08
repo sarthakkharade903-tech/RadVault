@@ -14,7 +14,6 @@ import {
   Activity,
   Building2,
   ShieldAlert,
-  UserCheck,
   CheckCircle2,
   ExternalLink,
   Sparkles,
@@ -25,7 +24,8 @@ import {
   VolumeX,
   MapPin,
   Navigation,
-  Send
+  Send,
+  UserCheck
 } from 'lucide-react';
 import { supabase, ensureRoleAuth } from '../../services/supabase';
 import { assignStaffTokenAndSlot } from '../../services/ashaService';
@@ -285,22 +285,25 @@ export default function HospitalStaffWorkspace({
     setAssigningLoading(true);
     try {
       if (!isDemoMode) {
-        await assignStaffTokenAndSlot({
-          careRequestId: showTokenModal.id,
+        const res = await assignStaffTokenAndSlot({
           referralId: showTokenModal.id,
-          patientId: showTokenModal.patient_id,
+          careRequestId: showTokenModal.id,
           tokenNumber: assignTokenNum,
           arrivalSlot: assignSlot,
           room: assignRoom,
           doctorAssigned: assignDoctor,
           instructions: assignInstruction
         });
+        if (!res?.success) {
+          throw res?.error || new Error('Failed to update referral token assignment');
+        }
       }
 
       const assignedNote = `TOKEN:${assignTokenNum} | SLOT:${assignSlot} | ROOM:${assignRoom} | INSTRUCTION:${assignInstruction}`;
       const slotPref = `Token #${assignTokenNum} · ${assignSlot}`;
 
-      setReferrals(prev => prev.map(r => (r.id === showTokenModal.id || (r.patient_id && r.patient_id === showTokenModal.patient_id)) ? {
+      // Scoped strictly to the target referral ID (no patient_id multi-match)
+      setReferrals(prev => prev.map(r => r.id === showTokenModal.id ? {
         ...r,
         status: 'Accepted',
         doctor_assigned: `${assignDoctor} (${assignRoom})`,
@@ -309,7 +312,7 @@ export default function HospitalStaffWorkspace({
         slot_preference: slotPref
       } : r));
 
-      if (selectedReferral && (selectedReferral.id === showTokenModal.id || (selectedReferral.patient_id && selectedReferral.patient_id === showTokenModal.patient_id))) {
+      if (selectedReferral && selectedReferral.id === showTokenModal.id) {
         setSelectedReferral(prev => ({
           ...prev,
           status: 'Accepted',
@@ -370,43 +373,25 @@ export default function HospitalStaffWorkspace({
 
       if (staffErr) throw staffErr;
 
-      let resolvedFacilityId = staffData?.facility_id;
-      let resolvedFacilityName = staffData?.facilities?.name;
-      let resolvedFacilityDistrict = staffData?.facilities?.district;
-      let resolvedStaffName = staffData?.name;
-
       if (!staffData) {
-        const { data: defaultFac, error: facErr } = await supabase
-          .from('facilities')
-          .select('*')
-          .order('name', { ascending: true })
-          .limit(1)
-          .maybeSingle();
-
-        if (facErr) throw facErr;
-
-        if (defaultFac) {
-          resolvedFacilityId = defaultFac.id;
-          resolvedFacilityName = defaultFac.name;
-          resolvedFacilityDistrict = defaultFac.district;
-        } else {
-          resolvedFacilityId = 'f1111111-1111-1111-1111-111111111111';
-          resolvedFacilityName = 'Shrirampur Primary Health Centre';
-          resolvedFacilityDistrict = 'Ahmednagar';
-        }
-        resolvedStaffName = activeUser.user_metadata?.name || activeUser.email?.split('@')[0] || 'Hospital Staff';
+        throw new Error(`Hospital staff record not found for user account (${activeUser.email}). Please verify your staff profile mapping in the database.`);
       }
+
+      const resolvedFacilityId = staffData.facility_id;
+      const resolvedFacilityName = staffData.facilities?.name || 'Shrirampur Primary Health Centre';
+      const resolvedFacilityDistrict = staffData.facilities?.district || 'District';
+      const resolvedStaffName = staffData.name || activeUser.email?.split('@')[0] || 'Hospital Staff';
 
       setStaffProfile({
         name: resolvedStaffName,
-        role: staffData?.role || 'Hospital Staff Operations',
+        role: staffData.role || 'Hospital Staff Operations',
         phc_name: resolvedFacilityName
       });
 
       setFacility({
         id: resolvedFacilityId,
         name: resolvedFacilityName,
-        district: resolvedFacilityDistrict || 'District'
+        district: resolvedFacilityDistrict
       });
 
       // 3. Fetch Scoped Doctors for this Facility
@@ -417,116 +402,53 @@ export default function HospitalStaffWorkspace({
 
       if (docErr) console.warn('[HospitalStaff] doctors query warning:', docErr.message);
 
-      const fallbackDoctors = [
-        { id: 'doc-kulkarni', name: 'Dr. Arvind Kulkarni', specialty: 'General Medicine & OPD', room: 'OPD Room 2' },
-        { id: 'doc-sharma', name: 'Dr. Priya Sharma', specialty: 'Maternal & Child Health', room: 'ANC Room 4' },
-        { id: 'doc-shinde', name: 'Dr. Rajesh Shinde', specialty: 'Chest & TB DOTS Specialist', room: 'Chest Clinic Room 1' }
-      ];
+      setDoctors(doctorsData || []);
 
-      setDoctors((doctorsData && doctorsData.length > 0) ? doctorsData : fallbackDoctors);
+      // 4. Fetch Canonical Referrals for this Facility (Strictly Scoped)
+      const { data: refData, error: refErr } = await supabase
+        .from('referrals')
+        .select('*')
+        .eq('destination_facility_id', resolvedFacilityId)
+        .order('created_at', { ascending: false });
 
+      if (refErr) throw refErr;
 
-      // 4. Fetch Referrals & Care Requests
-      let rawRefs = [];
-      try {
-        const { data: refData } = await supabase
-          .from('referrals')
-          .select('*')
-          .or(`destination_facility_id.eq.${resolvedFacilityId},destination_hospital.ilike.%${(resolvedFacilityName || 'Shrirampur').split(' ')[0]}%`)
-          .order('created_at', { ascending: false });
-
-        if (refData && refData.length > 0) {
-          rawRefs = refData;
-        }
-      } catch (rErr) {
-        console.warn('[HospitalStaff] referrals fetch warning:', rErr.message);
-      }
-
-      // Also fetch from care_requests (which stores ASHA referrals, patient OPD bookings, emergency SOS, etc.)
-      let careRefs = [];
+      // 5. Separately Fetch Emergency SOS from care_requests (Emergency CAD Console)
       try {
         const { data: careData } = await supabase
           .from('care_requests')
           .select('*')
-          .neq('source', 'TELECONSULT')
+          .eq('source', 'EMERGENCY_SOS')
           .order('created_at', { ascending: false });
 
         if (careData && careData.length > 0) {
-          // Parse emergency SOS records
-          const emergencies = careData
-            .filter(c => c.source === 'EMERGENCY_SOS')
-            .map(parseEmergencyRecord);
+          const emergencies = careData.map(parseEmergencyRecord);
           const activeEmergencies = emergencies.filter(c => c.status !== 'RESOLVED' && c.status !== 'COMPLETED');
-          
-          if (emergencies.length > 0) {
-            setEmergencyCases(activeEmergencies);
-            setAllEmergencyLogs(emergencies);
-          } else if (demoDataEnabled) {
-            setEmergencyCases(DEMO_EMERGENCY_SOS);
-            setAllEmergencyLogs(DEMO_EMERGENCY_SOS);
-          } else {
-            setEmergencyCases([]);
-            setAllEmergencyLogs([]);
-          }
-
-          careRefs = careData
-            .filter(c => c.source !== 'EMERGENCY_SOS')
-            .map(c => {
-              const isHigh = c.priority === 'URGENT' || c.priority === 'HIGH' || c.priority === 'RED' || c.priority === 'EMERGENCY';
-              const isMedium = c.priority === 'MEDIUM' || c.priority === 'ORANGE';
-              const mappedPriority = isHigh ? 'HIGH' : isMedium ? 'ORANGE' : 'GREEN';
-              const priorityLabel = isHigh ? '🔴 Emergency / Immediate Attention' : isMedium ? '🟡 Urgent / Within 24 Hours' : '🟢 Routine / Local Care';
-
-              const hasToken = !!(c.asha_notes?.includes('TOKEN:') || c.slot_preference?.toLowerCase().includes('token'));
-              let mappedStatus = (c.status === 'COMPLETED') ? 'Completed'
-                : (c.status === 'ACCEPTED' || hasToken) ? 'Accepted'
-                : c.status === 'Arrived' ? 'Arrived'
-                : c.status === 'Assigned' ? 'Assigned'
-                : 'Pending';
-
-              return {
-                id: c.id,
-                patient_id: c.patient_id,
-                patient_name: c.patient_name || 'Patient',
-                created_by: c.created_by || (c.source === 'PATIENT_DIRECT' ? 'Direct Patient Booking' : 'ASHA Field Referral'),
-                source: c.source || 'ASHA',
-                destination_hospital: c.facility || resolvedFacilityName,
-                destination_department: c.department || 'General Medicine & OPD',
-                doctor_assigned: c.doctor_assigned || null,
-                priority: mappedPriority,
-                priority_label: priorityLabel,
-                status: mappedStatus,
-                symptoms: c.reason,
-                ai_note: c.asha_notes,
-                asha_notes: c.asha_notes,
-                slot_preference: c.slot_preference,
-                created_at: c.created_at,
-                isCareRequest: true
-              };
-            });
-        } else if (demoDataEnabled) {
+          setEmergencyCases(activeEmergencies);
+          setAllEmergencyLogs(emergencies);
+        } else if (isDemoMode && demoDataEnabled) {
           setEmergencyCases(DEMO_EMERGENCY_SOS);
           setAllEmergencyLogs(DEMO_EMERGENCY_SOS);
+        } else {
+          setEmergencyCases([]);
+          setAllEmergencyLogs([]);
         }
       } catch (cErr) {
-        console.warn('[HospitalStaff] care_requests fetch notice:', cErr.message);
-        if (demoDataEnabled) {
+        console.warn('[HospitalStaff] Emergency SOS CAD fetch notice:', cErr.message);
+        if (isDemoMode && demoDataEnabled) {
           setEmergencyCases(DEMO_EMERGENCY_SOS);
           setAllEmergencyLogs(DEMO_EMERGENCY_SOS);
+        } else {
+          setEmergencyCases([]);
+          setAllEmergencyLogs([]);
         }
       }
 
-      // Combine both sources (deduplicating by id)
-      const existingRefIds = new Set(rawRefs.map(r => r.id));
-      const combinedRefs = [
-        ...rawRefs,
-        ...careRefs.filter(c => !existingRefIds.has(c.id))
-      ];
-
-      // Fallback to demo if completely empty and demoDataEnabled
-      if (combinedRefs.length === 0 && demoDataEnabled) {
-        combinedRefs.push(...INITIAL_DEMO_REFERRALS);
-      }
+      // Canonical physical referrals strictly from public.referrals
+      // Strict Demo OFF discipline: Never inject demo referrals when Demo is OFF
+      const combinedRefs = isDemoMode
+        ? (demoDataEnabled ? INITIAL_DEMO_REFERRALS : [])
+        : (refData || []);
 
       // 5. Enrich referrals with patients' human-readable unified_id (MH-P-xxxxx)
       const patientIds = Array.from(new Set(combinedRefs.map(r => r.patient_id).filter(Boolean)));
@@ -585,19 +507,12 @@ export default function HospitalStaffWorkspace({
         })
         .subscribe();
 
-      const channel2 = supabase.channel('staff_care_requests_live')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'care_requests' }, () => {
-          loadSupabaseData(true);
-        })
-        .subscribe();
-
       const interval = setInterval(() => {
         loadSupabaseData(true);
       }, 4000);
 
       return () => {
         supabase.removeChannel(channel1);
-        supabase.removeChannel(channel2);
         clearInterval(interval);
       };
     }
@@ -614,8 +529,7 @@ export default function HospitalStaffWorkspace({
     showToast(isDemoMode ? '✓ Demo referrals queue refreshed.' : '✓ Live referrals queue updated.');
   };
 
-  // ─── STATUS TRANSITIONS ───
-
+  // ─── STATUS TRANSITIONS (STRICT STATE MACHINE & ID TARGETING) ───
   // 1. Pending -> Accepted
   const handleAcceptReferral = async (refId) => {
     if (isDemoMode) {
@@ -625,22 +539,31 @@ export default function HospitalStaffWorkspace({
       return;
     }
 
+    const currentRef = referrals.find(r => r.id === refId);
+    if (currentRef && currentRef.status !== 'Pending') {
+      setError(`Invalid status transition: Referral must be 'Pending' to accept (currently '${currentRef.status}').`);
+      return;
+    }
+
     try {
-      await supabase
+      const { data: updatedRow, error } = await supabase
         .from('referrals')
         .update({ status: 'Accepted' })
-        .eq('id', refId);
+        .eq('id', refId)
+        .select('id, status')
+        .single();
 
-      await supabase
-        .from('care_requests')
-        .update({ status: 'ACCEPTED', updated_at: new Date().toISOString() })
-        .eq('id', refId);
-      
+      if (error) throw error;
+      if (!updatedRow || updatedRow.id !== refId || updatedRow.status !== 'Accepted') {
+        throw new Error(`Accept status update verification failed for referral ${refId}`);
+      }
+
       setReferrals(prev => prev.map(r => r.id === refId ? { ...r, status: 'Accepted' } : r));
       setSelectedReferral(prev => (prev && prev.id === refId ? { ...prev, status: 'Accepted' } : prev));
       showToast('✓ Referral accepted successfully.');
       setTimeout(() => loadSupabaseData(true), 2500);
     } catch (err) {
+      console.error('[HospitalStaff] Failed to accept referral:', err);
       setError(`Failed to accept referral: ${err.message}`);
     }
   };
@@ -654,71 +577,84 @@ export default function HospitalStaffWorkspace({
       return;
     }
 
+    const currentRef = referrals.find(r => r.id === refId);
+    if (currentRef && !['Pending', 'Accepted', 'Assigned'].includes(currentRef.status)) {
+      setError(`Invalid status transition: Referral cannot be marked arrived from '${currentRef.status}'.`);
+      return;
+    }
+
     try {
-      await supabase
+      const { data: updatedRow, error } = await supabase
         .from('referrals')
         .update({ status: 'Arrived' })
-        .eq('id', refId);
+        .eq('id', refId)
+        .select('id, status')
+        .single();
 
-      await supabase
-        .from('care_requests')
-        .update({ status: 'ACCEPTED', updated_at: new Date().toISOString() })
-        .eq('id', refId);
+      if (error) throw error;
+      if (!updatedRow || updatedRow.id !== refId || updatedRow.status !== 'Arrived') {
+        throw new Error(`Arrival status update verification failed for referral ${refId}`);
+      }
 
       setReferrals(prev => prev.map(r => r.id === refId ? { ...r, status: 'Arrived' } : r));
       setSelectedReferral(prev => (prev && prev.id === refId ? { ...prev, status: 'Arrived' } : prev));
       showToast('✓ Patient marked as arrived.');
       setTimeout(() => loadSupabaseData(true), 2500);
     } catch (err) {
+      console.error('[HospitalStaff] Failed to mark arrival:', err);
       setError(`Failed to mark arrival: ${err.message}`);
     }
   };
 
-  // 3. Arrived -> Assign Doctor
-  const handleRouteToDoctor = async (refId, doctorName) => {
+  // 3. Arrived / Accepted -> Assign Doctor
+  const handleRouteToDoctor = async (refId, doctorName, doctorId = null) => {
+    const isUuid = (val) => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+
     if (isDemoMode) {
-      setReferrals(prev => prev.map(r => r.id === refId ? { ...r, doctor_assigned: doctorName, status: 'Assigned' } : r));
-      setSelectedReferral(prev => (prev && prev.id === refId ? { ...prev, doctor_assigned: doctorName, status: 'Assigned' } : prev));
+      setReferrals(prev => prev.map(r => r.id === refId ? { ...r, doctor_assigned: doctorName, doctor_id: doctorId, status: 'Assigned' } : r));
+      setSelectedReferral(prev => (prev && prev.id === refId ? { ...prev, doctor_assigned: doctorName, doctor_id: doctorId, status: 'Assigned' } : prev));
       setShowDoctorRouteModal(null);
       showToast(`✓ Patient successfully routed to ${doctorName}.`);
       return;
     }
 
+    if (!doctorId || !isUuid(doctorId)) {
+      setError("Cannot route referral: Valid canonical Doctor UUID is required.");
+      return;
+    }
+
+    const currentRef = referrals.find(r => r.id === refId);
+    if (currentRef && (currentRef.status === 'Completed' || currentRef.status === 'Cancelled')) {
+      setError(`Cannot assign doctor: Referral is in terminal state '${currentRef.status}'.`);
+      return;
+    }
+
     try {
-      // 1. Update referrals
-      await supabase
+      const updatePayload = {
+        doctor_assigned: doctorName,
+        doctor_id: doctorId,
+        status: 'Assigned'
+      };
+
+      const { data: updatedRow, error } = await supabase
         .from('referrals')
-        .update({ doctor_assigned: doctorName, status: 'Assigned' })
-        .eq('id', refId);
+        .update(updatePayload)
+        .eq('id', refId)
+        .select('id, status, doctor_assigned, doctor_id')
+        .single();
 
-      // 2. Also update care_requests so patient & doctor see it
-      if (refId) {
-        await supabase
-          .from('care_requests')
-          .update({
-            doctor_assigned: doctorName,
-            status: 'ACCEPTED',
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', refId);
-      }
-      if (showDoctorRouteModal?.patient_id) {
-        await supabase
-          .from('care_requests')
-          .update({
-            doctor_assigned: doctorName,
-            status: 'ACCEPTED',
-            updated_at: new Date().toISOString()
-          })
-          .eq('patient_id', showDoctorRouteModal.patient_id);
+      if (error) throw error;
+      if (!updatedRow || updatedRow.id !== refId || updatedRow.doctor_id !== doctorId) {
+        throw new Error(`Doctor routing verification failed for referral ${refId}`);
       }
 
-      setReferrals(prev => prev.map(r => r.id === refId ? { ...r, doctor_assigned: doctorName, status: 'Assigned' } : r));
-      setSelectedReferral(prev => (prev && prev.id === refId ? { ...prev, doctor_assigned: doctorName, status: 'Assigned' } : prev));
+      setReferrals(prev => prev.map(r => r.id === refId ? { ...r, ...updatePayload } : r));
+      setSelectedReferral(prev => (prev && prev.id === refId ? { ...prev, ...updatePayload } : prev));
       setShowDoctorRouteModal(null);
       showToast(`✓ Patient routed to ${doctorName}. Status → Assigned. Doctor desk notified.`);
       setTimeout(() => loadSupabaseData(true), 3000);
     } catch (err) {
+      console.error('[HospitalStaff] Failed to assign specialist:', err);
       setError(`Failed to assign specialist: ${err.message}`);
     }
   };
@@ -1458,6 +1394,8 @@ export default function HospitalStaffWorkspace({
                 return (
                   <div 
                     key={ref.id}
+                    data-referral-id={ref.id}
+                    data-patient-name={ref.patient_name}
                     onClick={() => setSelectedReferral(ref)}
                     className="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs space-y-3.5 hover:border-[#008080]/60 hover:shadow-md transition-all cursor-pointer group"
                   >
@@ -1551,6 +1489,8 @@ export default function HospitalStaffWorkspace({
                       <div className="flex items-center gap-2 ml-auto shrink-0">
                         <button
                           type="button"
+                          data-referral-id={ref.id}
+                          data-action="view-case"
                           onClick={() => setSelectedReferral(ref)}
                           className="px-3 py-1.5 text-xs font-bold text-[#008080] bg-teal-50/70 hover:bg-teal-100 border border-teal-200 rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs"
                           title="Open Clinical Case File"
@@ -1562,6 +1502,8 @@ export default function HospitalStaffWorkspace({
                         {ref.status !== 'Completed' && ref.status !== 'COMPLETED' && (
                           <button
                             type="button"
+                            data-referral-id={ref.id}
+                            data-action="assign-token"
                             onClick={() => handleOpenTokenModal(ref)}
                             className="px-4 py-1.5 bg-[#FF9933] hover:bg-[#e68a2e] text-slate-950 font-black text-xs rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs"
                           >
@@ -1573,6 +1515,8 @@ export default function HospitalStaffWorkspace({
                         {ref.status === 'Pending' && (
                           <button
                             type="button"
+                            data-referral-id={ref.id}
+                            data-action="accept-referral"
                             onClick={() => handleAcceptReferral(ref.id)}
                             className="px-3.5 py-1.5 bg-teal-600 hover:bg-teal-700 text-white font-black text-xs rounded-xl transition-colors cursor-pointer"
                           >
@@ -1583,6 +1527,8 @@ export default function HospitalStaffWorkspace({
                         {(ref.status === 'Accepted' || ref.status === 'Pending') && (
                           <button
                             type="button"
+                            data-referral-id={ref.id}
+                            data-action="mark-arrived"
                             onClick={() => handleMarkArrived(ref.id)}
                             className="px-4 py-1.5 bg-[#008080] hover:bg-[#006666] text-white font-black text-xs rounded-xl transition-colors cursor-pointer"
                           >
@@ -1593,6 +1539,8 @@ export default function HospitalStaffWorkspace({
                         {(ref.status === 'Arrived' || ref.status === 'Accepted') && (
                           <button
                             type="button"
+                            data-referral-id={ref.id}
+                            data-action="send-to-doctor"
                             onClick={() => setShowDoctorRouteModal(ref)}
                             className="px-4 py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-black text-xs rounded-xl transition-colors cursor-pointer"
                           >
@@ -1603,6 +1551,8 @@ export default function HospitalStaffWorkspace({
                         {ref.status === 'Assigned' && (
                           <button
                             type="button"
+                            data-referral-id={ref.id}
+                            data-action="reassign-doctor"
                             onClick={() => setShowDoctorRouteModal(ref)}
                             className="px-3.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold text-xs rounded-xl transition-colors cursor-pointer"
                           >
@@ -2505,7 +2455,10 @@ export default function HospitalStaffWorkspace({
                 doctors.map(doc => (
                   <button
                     key={doc.id}
-                    onClick={() => handleRouteToDoctor(showDoctorRouteModal.id, doc.name)}
+                    onClick={() => handleRouteToDoctor(showDoctorRouteModal.id, doc.name, doc.id)}
+                    data-action="route-to-doctor"
+                    data-doctor-id={doc.id}
+                    data-doctor-name={doc.name}
                     className="w-full p-3.5 text-left bg-slate-50 hover:bg-[#E6F2F2]/50 hover:border-[#008080] border border-slate-200 rounded-2xl flex items-center justify-between transition-all group cursor-pointer"
                   >
                     <div>

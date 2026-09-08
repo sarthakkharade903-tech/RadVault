@@ -613,7 +613,10 @@ function FreshThemeHero({
 // ─── 2. Needs Attention Card (Priority Route Highlight) ───────
 function NeedsAttentionCard({ referral, t, onOpen, onDelete }) {
   return (
-    <div className="bg-white border-2 border-red-200 rounded-2xl p-4 sm:p-5 shadow-2xs hover:shadow-xs transition-all mb-3.5 relative overflow-hidden">
+    <div
+      data-referral-id={referral.id}
+      className="bg-white border-2 border-red-200 rounded-2xl p-4 sm:p-5 shadow-2xs hover:shadow-xs transition-all mb-3.5 relative overflow-hidden"
+    >
       
       {/* Top Ambient Bar */}
       <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-red-500 to-amber-500" />
@@ -694,7 +697,10 @@ function PipelineReferralCard({ referral, t, onOpen, onDelete }) {
   const isInCall = raw === 'IN_CALL';
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-2xs hover:shadow-xs transition-all mb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+    <div
+      data-referral-id={referral.id}
+      className="bg-white rounded-2xl border border-slate-200 p-4 shadow-2xs hover:shadow-xs transition-all mb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+    >
       
       {/* Left: Info */}
       <div className="flex items-start gap-3 min-w-0">
