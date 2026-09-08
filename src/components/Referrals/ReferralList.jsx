@@ -106,6 +106,7 @@ function ReferralCard({ referral, lang, onDelete }) {
 
   return (
     <div
+      data-referral-id={referral.id}
       className={`rounded-2xl border p-4 sm:p-5 shadow-xs transition-shadow hover:shadow-sm ${priority.cardBorder} ${priority.cardBg}`}
     >
       {/* Top Row */}

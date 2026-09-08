@@ -12,9 +12,9 @@ import ElderlyScreen from './screens/ElderlyScreen';
 import AdultScreen from './screens/AdultScreen';
 import EmergencyScreen from './screens/EmergencyScreen';
 import { DEPARTMENTS, HOSPITALS } from '../../data/mockReferrals';
-import { createCareRequest } from '../../services/ashaService';
+import { createPhysicalReferral } from '../../services/ashaService';
 import { fetchGovHospitals, getCurrentLocation } from '../../services/locationService';
-import { supabase, ensureRoleAuth } from '../../services/supabase';
+import { supabase } from '../../services/supabase';
 
 // ─── Single-Language Dictionaries (No Mixed Text) ─────────
 const TRIAGE_TRANSLATIONS = {
@@ -160,29 +160,25 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
   // AI & Triage State
   const [aiResult, setAiResult] = useState(null);
 
-  const DEFAULT_GOV_FACILITIES = [
-    { id: "f1111111-1111-1111-1111-111111111111", name: "Shrirampur Primary Health Centre", type: "PHC", dist: "2.4", typeLabel: "Primary Health Centre (PHC)", isGovernment: true },
-    { id: "f2222222-2222-2222-2222-222222222222", name: "Pune Sassoon General Hospital", type: "DH", dist: "38.5", typeLabel: "Govt Medical College Hospital", isGovernment: true },
-    { id: "f1111111-1111-1111-1111-111111111111", name: "Rural Hospital - Khandala", type: "CHC", dist: "12.4", typeLabel: "Rural Hospital / CHC", isGovernment: true },
-    { id: "f1111111-1111-1111-1111-111111111111", name: "Sub-District Hospital - Wai", type: "CHC", dist: "23.1", typeLabel: "Sub-District Hospital", isGovernment: true },
-    { id: "f1111111-1111-1111-1111-111111111111", name: "Community Health Centre - Bhor", type: "CHC", dist: "26.5", typeLabel: "Community Health Centre", isGovernment: true },
-    { id: "f2222222-2222-2222-2222-222222222222", name: "Satara District Civil Hospital", type: "DH", dist: "48.2", typeLabel: "District Civil Hospital", isGovernment: true }
+  // Routing State — dynamically populated from Supabase facilities
+  const DEFAULT_FACILITIES = [
+    { id: 'f1111111-1111-1111-1111-111111111111', name: 'Shrirampur Primary Health Centre', district: 'Ahmednagar' },
+    { id: 'f2222222-2222-2222-2222-222222222222', name: 'Pune Sassoon General Hospital', district: 'Pune' }
   ];
-
-  // Routing State
-  const [hospital, setHospital] = useState(DEFAULT_GOV_FACILITIES[0].name);
-  const [selectedFacility, setSelectedFacility] = useState(DEFAULT_GOV_FACILITIES[0]);
-  const [facilitiesList, setFacilitiesList] = useState([]);
+  const [hospital, setHospital] = useState(DEFAULT_FACILITIES[0].name);
+  const [selectedFacility, setSelectedFacility] = useState(DEFAULT_FACILITIES[0]);
+  const [facilitiesList, setFacilitiesList] = useState(DEFAULT_FACILITIES);
   const [department, setDepartment] = useState(DEPARTMENTS[0]);
   const [isJsyClaim, setIsJsyClaim] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const isSubmittingRef = useRef(false);
   const [routeError, setRouteError] = useState('');
 
   // Hospital Search & Real-Time Government Facilities State
   const [hospSearch, setHospSearch] = useState('');
-  const [nearbyGovHospitals, setNearbyGovHospitals] = useState(DEFAULT_GOV_FACILITIES);
+  const [nearbyGovHospitals, setNearbyGovHospitals] = useState([]);
   const [loadingHospitals, setLoadingHospitals] = useState(false);
-  const [gpsStatus, setGpsStatus] = useState('📍 Live GPS: Authentic Govt Hospitals within 50 km');
+  const [gpsStatus, setGpsStatus] = useState('📍 Authentic Govt Facilities');
 
   // Real-Time Government Hospital Fetching (Within 50 km)
   const loadNearbyHospitals = async () => {
@@ -193,9 +189,6 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
       const hospitals = await fetchGovHospitals(coords.lat, coords.lon);
       if (hospitals && hospitals.length > 0) {
         setNearbyGovHospitals(hospitals);
-        if (demoMode) {
-          setHospital(prev => (prev ? prev : hospitals[0].name));
-        }
       }
       setGpsStatus(
         coords.isFallback
@@ -204,7 +197,7 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
       );
     } catch (err) {
       console.warn("Could not fetch nearby government hospitals:", err);
-      setGpsStatus('📍 Authentic Govt Hospitals within 50 km');
+      setGpsStatus('📍 Authentic Govt Hospitals');
     } finally {
       setLoadingHospitals(false);
     }
@@ -219,7 +212,6 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
     let isMounted = true;
     async function loadFacilities() {
       try {
-        await ensureRoleAuth('asha');
         const { data, error } = await supabase
           .from('facilities')
           .select('id, name, district')
@@ -362,101 +354,111 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
   };
 
   const handleFinalSubmit = async () => {
+    if (isSubmittingRef.current || isSubmitting) {
+      console.warn('[TriageForm] Submission already in flight. Ignoring duplicate trigger.');
+      return;
+    }
     if (!hospital) { setRouteError(t.errSelectHosp); return; }
     if (!department) { setRouteError(t.errSelectDept); return; }
     setRouteError('');
+    isSubmittingRef.current = true;
     setIsSubmitting(true);
 
-    const isUrgent = aiResult?.priority === 'RED' || aiResult?.priority === 'ORANGE';
-    const finalPriority = isUrgent ? 'URGENT' : 'ROUTINE';
-
-    let ashaNotes = voiceNotes.trim() || aiResult?.note || 'ASHA referral initiated';
-    if (isJsyClaim) ashaNotes += " [ASHA Accompanying Patient - JSY Escort]";
-
-    // Ensure valid patient_id (strictly required in Demo OFF mode)
-    const patientId = patient?.id || (demoMode ? 'b6f81101-46d0-4b4d-8df0-9d9ce11a6a70' : null);
-    const patientName = patient?.name || (demoMode ? 'Rekha Bai' : null);
-
-    if (!patientId || !patientName) {
-      setRouteError("Please select a registered patient before dispatching referral.");
-      setIsSubmitting(false);
-      return;
-    }
-
-    const patientVitals = {
-      bp: intakeAnswers?.bp || patient?.vitals?.bp || patient?.bp || '',
-      pulse: intakeAnswers?.pulse || patient?.vitals?.pulse || patient?.pulse || '',
-      spo2: intakeAnswers?.spo2 || patient?.vitals?.spo2 || patient?.spo2 || '',
-      temp: intakeAnswers?.temp || patient?.vitals?.temp || patient?.temp || '',
-      weight: intakeAnswers?.weight || patient?.vitals?.weight || patient?.weight || '',
-      height: intakeAnswers?.height || patient?.vitals?.height || patient?.height || '',
-      blood_sugar: intakeAnswers?.blood_sugar || patient?.vitals?.blood_sugar || patient?.blood_sugar || ''
-    };
-
-    const isUuid = (val) => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
-    const destinationFacilityId = (selectedFacility?.id && isUuid(selectedFacility.id))
-      ? selectedFacility.id
-      : (facilitiesList.find(f => f.name.toLowerCase() === hospital.toLowerCase())?.id)
-      || 'f1111111-1111-1111-1111-111111111111';
-
-    const chosenHospital = selectedFacility?.name || hospital || 'Shrirampur Primary Health Centre';
-
-    const payload = {
-      patient_id: patientId,
-      patient_name: patientName,
-      age: patient?.age_years || patient?.age || 30,
-      gender: patient?.gender || 'Other',
-      blood_group: patient?.blood_group || null,
-      phone: patient?.mobile || patient?.phone || '9876543210',
-      source: 'ASHA_REFERRED',
-      created_by: 'ASHA Worker (Priya Deshmukh)',
-      facility: chosenHospital,
-      destination_hospital: chosenHospital,
-      destination_facility_id: destinationFacilityId,
-      department: department || 'General Medicine',
-      priority: finalPriority,
-      reason: ashaNotes,
-      asha_notes: ashaNotes,
-      vitals: patientVitals
-    };
-
-    const { data, error } = await createCareRequest(payload);
-    setIsSubmitting(false);
-
-    if (error) {
-      console.error('[TriageForm] Referral dispatch error:', error);
-      setRouteError(error.message || 'Failed to dispatch referral to hospital database.');
-      return;
-    }
-
-    if (data?.id) {
-      try {
-        const { data: verified } = await supabase
-          .from('referrals')
-          .select('id, status, destination_hospital')
-          .eq('id', data.id)
-          .maybeSingle();
-        if (verified) {
-          console.log('[TriageForm] Referral verified in Supabase referrals:', verified.id);
-        }
-      } catch (vErr) {
-        console.warn('[TriageForm] Referral verification warning:', vErr);
-      }
-    }
-
-    // Persist completed task status in localStorage
     try {
-      const saved = localStorage.getItem("radvault_completed_tasks");
-      const taskSet = saved ? new Set(JSON.parse(saved)) : new Set();
-      taskSet.add(patientId);
-      taskSet.add(`task-${patientId}`);
-      localStorage.setItem("radvault_completed_tasks", JSON.stringify(Array.from(taskSet)));
-    } catch (e) {
-      console.error(e);
-    }
+      const isUrgent = aiResult?.priority === 'RED' || aiResult?.priority === 'ORANGE';
+      const finalPriority = isUrgent ? 'URGENT' : 'ROUTINE';
 
-    if (onSubmit) {
-      onSubmit(data || payload);
+      let ashaNotes = voiceNotes.trim() || aiResult?.note || 'ASHA referral initiated';
+      if (isJsyClaim) ashaNotes += " [ASHA Accompanying Patient - JSY Escort]";
+
+      // Ensure valid patient_id (strictly required in Demo OFF mode)
+      const patientId = patient?.id || (demoMode ? 'b6f81101-46d0-4b4d-8df0-9d9ce11a6a70' : null);
+      const patientName = patient?.name || (demoMode ? 'Rekha Bai' : null);
+
+      const isUuid = (val) => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+
+      if (!patientId || !patientName) {
+        setRouteError("Please select a registered patient before dispatching referral.");
+        return;
+      }
+
+      if (!isUuid(patientId)) {
+        setRouteError("Selected patient identifier is not a valid clinical UUID.");
+        return;
+      }
+
+      const patientVitals = {
+        bp: intakeAnswers?.bp || patient?.vitals?.bp || patient?.bp || '',
+        pulse: intakeAnswers?.pulse || patient?.vitals?.pulse || patient?.pulse || '',
+        spo2: intakeAnswers?.spo2 || patient?.vitals?.spo2 || patient?.spo2 || '',
+        temp: intakeAnswers?.temp || patient?.vitals?.temp || patient?.temp || '',
+        weight: intakeAnswers?.weight || patient?.vitals?.weight || patient?.weight || '',
+        height: intakeAnswers?.height || patient?.vitals?.height || patient?.height || '',
+        blood_sugar: intakeAnswers?.blood_sugar || patient?.vitals?.blood_sugar || patient?.blood_sugar || ''
+      };
+
+      let destinationFacilityId = (selectedFacility?.id && isUuid(selectedFacility.id))
+        ? selectedFacility.id
+        : (facilitiesList.find(f => f.name.toLowerCase() === hospital.toLowerCase())?.id);
+
+      if (!destinationFacilityId || !isUuid(destinationFacilityId)) {
+        setRouteError("Selected destination facility is not registered in the network. Please select a registered facility.");
+        return;
+      }
+
+      const chosenHospital = selectedFacility?.name || hospital || 'Shrirampur Primary Health Centre';
+
+      // Zero Demographic Fabrication: preserve actual values, never default to 30, 'Other', or fake phone
+      const resolvedAge = (patient?.age_years !== undefined && patient?.age_years !== null)
+        ? Number(patient.age_years)
+        : ((patient?.age !== undefined && patient?.age !== null) ? Number(patient.age) : null);
+      const resolvedGender = patient?.gender || null;
+      const resolvedPhone = patient?.mobile || patient?.phone || null;
+
+      const payload = {
+        patient_id: patientId,
+        patient_name: patientName,
+        age: resolvedAge,
+        gender: resolvedGender,
+        blood_group: patient?.blood_group || null,
+        phone: resolvedPhone,
+        created_by: 'ASHA Worker (Priya Deshmukh)',
+        destination_hospital: chosenHospital,
+        destination_facility_id: destinationFacilityId,
+        department: department || 'General Medicine',
+        priority: finalPriority,
+        reason: ashaNotes,
+        asha_notes: ashaNotes,
+        vitals: patientVitals
+      };
+
+      const { data, error } = await createPhysicalReferral(payload);
+
+      if (error || !data?.id) {
+        console.error('[TriageForm] Referral dispatch error:', error);
+        setRouteError(error?.message || 'Failed to dispatch referral to hospital database.');
+        return;
+      }
+
+      console.log('[TriageForm] Verified Referral created with ID:', data.id);
+
+      // Persist completed task status in localStorage
+      try {
+        const saved = localStorage.getItem("radvault_completed_tasks");
+        const taskSet = saved ? new Set(JSON.parse(saved)) : new Set();
+        taskSet.add(patientId);
+        taskSet.add(`task-${patientId}`);
+        localStorage.setItem("radvault_completed_tasks", JSON.stringify(Array.from(taskSet)));
+      } catch (e) {
+        console.error(e);
+      }
+
+      if (onSubmit) {
+        onSubmit(data);
+      }
+    } finally {
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
     }
   };
 
@@ -687,16 +689,25 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
               {/* Hospital Selection Cards */}
               <div className="max-h-60 overflow-y-auto space-y-1.5 pr-1 divide-y divide-slate-100">
                 {(() => {
-                  const baseFacilities = (!demoMode && facilitiesList && facilitiesList.length > 0)
+                  const baseFacilities = !demoMode
                     ? facilitiesList.map(f => ({
                         id: f.id,
                         name: f.name,
                         type: 'PHC',
                         dist: f.name.toLowerCase().includes('shrirampur') ? '2.4' : '38.5',
-                        typeLabel: f.district ? `${f.district} District Facility` : 'Govt Hospital',
+                        typeLabel: f.district ? `${f.district} District Facility` : 'Registered Govt Facility',
                         isGovernment: true
                       }))
-                    : (nearbyGovHospitals && nearbyGovHospitals.length > 0 ? nearbyGovHospitals : DEFAULT_GOV_FACILITIES);
+                    : (facilitiesList.length > 0
+                        ? facilitiesList.map(f => ({
+                            id: f.id,
+                            name: f.name,
+                            type: 'PHC',
+                            dist: f.name.toLowerCase().includes('shrirampur') ? '2.4' : '38.5',
+                            typeLabel: f.district ? `${f.district} District Facility` : 'Registered Govt Facility',
+                            isGovernment: true
+                          }))
+                        : (nearbyGovHospitals && nearbyGovHospitals.length > 0 ? nearbyGovHospitals : []));
 
                   const list = baseFacilities.filter(h =>
                     !hospSearch ||
@@ -707,23 +718,27 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
                   if (list.length === 0) {
                     return (
                       <div className="p-4 text-center text-slate-500 bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                        <p className="text-xs font-bold">No government hospitals matching "{hospSearch}"</p>
-                        <button
-                          type="button"
-                          onClick={() => setHospSearch('')}
-                          className="text-xs font-black text-[#008F83] underline mt-1 cursor-pointer"
-                        >
-                          Clear Search
-                        </button>
+                        <p className="text-xs font-bold">No registered government facilities available.</p>
+                        {hospSearch && (
+                          <button
+                            type="button"
+                            onClick={() => setHospSearch('')}
+                            className="text-xs font-black text-[#008F83] underline mt-1 cursor-pointer"
+                          >
+                            Clear Search
+                          </button>
+                        )}
                       </div>
                     );
                   }
 
                   return list.map((h, idx) => {
-                    const isSelected = hospital === h.name;
+                    const isSelected = hospital === h.name || (selectedFacility && selectedFacility.id === h.id);
                     return (
                       <div
                         key={h.id || idx}
+                        data-facility-id={h.id}
+                        data-facility-name={h.name}
                         onClick={() => {
                           setHospital(h.name);
                           const matched = facilitiesList.find(f => f.name.toLowerCase() === h.name.toLowerCase()) ||
@@ -743,20 +758,20 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
                               {h.name}
                             </p>
                             <span className="text-[9px] font-black uppercase tracking-wider bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded">
-                              {h.typeLabel || 'Govt Hospital'}
+                              {h.typeLabel || 'Registered Facility'}
                             </span>
                           </div>
-                          <p className="text-[11px] text-slate-500 font-semibold mt-0.5 flex items-center gap-1">
-                            📍 <span className="font-black text-[#008F83]">{h.dist} km</span> from patient location
+                          <p className="text-[11px] font-medium text-slate-500 mt-0.5 flex items-center gap-1.5">
+                            <span>📍 {h.dist} km from current location</span>
+                            <span>•</span>
+                            <span className="text-emerald-700 font-bold">Direct Digital Intake</span>
                           </p>
                         </div>
-                        {isSelected ? (
-                          <div className="w-6 h-6 rounded-full bg-[#008F83] text-white flex items-center justify-center shrink-0 shadow-xs">
-                            <Check className="w-3.5 h-3.5 stroke-[3]" />
-                          </div>
-                        ) : (
-                          <span className="text-[11px] font-bold text-slate-400 shrink-0">Select</span>
-                        )}
+                        <div className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 ${
+                          isSelected ? 'border-[#008F83] bg-[#008F83] text-white' : 'border-slate-300 bg-white'
+                        }`}>
+                          {isSelected && <div className="w-2 h-2 rounded-full bg-white" />}
+                        </div>
                       </div>
                     );
                   });

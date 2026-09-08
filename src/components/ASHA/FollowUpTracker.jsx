@@ -367,19 +367,36 @@ export default function FollowUpTracker({ patients, onLogVisit, onEditPatient, d
   const fetchCareRequests = async () => {
     try {
       setLoadingReferrals(true);
-      const [careRes, docRes] = await Promise.allSettled([
+      const [careRes, docRes, refRes] = await Promise.allSettled([
         supabase.from("care_requests").select("*").order("created_at", { ascending: false }),
-        getDoctorFollowUps()
+        getDoctorFollowUps(),
+        supabase.from("referrals").select("*").order("created_at", { ascending: false })
       ]);
 
+      let combined = [];
       if (careRes.status === 'fulfilled' && careRes.value.data) {
-        setCareRequests(careRes.value.data);
+        combined = combined.concat(careRes.value.data);
       }
+      if (refRes.status === 'fulfilled' && refRes.value.data) {
+        const mappedRefs = refRes.value.data.map(r => ({
+          id: r.id,
+          patient_id: r.patient_id,
+          patient_name: r.patient_name,
+          facility: r.destination_hospital,
+          created_at: r.created_at,
+          updated_at: r.created_at,
+          status: r.status === 'Completed' ? 'COMPLETED' : r.status,
+          is_physical_referral: true
+        }));
+        combined = combined.concat(mappedRefs);
+      }
+      setCareRequests(combined);
+
       if (docRes.status === 'fulfilled' && docRes.value?.data) {
         setDoctorFollowUps(docRes.value.data);
       }
     } catch (err) {
-      console.warn("[FollowUpTracker] Care requests sync notice:", err);
+      console.warn("[FollowUpTracker] Follow-up sync notice:", err);
     } finally {
       setLoadingReferrals(false);
     }
@@ -389,7 +406,10 @@ export default function FollowUpTracker({ patients, onLogVisit, onEditPatient, d
     fetchCareRequests();
 
     const channel = supabase
-      .channel("followup_care_requests_sync")
+      .channel("followup_sync_live")
+      .on("postgres_changes", { event: "*", schema: "public", table: "referrals" }, () => {
+        fetchCareRequests();
+      })
       .on("postgres_changes", { event: "*", schema: "public", table: "care_requests" }, () => {
         fetchCareRequests();
       })

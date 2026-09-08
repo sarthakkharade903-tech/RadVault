@@ -59,10 +59,10 @@ export default function PatientSelectScreen({ onSelect, onSelectPatient, demoMod
       if (!demoMode) {
         const { data, error: addErr } = await addPatient({
           name: customName.trim(),
-          gender: 'Other',
-          age_years: 30,
+          gender: null,
+          age_years: null,
           village: 'Shirwal',
-          mobile: '9876543210'
+          mobile: null
         });
         if (addErr) throw addErr;
         if (data && handleSelection) {
@@ -73,8 +73,8 @@ export default function PatientSelectScreen({ onSelect, onSelectPatient, demoMod
       const newPat = {
         id: crypto.randomUUID(),
         name: customName.trim(),
-        gender: 'Other',
-        age_years: 30,
+        gender: null,
+        age_years: null,
         village: 'Shirwal'
       };
       if (handleSelection) handleSelection(newPat);

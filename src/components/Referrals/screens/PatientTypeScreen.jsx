@@ -73,7 +73,7 @@ export default function PatientTypeScreen({ patient, onSelect, onSelectType }) {
   const handleSelect = onSelectType || onSelect;
   const lang = localStorage.getItem("radvault_asha_lang") || "en";
 
-  const gender = patient?.gender || 'Other';
+  const gender = patient?.gender || null;
   const age = patient?.age_years !== undefined && patient?.age_years !== null ? Number(patient.age_years) : null;
 
   // ── Smart Gender & Age-Aware Filter ──

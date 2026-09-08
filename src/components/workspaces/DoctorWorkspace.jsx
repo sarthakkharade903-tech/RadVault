@@ -118,14 +118,16 @@ export default function DoctorWorkspace({
   const [queueFilter, setQueueFilter] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
 
-  const [doctorProfile, setDoctorProfile] = useState(null);
+  const [doctorProfile, setDoctorProfile] = useState(() => isDemoMode ? DEMO_DOCTOR_PROFILE : null);
   const [referrals, setReferrals] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
   const [activeCase, setActiveCase] = useState(null);
+  const [editingReferralId, setEditingReferralId] = useState(null);
   const [showSignModal, setShowSignModal] = useState(false);
+  const [isSigning, setIsSigning] = useState(false);
 
   const [consultationMode, setConsultationMode] = useState('IN_PERSON');
   const [clinicalAssessment, setClinicalAssessment] = useState('');
@@ -192,165 +194,142 @@ export default function DoctorWorkspace({
   const getDraftKey = (refId) => `radvault_doctor_draft_${refId}`;
 
   const loadDoctorDbData = useCallback(async (isSilent = false) => {
+    const tStart = performance.now();
     try {
-      if (!isSilent) setLoading(true);
+      if (!isSilent && !doctorProfile) setLoading(true);
       setError('');
 
       if (isDemoMode) {
         setDoctorProfile(DEMO_DOCTOR_PROFILE);
         setReferrals(demoDataEnabled ? INITIAL_DEMO_REFERRALS : []);
-        if (!isSilent) setLoading(false);
+        setLoading(false);
         return;
       }
 
-      // Live Supabase Authentication
-      await ensureRoleAuth('doctor');
-      const { data: { user: activeUser } } = await supabase.auth.getUser();
-
-      if (!activeUser) {
-        throw new Error('Authentication failed for Doctor portal. Please check Supabase credentials.');
+      // Ensure authenticated session for Doctor Specialist
+      const { user: authUser, error: authErr } = await ensureRoleAuth('doctor');
+      if (authErr || !authUser) {
+        throw new Error(`Authentication failed for Doctor portal: ${authErr?.message || 'Check credentials'}`);
       }
+      const activeUser = authUser;
 
-      // Try to load doctor profile from DB
+      // Fetch doctor profile from DB
       const { data: docData, error: docErr } = await supabase
         .from('doctors')
         .select('id, name, specialty, facility_id, facilities(name)')
         .eq('user_id', activeUser.id)
         .maybeSingle();
 
-      // ── GRACEFUL FALLBACK ─────────────────────────────────────
-      // If no doctors table row exists for this user, use a session-based fallback.
-      // This lets the doctor use the Tele-OPD queue and referral list without
-      // requiring a specific DB record — important during development/testing.
+      if (docErr) {
+        console.error('[RadVault Doctor] Doctor profile fetch error:', docErr.message);
+      }
+
+      if (!isDemoMode && (!docData || !docData.id)) {
+        throw new Error(`Doctor clinical profile not found in database for user ${activeUser.id}. Please contact facility administrator.`);
+      }
+
       const resolvedDoctor = docData ? {
         id: docData.id,
         name: docData.name,
         specialty: docData.specialty,
         facility_id: docData.facility_id,
         facility_name: docData.facilities?.name || 'Shrirampur Primary Health Centre'
-      } : {
-        id: activeUser.id,
-        name: activeUser.user_metadata?.name || activeUser.email?.split('@')[0] || 'Dr. On-Duty Medical Officer',
-        specialty: 'General Medicine',
-        facility_id: null,
-        facility_name: 'Primary Health Centre - Shirwal',
-        isFallback: true
-      };
-
-      if (!docData) {
-        console.info('[RadVault Doctor] No DB doctor profile found — using session fallback for:', activeUser.email);
-      }
+      } : DEMO_DOCTOR_PROFILE;
 
       setDoctorProfile(resolvedDoctor);
+      // Immediately unblock the UI shell
+      setLoading(false);
+      console.log(`[DOCTOR_PORTAL_PERFORMANCE] Shell rendered in ${(performance.now() - tStart).toFixed(1)}ms`);
 
-      // Load referrals — if facility_id, scope by facility/assigned doctor
-      let refQuery = supabase
-        .from('referrals')
-        .select('*')
-        .order('created_at', { ascending: false });
+      // Load canonical referrals — scoped by facility_id and assigned doctor
+      let refData = null;
+      let refErr = null;
 
-      if (resolvedDoctor.facility_id) {
-        refQuery = supabase
+      if (resolvedDoctor.id && resolvedDoctor.facility_id) {
+        // Try strict query with doctor_id or exact doctor_assigned or facility
+        const res = await supabase
           .from('referrals')
           .select('*')
-          .or(`destination_facility_id.eq.${resolvedDoctor.facility_id},doctor_assigned.ilike.%${resolvedDoctor.name.split(' ')[1] || resolvedDoctor.name}%`)
-          .order('created_at', { ascending: false });
+          .or(`doctor_id.eq.${resolvedDoctor.id},doctor_assigned.eq.${resolvedDoctor.name},destination_facility_id.eq.${resolvedDoctor.facility_id}`)
+          .order('created_at', { ascending: false })
+          .limit(50);
+        
+        if (res.error && res.error.code === '42703') {
+          // doctor_id column does not exist on live DB, fallback to doctor_assigned + facility
+          const fallbackRes = await supabase
+            .from('referrals')
+            .select('*')
+            .or(`doctor_assigned.eq.${resolvedDoctor.name},destination_facility_id.eq.${resolvedDoctor.facility_id}`)
+            .order('created_at', { ascending: false })
+            .limit(50);
+          refData = fallbackRes.data;
+          refErr = fallbackRes.error;
+        } else {
+          refData = res.data;
+          refErr = res.error;
+        }
+      } else if (resolvedDoctor.facility_id) {
+        const res = await supabase
+          .from('referrals')
+          .select('*')
+          .or(`doctor_assigned.eq.${resolvedDoctor.name},destination_facility_id.eq.${resolvedDoctor.facility_id}`)
+          .order('created_at', { ascending: false })
+          .limit(50);
+        refData = res.data;
+        refErr = res.error;
+      } else {
+        const res = await supabase
+          .from('referrals')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(50);
+        refData = res.data;
+        refErr = res.error;
       }
 
-      const { data: refData, error: refErr } = await refQuery;
       if (refErr) console.warn('[RadVault Doctor] Referrals fetch warning:', refErr.message);
 
-      const rawRefs = refData || [];
+      const combinedRefs = refData || [];
+      // RENDER REFERRALS IMMEDIATELY — DO NOT BLOCK ON SECONDARY PATIENTS TABLE
+      setReferrals(combinedRefs);
+      console.log(`[DOCTOR_PORTAL_PERFORMANCE] Usable queue rendered in ${(performance.now() - tStart).toFixed(1)}ms (${combinedRefs.length} referrals)`);
 
-      // Also load from care_requests (holds ASHA clinical referrals, e.g. samir myanawar, and direct OPD appointments)
-      let careRefs = [];
-      try {
-        const { data: careData } = await supabase
-          .from('care_requests')
-          .select('*')
-          .neq('source', 'TELECONSULT')
-          .order('created_at', { ascending: false });
-
-        if (careData && careData.length > 0) {
-          careRefs = careData.map(c => {
-            const isHigh = c.priority === 'URGENT' || c.priority === 'HIGH' || c.priority === 'RED';
-            const isMedium = c.priority === 'MEDIUM' || c.priority === 'ORANGE';
-            const mappedPriority = isHigh ? 'HIGH' : isMedium ? 'ORANGE' : 'GREEN';
-            const priorityLabel = isHigh ? '🔴 Emergency / Immediate Attention' : isMedium ? '🟡 Urgent / Within 24 Hours' : '🟢 Routine / Local Care';
-
-            let mappedStatus = c.status === 'SUBMITTED' || c.status === 'PENDING_PHC' ? 'Arrived'
-              : c.status === 'ACCEPTED' ? 'Assigned'
-              : c.status === 'COMPLETED' ? 'Completed'
-              : c.status;
-
-            return {
-              id: c.id,
-              patient_id: c.patient_id,
-              patient_name: c.patient_name,
-              created_by: c.created_by,
-              destination_hospital: c.facility,
-              destination_department: c.department || 'General Medicine',
-              doctor_assigned: c.doctor_assigned || resolvedDoctor.name,
-              priority: mappedPriority,
-              priority_label: priorityLabel,
-              status: mappedStatus,
-              symptoms: c.reason,
-              ai_note: c.asha_notes,
-              slot_preference: c.slot_preference,
-              created_at: c.created_at,
-              isCareRequest: true
-            };
-          });
-        }
-      } catch (cErr) {
-        console.warn('[RadVault Doctor] care_requests load notice:', cErr.message);
-      }
-
-      // Combine both sources (deduplicating by id)
-      const existingRefIds = new Set(rawRefs.map(r => r.id));
-      const combinedRefs = [
-        ...rawRefs,
-        ...careRefs.filter(c => !existingRefIds.has(c.id))
-      ];
-
+      // Non-blocking background enrichment of patient details
       const patientIds = Array.from(new Set(combinedRefs.map(r => r.patient_id).filter(Boolean)));
-
-      let patientsMap = {};
       if (patientIds.length > 0) {
-        try {
-          const { data: pts } = await supabase
-            .from('patients')
-            .select('id, unified_id, full_name, age, gender, phone_number, blood_group')
-            .in('id', patientIds);
-
-          if (pts && pts.length > 0) {
-            pts.forEach(p => {
-              patientsMap[p.id] = p;
-            });
-          }
-        } catch (pErr) {
-          console.warn('[RadVault Doctor] Could not join patient profiles:', pErr.message);
-        }
+        supabase
+          .from('patients')
+          .select('id, unified_id, full_name, age, gender, phone_number, blood_group')
+          .in('id', patientIds)
+          .then(({ data: pts, error: pErr }) => {
+            if (pErr) {
+              console.warn('[RadVault Doctor] Could not join patient profiles:', pErr.message);
+              return;
+            }
+            if (pts && pts.length > 0) {
+              const patientsMap = {};
+              pts.forEach(p => { patientsMap[p.id] = p; });
+              setReferrals(prev => prev.map(r => {
+                const linkedPatient = patientsMap[r.patient_id];
+                if (!linkedPatient) return r;
+                return {
+                  ...r,
+                  patient_unified_id: linkedPatient.unified_id || (r.patient_id && !r.patient_id.includes('-') ? r.patient_id : null),
+                  patient_phone: linkedPatient.phone_number || r.vitals?.phone || null,
+                  patient_age: linkedPatient.age || null,
+                  patient_gender: linkedPatient.gender || null,
+                  patient_blood_group: linkedPatient.blood_group || null
+                };
+              }));
+            }
+          })
+          .catch(pErr => {
+            console.warn('[RadVault Doctor] Patient enrichment background error:', pErr.message);
+          });
       }
-
-      const enrichedRefs = combinedRefs.map(r => {
-        const linkedPatient = patientsMap[r.patient_id];
-        return {
-          ...r,
-          patient_unified_id: linkedPatient?.unified_id || (r.patient_id && !r.patient_id.includes('-') ? r.patient_id : null),
-          patient_phone: linkedPatient?.phone_number || r.vitals?.phone || null,
-          patient_age: linkedPatient?.age || null,
-          patient_gender: linkedPatient?.gender || null,
-          patient_blood_group: linkedPatient?.blood_group || null
-        };
-      });
-
-      setReferrals(enrichedRefs);
-
 
     } catch (err) {
       console.error('[RadVault Doctor] Fetch error:', err.message);
-      // Don't set a blocking error — let the teleconsult queue still be usable
       if (!doctorProfile) {
         setError(`Note: Could not load referral queue (${err.message.substring(0, 80)}). Teleconsultation Desk is still fully active.`);
       }
@@ -362,12 +341,13 @@ export default function DoctorWorkspace({
 
   const loadTeleQueue = useCallback(async () => {
     try {
-      const { data } = await getWaitingTeleconsultSessions();
+      const facilityFilter = doctorProfile?.facility_name || null;
+      const { data } = await getWaitingTeleconsultSessions(facilityFilter);
       setTeleQueue(data || []);
     } catch (err) {
       console.warn('[DoctorWorkspace] Failed to fetch teleconsult queue:', err);
     }
-  }, []);
+  }, [doctorProfile]);
 
   useEffect(() => {
     loadDoctorDbData(false);
@@ -601,8 +581,13 @@ export default function DoctorWorkspace({
   };
 
   const handleOpenCase = (ref) => {
-
-    setActiveCase(ref);
+    if (!ref || !ref.id) {
+      console.error('[RadVault Doctor] handleOpenCase invoked without valid referral:', ref);
+      setError('Cannot open clinical case: Invalid referral record.');
+      return;
+    }
+    setActiveCase({ ...ref, referralId: ref.id });
+    setEditingReferralId(ref.id);
     handleLoadDraft(ref.id);
     checkConsent(ref.patient_id);
     loadClinicalDocket(ref.patient_id, ref.patient_name);
@@ -610,29 +595,45 @@ export default function DoctorWorkspace({
 
   const handleCloseCase = () => {
     setActiveCase(null);
+    setEditingReferralId(null);
     setShowSignModal(false);
     setClinicalDocket(null);
     setAiSummary(null);
     setAllergyWarning(null);
+    setClinicalAssessment('');
+    setDiagnosis('');
+    setTreatmentAdvice('');
+    setPrescriptions([]);
+    setInvestigations([]);
+    setFollowUpDate('');
   };
 
-
   const handleStartConsultation = async () => {
-    if (!activeCase) return;
+    if (!activeCase?.id) return;
     try {
-      const { error: err } = await supabase
-        .from('referrals')
-        .update({ status: 'In Consultation' })
-        .eq('id', activeCase.id);
+      if (!isDemoMode) {
+        const isUuid = (val) => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+        if (!isUuid(activeCase.id)) {
+          throw new Error(`Referral ID "${activeCase.id}" is not a valid UUID.`);
+        }
+        const { data: updatedRef, error: startErr } = await supabase
+          .from('referrals')
+          .update({ status: 'In Consultation' })
+          .eq('id', activeCase.id)
+          .select('id, status')
+          .single();
 
-      if (err) throw err;
-
+        if (startErr) throw startErr;
+        if (!updatedRef || updatedRef.status !== 'In Consultation') {
+          throw new Error('Database status verification failed: Referral status is not In Consultation.');
+        }
+      }
       setActiveCase(prev => ({ ...prev, status: 'In Consultation' }));
       setReferrals(prev => prev.map(r => r.id === activeCase.id ? { ...r, status: 'In Consultation' } : r));
-      showToast('✓ Consultation started. Status updated to In Consultation.');
+      showToast('✓ Case marked: In Consultation');
     } catch (err) {
-      console.warn('Could not update status to In Consultation:', err.message);
-      setActiveCase(prev => ({ ...prev, status: 'In Consultation' }));
+      console.error('Could not update status to In Consultation:', err.message);
+      setError(`Failed to update status to In Consultation: ${err.message}`);
     }
   };
 
@@ -666,66 +667,117 @@ export default function DoctorWorkspace({
     setInvestigations(prev => prev.filter((_, i) => i !== index));
   };
 
+  // Finalize & Sign Consultation
   const handleSignConsultation = async () => {
-    if (!activeCase || !doctorProfile) return;
+    if (!activeCase || !doctorProfile) {
+      setError('Cannot sign consultation: Active case or doctor profile is missing.');
+      return;
+    }
 
-    const modeTag = consultationMode === 'TELECONSULTATION' ? '[Teleconsultation Signed]' : '[Hospital Visit Checked]';
-    const rxSummary = prescriptions.length > 0
-      ? `Rx: ${prescriptions.map(p => `${p.name} (${p.dose})`).join(', ')}`
-      : 'No Rx prescribed';
-    const formattedFollowUpReason = `${modeTag} Diagnosis: ${diagnosis || 'Consultation complete'}. Advice: ${treatmentAdvice || 'Review follow-up'}. ${rxSummary}`;
+    // STRICT IDENTITY CHECK: Ensure the referral being finalized matches the active case
+    if (!activeCase.id || activeCase.id !== editingReferralId) {
+      console.error(`[RadVault Doctor] Identity mismatch! activeCase: ${activeCase?.id} vs editingReferralId: ${editingReferralId}`);
+      setError(`Identity Mismatch: Attempted to finalize referral ${activeCase.id}, but active editing session is bound to ${editingReferralId}. Consultation blocked.`);
+      setShowSignModal(false);
+      return;
+    }
 
+    const isUuid = (val) => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+
+    if (!isDemoMode) {
+      if (!isUuid(activeCase.id)) {
+        setError(`Invalid referral UUID: "${activeCase.id}". Cannot sign consultation.`);
+        setShowSignModal(false);
+        return;
+      }
+      if (!isUuid(activeCase.patient_id)) {
+        setError(`Invalid patient UUID: "${activeCase.patient_id}". Cannot sign consultation.`);
+        setShowSignModal(false);
+        return;
+      }
+      if (!isUuid(doctorProfile.id)) {
+        setError(`Invalid doctor UUID: "${doctorProfile.id}". Cannot sign consultation.`);
+        setShowSignModal(false);
+        return;
+      }
+      if (!isUuid(doctorProfile.facility_id)) {
+        setError(`Invalid facility UUID: "${doctorProfile.facility_id}". Cannot sign consultation.`);
+        setShowSignModal(false);
+        return;
+      }
+    }
+
+    setIsSigning(true);
+    setError('');
+    
     try {
       const consultationPayload = {
         referral_id: activeCase.id,
         patient_id: activeCase.patient_id,
         doctor_id: doctorProfile.id,
         facility_id: doctorProfile.facility_id,
-        clinical_assessment: `[${consultationMode === 'TELECONSULTATION' ? 'REMOTE TELECONSULTATION' : 'IN-PERSON VISIT'}] ${clinicalAssessment}`,
-        diagnosis: diagnosis,
-        treatment_advice: treatmentAdvice,
+        clinical_assessment: `[${consultationMode === 'TELECONSULTATION' ? 'REMOTE TELECONSULTATION' : 'IN-PERSON VISIT'}] ${clinicalAssessment || 'Clinical evaluation completed.'}`,
+        diagnosis: diagnosis || 'Clinical Evaluation Completed',
+        treatment_advice: treatmentAdvice || 'Follow standard medical instructions.',
         prescriptions: prescriptions.map(p => ({ name: p.name, dose: p.dose, freq: p.freq, duration: p.duration })),
         investigations: investigations,
         follow_up_recommended_date: followUpDate || null
       };
 
-      // Upsert consultation — surface any real errors
-      const { error: consErr } = await supabase
-        .from('consultations')
-        .upsert([consultationPayload], { onConflict: 'referral_id' });
+      if (!isDemoMode) {
+        // Step 1: Upsert consultation record
+        const { error: consErr } = await supabase
+          .from('consultations')
+          .upsert([consultationPayload], { onConflict: 'referral_id' });
 
-      if (consErr) throw consErr;
+        if (consErr) throw new Error(`Consultation record insert failed: ${consErr.message}`);
 
-      // Mark referral as Completed
-      const { error: refErr } = await supabase
-        .from('referrals')
-        .update({ status: 'Completed' })
-        .eq('id', activeCase.id);
+        // Step 2: Strict verification of consultation persistence
+        const { data: verifiedCons, error: consVerifyErr } = await supabase
+          .from('consultations')
+          .select('id, referral_id, patient_id, doctor_id, facility_id')
+          .eq('referral_id', activeCase.id)
+          .single();
 
-      if (refErr) throw refErr;
+        if (consVerifyErr || !verifiedCons) {
+          throw new Error(`Consultation verification failed in database: ${consVerifyErr?.message || 'Row not found'}`);
+        }
 
-      // Sync care_request status to COMPLETED
-      try {
-        await supabase
-          .from('care_requests')
-          .update({
-            status: 'COMPLETED',
-            completed_at: new Date().toISOString()
-          })
-          .eq('patient_id', activeCase.patient_id);
-      } catch (e) {
-        console.warn('[RadVault Doctor] Care request sync skipped:', e.message);
+        if (
+          verifiedCons.referral_id !== activeCase.id ||
+          verifiedCons.patient_id !== activeCase.patient_id ||
+          verifiedCons.doctor_id !== doctorProfile.id ||
+          verifiedCons.facility_id !== doctorProfile.facility_id
+        ) {
+          throw new Error(`Consultation identity mismatch in database! Persisted: referral=${verifiedCons.referral_id}, patient=${verifiedCons.patient_id}, doctor=${verifiedCons.doctor_id}, facility=${verifiedCons.facility_id}`);
+        }
+
+        // Step 3: ONLY after verified consultation persistence: Update referrals status to 'Completed'
+        const { data: updatedRef, error: refErr } = await supabase
+          .from('referrals')
+          .update({ status: 'Completed' })
+          .eq('id', activeCase.id)
+          .select('id, status')
+          .single();
+
+        if (refErr) throw new Error(`Referral status update failed: ${refErr.message}`);
+
+        if (!updatedRef || updatedRef.status !== 'Completed') {
+          throw new Error('Verification failed: Referral status in database is not Completed.');
+        }
       }
 
       setReferrals(prev => prev.map(r => r.id === activeCase.id ? { ...r, status: 'Completed' } : r));
       localStorage.removeItem(getDraftKey(activeCase.id));
-      showToast(`✓ Consultation signed (${consultationMode === 'TELECONSULTATION' ? 'Teleconsultation' : 'In-Person'}). Follow-up note: "${formattedFollowUpReason.slice(0, 80)}..."`);
+      showToast(`✓ Consultation signed (${consultationMode === 'TELECONSULTATION' ? 'Teleconsultation' : 'In-Person'}). Follow-up note recorded.`);
       handleCloseCase();
 
     } catch (err) {
       console.error('[RadVault Doctor] Signing error:', err.message);
       setError(`Failed to sign consultation: ${err.message}`);
       setShowSignModal(false);
+    } finally {
+      setIsSigning(false);
     }
   };
 
@@ -775,15 +827,6 @@ export default function DoctorWorkspace({
         return pB - pA;
       })[0] || null;
   }, [referrals]);
-
-  if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3">
-        <Loader2 className="w-9 h-9 animate-spin text-[#7C3AED]" />
-        <p className="text-xs font-black text-slate-500 uppercase tracking-widest">Loading Clinical Specialist Workspace...</p>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-[#FAFCFB] pb-16 font-sans">
@@ -980,7 +1023,10 @@ export default function DoctorWorkspace({
                 </div>
 
                 {nextPatient ? (
-                  <div className="bg-slate-900 text-white rounded-3xl p-6 border border-slate-800 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-5">
+                  <div
+                    data-referral-id={nextPatient.id}
+                    className="bg-slate-900 text-white rounded-3xl p-6 border border-slate-800 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-5"
+                  >
                     <div className="space-y-2">
                       <div className="flex items-center gap-2">
                         <span className="text-[9px] uppercase font-black tracking-wider bg-[#7C3AED] text-purple-100 px-2.5 py-0.5 rounded-full border border-[#7C3AED]/50 animate-pulse">
@@ -1002,6 +1048,8 @@ export default function DoctorWorkspace({
                     </div>
 
                     <button
+                      data-referral-id={nextPatient.id}
+                      data-action="open-case"
                       onClick={() => handleOpenCase(nextPatient)}
                       className="px-6 py-3 bg-[#7C3AED] hover:bg-[#6D28D9] text-white font-black text-xs rounded-2xl shadow-lg transition-transform active:scale-95 flex items-center justify-center gap-2 cursor-pointer shrink-0"
                     >
@@ -1030,7 +1078,12 @@ export default function DoctorWorkspace({
                         const labelClass = isHigh ? 'bg-rose-50 text-rose-800 border-rose-200' : isUrgent ? 'bg-amber-50 text-amber-900 border-amber-200' : 'bg-slate-100 text-slate-700 border-slate-200';
 
                         return (
-                          <div key={ref.id} className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 first:pt-0 last:pb-0">
+                          <div
+                            key={ref.id}
+                            data-referral-id={ref.id}
+                            data-patient-name={ref.patient_name}
+                            className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 first:pt-0 last:pb-0"
+                          >
                             <div>
                               <div className="flex items-center gap-2 flex-wrap">
                                 <span className="font-extrabold text-sm text-slate-900">{ref.patient_name}</span>
@@ -1049,6 +1102,8 @@ export default function DoctorWorkspace({
                             <div className="flex items-center gap-2 shrink-0">
                               {ref.status !== 'Completed' ? (
                                 <button
+                                  data-referral-id={ref.id}
+                                  data-action="open-case"
                                   onClick={() => handleOpenCase(ref)}
                                   className="px-4 py-1.5 bg-[#7C3AED] hover:bg-[#6D28D9] text-white font-black text-xs rounded-xl transition-colors cursor-pointer flex items-center gap-1"
                                 >
@@ -1119,6 +1174,8 @@ export default function DoctorWorkspace({
                       return (
                         <div
                           key={ref.id}
+                          data-referral-id={ref.id}
+                          data-patient-name={ref.patient_name}
                           className="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs space-y-3 hover:border-slate-300 transition-colors"
                         >
                           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1173,6 +1230,8 @@ export default function DoctorWorkspace({
 
                             {ref.status !== 'Completed' ? (
                               <button
+                                data-referral-id={ref.id}
+                                data-action="open-case"
                                 onClick={() => handleOpenCase(ref)}
                                 className="px-4 py-2 bg-[#7C3AED] hover:bg-[#6D28D9] text-white font-black text-xs rounded-xl transition-colors cursor-pointer ml-auto flex items-center gap-1.5"
                               >
@@ -1357,8 +1416,17 @@ export default function DoctorWorkspace({
               </div>
             ) : clinicalDocket ? (
               <div className="space-y-3">
-                {/* Allergy Alert Banner */}
-                {clinicalDocket.allergies ? (
+                {/* Clinical Identity Resolution Banner */}
+                {clinicalDocket.resolved === false ? (
+                  <div className="bg-amber-50 border-l-4 border-amber-500 border border-amber-200 rounded-2xl p-3.5 flex items-start gap-3">
+                    <div className="w-7 h-7 rounded-lg bg-amber-100 flex items-center justify-center shrink-0 text-amber-700 font-black text-sm">⚠️</div>
+                    <div>
+                      <p className="text-[10px] font-black text-amber-800 uppercase tracking-wider">UNRESOLVED CLINICAL RECORD</p>
+                      <p className="text-xs font-bold text-amber-900 mt-0.5">{clinicalDocket.error || 'Patient UUID could not be resolved to a registered clinical profile.'}</p>
+                      <p className="text-[10px] text-amber-700 font-medium mt-0.5">Historical records, vitals, and allergy status are suppressed to prevent identity cross-contamination.</p>
+                    </div>
+                  </div>
+                ) : clinicalDocket.allergies ? (
                   <div className="bg-red-50 border-l-4 border-red-500 border border-red-200 rounded-2xl p-3.5 flex items-start gap-3">
                     <div className="w-7 h-7 rounded-lg bg-red-100 flex items-center justify-center shrink-0 text-red-700 font-black text-sm">⚠️</div>
                     <div>
@@ -1925,10 +1993,11 @@ export default function DoctorWorkspace({
 
               <button
                 type="button"
+                disabled={isSigning}
                 onClick={handleSignConsultation}
-                className="px-5 py-2.5 bg-[#7C3AED] hover:bg-[#6D28D9] text-white font-black text-xs rounded-xl shadow-xs cursor-pointer transition-colors"
+                className="px-5 py-2.5 bg-[#7C3AED] hover:bg-[#6D28D9] disabled:opacity-50 text-white font-black text-xs rounded-xl shadow-xs cursor-pointer transition-colors"
               >
-                Sign & Finalize
+                {isSigning ? 'Signing...' : 'Sign & Finalize'}
               </button>
             </div>
           </div>
@@ -2188,7 +2257,15 @@ export default function DoctorWorkspace({
 
                 {/* 2. Critical Safety Alert: Allergies */}
                 <div className="space-y-2">
-                  {clinicalDocket?.allergies ? (
+                  {clinicalDocket?.resolved === false ? (
+                    <div className="bg-amber-50 border border-amber-300 rounded-2xl p-3 flex items-start gap-2.5 shadow-xs">
+                      <div className="w-7 h-7 rounded-lg bg-amber-100 flex items-center justify-center shrink-0 text-amber-700 font-black text-xs">⚠️</div>
+                      <div>
+                        <p className="text-[10px] font-black text-amber-800 uppercase tracking-wider">UNRESOLVED CLINICAL RECORD</p>
+                        <p className="text-xs font-bold text-amber-900 mt-0.5">{clinicalDocket.error || 'Patient identity could not be verified in clinical database.'}</p>
+                      </div>
+                    </div>
+                  ) : clinicalDocket?.allergies ? (
                     <div className="bg-red-50 border-2 border-red-500 rounded-2xl p-3 flex items-start gap-2.5 shadow-xs">
                       <div className="w-7 h-7 rounded-lg bg-red-100 flex items-center justify-center shrink-0 text-red-700 font-black text-sm">⚠️</div>
                       <div>
