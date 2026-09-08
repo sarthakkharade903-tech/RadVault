@@ -544,7 +544,7 @@ export default function FollowUpTracker({ patients, onLogVisit, onEditPatient, d
 
     const combined = [...referral, ...docItems, ...routine];
 
-    if (combined.length === 0) return getDemoItems(t);
+    if (combined.length === 0) return demoMode ? getDemoItems(t) : [];
 
     // Enrich existing items with fallback fields
     const patientMap = new Map();
@@ -583,7 +583,7 @@ export default function FollowUpTracker({ patients, onLogVisit, onEditPatient, d
 
     enriched.sort((a, b) => a.urgencyDays - b.urgencyDays);
     return enriched;
-  }, [patients, careRequests, doctorFollowUps, lang]);
+  }, [patients, careRequests, doctorFollowUps, lang, demoMode]);
 
   const visibleItems = useMemo(() => {
     if (activeFilter === "done") return allItems.filter(it => completedSet.has(it.id));

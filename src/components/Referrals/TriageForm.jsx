@@ -161,13 +161,12 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
   const [aiResult, setAiResult] = useState(null);
 
   const DEFAULT_GOV_FACILITIES = [
-    { id: "PHC-000", name: "Primary Health Centre (PHC) - Shirwal", type: "PHC", dist: "1.8", typeLabel: "Primary Health Centre (PHC)", isGovernment: true },
-    { id: "f1111111-1111-1111-1111-111111111111", name: "Shrirampur Primary Health Centre", type: "PHC", dist: "3.2", typeLabel: "Primary Health Centre (PHC)", isGovernment: true },
-    { id: "CHC-002", name: "Rural Hospital - Khandala", type: "CHC", dist: "12.4", typeLabel: "Rural Hospital / CHC", isGovernment: true },
-    { id: "CHC-001", name: "Sub-District Hospital - Wai", type: "CHC", dist: "23.1", typeLabel: "Sub-District Hospital", isGovernment: true },
-    { id: "CHC-004", name: "Community Health Centre - Bhor", type: "CHC", dist: "26.5", typeLabel: "Community Health Centre", isGovernment: true },
-    { id: "DH-003", name: "Satara District Civil Hospital", type: "DH", dist: "48.2", typeLabel: "District Civil Hospital", isGovernment: true },
-    { id: "DH-002", name: "Sassoon General Government Hospital", type: "DH", dist: "49.5", typeLabel: "Govt Medical College Hospital", isGovernment: true }
+    { id: "f1111111-1111-1111-1111-111111111111", name: "Shrirampur Primary Health Centre", type: "PHC", dist: "2.4", typeLabel: "Primary Health Centre (PHC)", isGovernment: true },
+    { id: "f2222222-2222-2222-2222-222222222222", name: "Pune Sassoon General Hospital", type: "DH", dist: "38.5", typeLabel: "Govt Medical College Hospital", isGovernment: true },
+    { id: "f1111111-1111-1111-1111-111111111111", name: "Rural Hospital - Khandala", type: "CHC", dist: "12.4", typeLabel: "Rural Hospital / CHC", isGovernment: true },
+    { id: "f1111111-1111-1111-1111-111111111111", name: "Sub-District Hospital - Wai", type: "CHC", dist: "23.1", typeLabel: "Sub-District Hospital", isGovernment: true },
+    { id: "f1111111-1111-1111-1111-111111111111", name: "Community Health Centre - Bhor", type: "CHC", dist: "26.5", typeLabel: "Community Health Centre", isGovernment: true },
+    { id: "f2222222-2222-2222-2222-222222222222", name: "Satara District Civil Hospital", type: "DH", dist: "48.2", typeLabel: "District Civil Hospital", isGovernment: true }
   ];
 
   // Routing State
@@ -194,7 +193,9 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
       const hospitals = await fetchGovHospitals(coords.lat, coords.lon);
       if (hospitals && hospitals.length > 0) {
         setNearbyGovHospitals(hospitals);
-        setHospital(prev => (prev ? prev : hospitals[0].name));
+        if (demoMode) {
+          setHospital(prev => (prev ? prev : hospitals[0].name));
+        }
       }
       setGpsStatus(
         coords.isFallback
@@ -228,6 +229,7 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
           const defaultFac = data.find(f => f.name.toLowerCase().includes('shrirampur')) || data[0];
           if (defaultFac) {
             setSelectedFacility(defaultFac);
+            setHospital(defaultFac.name);
           }
         }
       } catch (e) {
@@ -397,6 +399,8 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
       : (facilitiesList.find(f => f.name.toLowerCase() === hospital.toLowerCase())?.id)
       || 'f1111111-1111-1111-1111-111111111111';
 
+    const chosenHospital = selectedFacility?.name || hospital || 'Shrirampur Primary Health Centre';
+
     const payload = {
       patient_id: patientId,
       patient_name: patientName,
@@ -406,8 +410,8 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
       phone: patient?.mobile || patient?.phone || '9876543210',
       source: 'ASHA_REFERRED',
       created_by: 'ASHA Worker (Priya Deshmukh)',
-      facility: hospital || 'Shrirampur Primary Health Centre',
-      destination_hospital: hospital || 'Shrirampur Primary Health Centre',
+      facility: chosenHospital,
+      destination_hospital: chosenHospital,
       destination_facility_id: destinationFacilityId,
       department: department || 'General Medicine',
       priority: finalPriority,
@@ -683,8 +687,22 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
               {/* Hospital Selection Cards */}
               <div className="max-h-60 overflow-y-auto space-y-1.5 pr-1 divide-y divide-slate-100">
                 {(() => {
-                  const list = (nearbyGovHospitals && nearbyGovHospitals.length > 0 ? nearbyGovHospitals : DEFAULT_GOV_FACILITIES)
-                    .filter(h => !hospSearch || h.name.toLowerCase().includes(hospSearch.toLowerCase()) || (h.typeLabel && h.typeLabel.toLowerCase().includes(hospSearch.toLowerCase())));
+                  const baseFacilities = (!demoMode && facilitiesList && facilitiesList.length > 0)
+                    ? facilitiesList.map(f => ({
+                        id: f.id,
+                        name: f.name,
+                        type: 'PHC',
+                        dist: f.name.toLowerCase().includes('shrirampur') ? '2.4' : '38.5',
+                        typeLabel: f.district ? `${f.district} District Facility` : 'Govt Hospital',
+                        isGovernment: true
+                      }))
+                    : (nearbyGovHospitals && nearbyGovHospitals.length > 0 ? nearbyGovHospitals : DEFAULT_GOV_FACILITIES);
+
+                  const list = baseFacilities.filter(h =>
+                    !hospSearch ||
+                    h.name.toLowerCase().includes(hospSearch.toLowerCase()) ||
+                    (h.typeLabel && h.typeLabel.toLowerCase().includes(hospSearch.toLowerCase()))
+                  );
 
                   if (list.length === 0) {
                     return (
@@ -708,7 +726,8 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
                         key={h.id || idx}
                         onClick={() => {
                           setHospital(h.name);
-                          const matched = facilitiesList.find(f => f.name.toLowerCase() === h.name.toLowerCase());
+                          const matched = facilitiesList.find(f => f.name.toLowerCase() === h.name.toLowerCase()) ||
+                                          facilitiesList.find(f => f.id === h.id);
                           if (matched) setSelectedFacility(matched);
                           else setSelectedFacility(h);
                         }}

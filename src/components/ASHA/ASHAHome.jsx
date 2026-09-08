@@ -362,15 +362,15 @@ export default function ASHAHome({
                   <div className="grid grid-cols-3 gap-2 mt-4 pt-3 border-t border-slate-100">
                     <div className="text-center">
                       <span className="text-[10px] font-bold text-slate-400 uppercase block">{t.totalPopulation}</span>
-                      <span className="text-sm font-black text-slate-800">{patients.length || 1240}</span>
+                      <span className="text-sm font-black text-slate-800">{demoMode ? (patients.length || 1240) : patients.length}</span>
                     </div>
                     <div className="text-center">
                       <span className="text-[10px] font-bold text-slate-400 uppercase block">{t.maternalCount}</span>
-                      <span className="text-sm font-black text-rose-600">{stats.pregnant || 18}</span>
+                      <span className="text-sm font-black text-rose-600">{demoMode ? (stats.pregnant || 18) : (stats.pregnant || 0)}</span>
                     </div>
                     <div className="text-center">
                       <span className="text-[10px] font-bold text-slate-400 uppercase block">{t.highRiskCount}</span>
-                      <span className="text-sm font-black text-red-600">{stats.highRisk || 4} ⚠️</span>
+                      <span className="text-sm font-black text-red-600">{demoMode ? (stats.highRisk || 4) : (stats.highRisk || 0)} {stats.highRisk > 0 ? '⚠️' : ''}</span>
                     </div>
                   </div>
 
