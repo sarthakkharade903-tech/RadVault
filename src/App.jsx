@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from "react";
-import { HeartPulse, Leaf, Users, Building2, ArrowRight, Stethoscope, Database, Sparkles } from "lucide-react";
+import { HeartPulse, Leaf, Users, Building2, ArrowRight, Stethoscope, Database, Sparkles, Siren } from "lucide-react";
 import ASHAPortal from "./components/ASHA/ASHAPortal";
 import PatientLogin from "./components/Patient/PatientLogin";
 import FamilyDashboard from "./components/Patient/FamilyDashboard";
+import EmergencySOSModal from "./components/Patient/EmergencySOSModal";
 import illusAsha from "./assets/illus_asha.jpg";
 import illusFamily from "./assets/illus_family.jpg";
 import illusHospital from "./assets/illus_hospital.jpg";
@@ -70,7 +71,7 @@ const PORTALS = [
   },
 ];
 
-function LandingPage({ onSelectPortal }) {
+function LandingPage({ onSelectPortal, onOpenEmergencySOS }) {
   const [hoveredPortal, setHoveredPortal] = useState("asha");
   const activePortal = PORTALS.find(p => p.key === hoveredPortal) || PORTALS[0];
 
@@ -149,6 +150,35 @@ function LandingPage({ onSelectPortal }) {
                 );
               })}
             </div>
+
+            {/* ── Public 24x7 Emergency SOS Banner (No Login Required) ── */}
+            <div className="mt-4 p-4 rounded-2xl bg-gradient-to-r from-red-600 via-rose-600 to-red-700 text-white shadow-lg border border-red-500/50 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3.5">
+                <div className="w-11 h-11 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-xl shrink-0">
+                  🚨
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-black uppercase tracking-widest bg-white/25 px-2 py-0.5 rounded-full">
+                      24x7 Direct Dispatch
+                    </span>
+                    <span className="text-[10px] font-bold text-red-100">No Login Required</span>
+                  </div>
+                  <h3 className="text-sm font-black leading-snug mt-0.5">Acute Medical Emergency SOS</h3>
+                  <p className="text-[11px] text-red-100 font-medium leading-tight">
+                    Instant 108 Ambulance, ASHA escort & PHC casualty alert
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={onOpenEmergencySOS}
+                type="button"
+                className="px-4 py-2.5 bg-white hover:bg-red-50 text-red-700 font-black text-xs rounded-xl shadow-md transition-transform active:scale-95 cursor-pointer shrink-0 flex items-center gap-1.5"
+              >
+                <span>Trigger SOS</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
 
           {/* â”€â”€ RIGHT: Real Illustration â”€â”€ */}
@@ -216,11 +246,30 @@ function App() {
     return localStorage.getItem("radvault_portal") || "home";
   });
   const [familyAuthData, setFamilyAuthData] = useState(() => {
+    if (typeof window !== "undefined") {
+      const p = new URLSearchParams(window.location.search).get("family");
+      if (p === "demo") {
+        return {
+          family: { id: "f1111111-1111-1111-1111-111111111111", head_name: "Prakash Patil", village: "Shirwal" },
+          members: [
+            { id: "p1111111-1111-1111-1111-111111111111", name: "Prakash Patil", age: 48, gender: "Male", blood_group: "B+", phone: "9822110022" },
+            { id: "p2222222-2222-2222-2222-222222222222", name: "Sunita Patil", age: 44, gender: "Female", blood_group: "O+", phone: "9822110023" }
+          ]
+        };
+      }
+    }
     const saved = localStorage.getItem("radvault_family_auth");
     return saved ? JSON.parse(saved) : null;
   });
   const [demoMode, setDemoMode] = useState(() => {
     return localStorage.getItem("radvault_demo_mode") === "true";
+  });
+  const [showEmergencySOS, setShowEmergencySOS] = useState(() => {
+    if (typeof window !== "undefined") {
+      const q = new URLSearchParams(window.location.search).get("sos");
+      if (q === "1" || q === "true") return true;
+    }
+    return false;
   });
 
   useEffect(() => {
@@ -272,6 +321,15 @@ function App() {
 
         <div className="flex items-center gap-3 mt-1 sm:mt-0">
           <button
+            onClick={() => setShowEmergencySOS(true)}
+            className="px-3 py-1 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white rounded-full font-black text-[11px] flex items-center gap-1.5 shadow-md shadow-red-900/30 transition-all active:scale-95 cursor-pointer"
+            title="Open 24x7 Emergency SOS Modal"
+          >
+            <Siren className="w-3.5 h-3.5 animate-bounce" />
+            <span>🚨 24x7 Emergency SOS</span>
+          </button>
+
+          <button
             onClick={() => setDemoMode(prev => !prev)}
             className={`px-3 py-1 rounded-full font-bold text-[11px] transition-all flex items-center gap-1.5 cursor-pointer border ${
               demoMode
@@ -302,7 +360,13 @@ function App() {
           !familyAuthData ? (
             <PatientLogin onLoggedIn={setFamilyAuthData} onBack={goHome} />
           ) : (
-            <FamilyDashboard family={familyAuthData.family} members={familyAuthData.members} onLogout={() => setFamilyAuthData(null)} onBack={goHome} />
+            <FamilyDashboard
+              family={familyAuthData.family}
+              members={familyAuthData.members}
+              onLogout={() => setFamilyAuthData(null)}
+              onBack={goHome}
+              onOpenEmergencySOS={() => setShowEmergencySOS(true)}
+            />
           )
         )}
         {activePortal === "reception" && (
@@ -322,9 +386,16 @@ function App() {
           />
         )}
         {activePortal === "home" && (
-          <LandingPage onSelectPortal={setActivePortal} />
+          <LandingPage
+            onSelectPortal={setActivePortal}
+            onOpenEmergencySOS={() => setShowEmergencySOS(true)}
+          />
         )}
       </div>
+
+      {showEmergencySOS && (
+        <EmergencySOSModal onClose={() => setShowEmergencySOS(false)} />
+      )}
     </div>
   );
 }

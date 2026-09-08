@@ -71,9 +71,47 @@ export default function PatientLogin({ onLoggedIn, onBack }) {
                 </div>
               </div>
               <button type="submit" disabled={loading}
-                className="w-full bg-teal-600 hover:bg-teal-700 disabled:bg-teal-400 text-white font-bold py-3.5 rounded-xl shadow-md flex items-center justify-center gap-2 transition-all mt-2">
+                className="w-full bg-teal-600 hover:bg-teal-700 disabled:bg-teal-400 text-white font-bold py-3.5 rounded-xl shadow-md flex items-center justify-center gap-2 transition-all mt-2 cursor-pointer">
                 {loading && <Loader2 className="w-4 h-4 animate-spin" />}
                 {loading ? "Signing in..." : "Sign In to Family Portal"}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const demoAuth = {
+                    family: {
+                      id: "f1111111-1111-1111-1111-111111111111",
+                      head_name: "Prakash Patil",
+                      village: "Shirwal",
+                      family_email: "patil.family@gmail.com"
+                    },
+                    members: [
+                      {
+                        id: "p1111111-1111-1111-1111-111111111111",
+                        name: "Prakash Patil",
+                        age: 48,
+                        gender: "Male",
+                        blood_group: "B+",
+                        phone: "9822110022",
+                        village: "Shirwal"
+                      },
+                      {
+                        id: "p2222222-2222-2222-2222-222222222222",
+                        name: "Sunita Patil",
+                        age: 44,
+                        gender: "Female",
+                        blood_group: "O+",
+                        phone: "9822110023",
+                        village: "Shirwal"
+                      }
+                    ]
+                  };
+                  if (onLoggedIn) onLoggedIn(demoAuth);
+                }}
+                className="w-full bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 font-bold py-2.5 rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer mt-2"
+              >
+                <span>⚡ Quick Demo Family Login</span>
               </button>
             </form>
           </div>
