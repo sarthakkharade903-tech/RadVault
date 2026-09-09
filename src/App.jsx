@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { HeartPulse, Leaf, Users, Building2, ArrowRight, Stethoscope, Database, Sparkles, Siren } from "lucide-react";
+import { HeartPulse, Leaf, Users, Building2, ArrowRight, Stethoscope, Database, Sparkles } from "lucide-react";
 import ASHAPortal from "./components/ASHA/ASHAPortal";
 import PatientLogin from "./components/Patient/PatientLogin";
 import FamilyDashboard from "./components/Patient/FamilyDashboard";
@@ -152,34 +152,36 @@ function LandingPage({ onSelectPortal, onOpenEmergencySOS }) {
               })}
             </div>
 
-            {/* ── Public 24x7 Emergency SOS Banner (No Login Required) ── */}
-            <div className="mt-4 p-4 rounded-2xl bg-gradient-to-r from-red-600 via-rose-600 to-red-700 text-white shadow-lg border border-red-500/50 flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3.5">
-                <div className="w-11 h-11 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-xl shrink-0">
-                  🚨
+            {/* ── Public 24x7 Emergency SOS Lifeline Strip (Subtle & Space-Efficient) ── */}
+            <button
+              onClick={onOpenEmergencySOS}
+              type="button"
+              className="mt-3.5 w-full group p-2.5 sm:p-3 rounded-2xl bg-rose-50/80 hover:bg-rose-100/90 border border-rose-200/80 hover:border-rose-300 transition-all duration-300 flex items-center justify-between gap-3 text-left cursor-pointer shadow-2xs"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-7 h-7 rounded-xl bg-rose-500/15 border border-rose-500/20 text-rose-600 flex items-center justify-center shrink-0">
+                  <span className="w-2 h-2 rounded-full bg-rose-600 animate-pulse" />
                 </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-black uppercase tracking-widest bg-white/25 px-2 py-0.5 rounded-full">
-                      24x7 Direct Dispatch
-                    </span>
-                    <span className="text-[10px] font-bold text-red-100">No Login Required</span>
-                  </div>
-                  <h3 className="text-sm font-black leading-snug mt-0.5">Acute Medical Emergency SOS</h3>
-                  <p className="text-[11px] text-red-100 font-medium leading-tight">
-                    Instant 108 Ambulance, ASHA escort & PHC casualty alert
-                  </p>
+                <div className="min-w-0 flex items-center gap-2">
+                  <span className="font-extrabold text-[12px] tracking-tight text-rose-950 shrink-0">
+                    24x7 Emergency SOS
+                  </span>
+                  <span className="text-rose-300 hidden sm:inline">•</span>
+                  <span className="text-[11px] font-medium text-rose-700 truncate hidden sm:inline">
+                    108 Ambulance & PHC Dispatch
+                  </span>
                 </div>
               </div>
-              <button
-                onClick={onOpenEmergencySOS}
-                type="button"
-                className="px-4 py-2.5 bg-white hover:bg-red-50 text-red-700 font-black text-xs rounded-xl shadow-md transition-transform active:scale-95 cursor-pointer shrink-0 flex items-center gap-1.5"
-              >
-                <span>Trigger SOS</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
+
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="text-[10px] font-black uppercase tracking-wider text-rose-700 bg-white/80 group-hover:bg-rose-600 group-hover:text-white px-2 py-0.5 rounded-lg border border-rose-200/60 transition-colors">
+                  No Login
+                </span>
+                <div className="w-5 h-5 rounded-full flex items-center justify-center text-rose-600 group-hover:translate-x-0.5 transition-transform">
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </div>
+              </div>
+            </button>
           </div>
 
           {/* â”€â”€ RIGHT: Real Illustration â”€â”€ */}
@@ -323,11 +325,11 @@ function App() {
         <div className="flex items-center gap-3 mt-1 sm:mt-0">
           <button
             onClick={() => setShowEmergencySOS(true)}
-            className="px-3 py-1 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white rounded-full font-black text-[11px] flex items-center gap-1.5 shadow-md shadow-red-900/30 transition-all active:scale-95 cursor-pointer"
-            title="Open 24x7 Emergency SOS Modal"
+            className="px-3 py-1 bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 hover:text-rose-200 border border-rose-500/40 rounded-full font-bold text-[11px] flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer shadow-xs"
+            title="Open 24x7 Emergency SOS"
           >
-            <Siren className="w-3.5 h-3.5 animate-bounce" />
-            <span>🚨 24x7 Emergency SOS</span>
+            <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+            <span className="tracking-wide font-extrabold">24x7 Emergency SOS</span>
           </button>
 
           <button
