@@ -325,32 +325,28 @@ export async function saveVitalsReading(payload) {
 export async function getCareRequests(patientId, patientName = null) {
   let combined = [];
 
-  // 1. Primary query care_requests by patient_id
+  // Parallelize independent read-only queries for care_requests and referrals
   try {
-    const { data: byId } = await supabase
-      .from('care_requests')
-      .select('*')
-      .eq('patient_id', patientId)
-      .order('created_at', { ascending: false });
+    const [careRes, refRes] = await Promise.all([
+      supabase
+        .from('care_requests')
+        .select('*')
+        .eq('patient_id', patientId)
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('referrals')
+        .select('*')
+        .eq('patient_id', patientId)
+        .order('created_at', { ascending: false })
+    ]);
 
-    if (byId && byId.length > 0) {
-      combined.push(...byId);
+    if (careRes.data && careRes.data.length > 0) {
+      combined.push(...careRes.data);
     }
-  } catch (err) {
-    console.warn('[ashaService] care_requests fetch notice:', err.message);
-  }
 
-  // 2. Also check referrals table for any records created directly there
-  try {
-    const { data: refData } = await supabase
-      .from('referrals')
-      .select('*')
-      .eq('patient_id', patientId)
-      .order('created_at', { ascending: false });
-
-    if (refData && refData.length > 0) {
+    if (refRes.data && refRes.data.length > 0) {
       const existingIds = new Set(combined.map(c => c.id));
-      for (const r of refData) {
+      for (const r of refRes.data) {
         if (!existingIds.has(r.id)) {
           combined.push({
             id: r.id,
@@ -371,10 +367,13 @@ export async function getCareRequests(patientId, patientName = null) {
         }
       }
     }
-  } catch (_) {}
+  } catch (err) {
+    console.warn('[ashaService] care_requests fetch notice:', err.message);
+  }
 
   return { data: combined, error: null };
 }
+
 
 
 // Concurrency guard to prevent duplicate rapid dispatches for same patient & facility
@@ -975,19 +974,35 @@ export async function getDoctorFollowUps() {
  */
 export async function completeFollowUp(encounterOrConsultId, resolutionNote = '') {
   try {
-    await supabase
+    const { data, error } = await supabase
       .from('encounters')
       .update({
         follow_up_completed: true,
         follow_up_completed_at: new Date().toISOString(),
         follow_up_resolution_note: resolutionNote || 'Home visit completed by ASHA worker'
       })
-      .eq('id', encounterOrConsultId);
+      .eq('id', encounterOrConsultId)
+      .select('id');
+
+    if (error) {
+      console.warn('[ashaService] completeFollowUp encounter update error:', error.message);
+      return { success: false, error, persisted: false };
+    }
+
+    if (!data || data.length === 0) {
+      console.warn('[ashaService] Durable follow-up completion state is not supported by the current schema for consultations without an encounter record.');
+      return {
+        success: false,
+        error: new Error('Durable follow-up completion state is not supported by the current schema.'),
+        persisted: false
+      };
+    }
+
+    return { success: true, error: null, persisted: true };
   } catch (e) {
     console.warn('[ashaService] completeFollowUp encounter update skipped:', e);
+    return { success: false, error: e, persisted: false };
   }
-
-  return { success: true, error: null };
 }
 
 // ── Teleconsult Sessions ─────────────────────────────────────────────────────

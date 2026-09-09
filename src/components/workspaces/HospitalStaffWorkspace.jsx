@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Inbox,
   AlertTriangle,
@@ -23,30 +23,25 @@ import {
   Volume2,
   VolumeX,
   MapPin,
-  Navigation,
-  Send,
   UserCheck
 } from 'lucide-react';
 import { supabase, ensureRoleAuth } from '../../services/supabase';
 import { assignStaffTokenAndSlot } from '../../services/ashaService';
 import {
-  getActiveEmergencySOS,
   updateEmergencyDispatch,
-  parseEmergencyRecord,
-  EMERGENCY_CATEGORIES
+  parseEmergencyRecord
 } from '../../services/emergencyService';
-
 
 // Canonical Referral Status constants
 const REFERRAL_STATUS = {
   PENDING: 'Pending',
   ACCEPTED: 'Accepted',
   ARRIVED: 'Arrived',
+  ASSIGNED: 'Assigned',
   IN_CONSULTATION: 'In Consultation',
   COMPLETED: 'Completed',
   CANCELLED: 'Cancelled'
 };
-
 
 // Initial Demo/Mock Data for standalone testing in Demo Mode
 const DEMO_DOCTORS = [
@@ -200,18 +195,305 @@ const DEMO_EMERGENCY_SOS = [
   }
 ];
 
-export default function HospitalStaffWorkspace({ 
+// Helper: Operational elapsed time formatting
+const getWaitDuration = (isoString) => {
+  if (!isoString) return null;
+  const diffMs = Date.now() - new Date(isoString).getTime();
+  if (isNaN(diffMs) || diffMs < 0) return 'Just now';
+  const mins = Math.floor(diffMs / (1000 * 60));
+  if (mins < 60) return `${mins} min${mins === 1 ? '' : 's'}`;
+  const hrs = Math.floor(mins / 60);
+  return `${hrs} hr${hrs === 1 ? '' : 's'} ${mins % 60}m`;
+};
+
+// ─── REFERRAL CARD: CARE-HANDOFF FIRST / ONE DOMINANT ACTION ───
+function ReferralActionCard({
+  refItem,
+  onSelect,
+  onAccept,
+  onMarkArrived,
+  onRouteDoctor,
+  onOpenToken,
+  getReferralOrigin
+}) {
+  const origin = getReferralOrigin(refItem);
+  const dangerSigns = Array.isArray(refItem.danger_signs)
+    ? refItem.danger_signs
+    : (typeof refItem.danger_signs === 'string' && refItem.danger_signs.trim())
+    ? [refItem.danger_signs]
+    : [];
+
+  const vitals = refItem.vitals || {};
+  const status = refItem.status;
+
+  // Truthful operational status configuration
+  const statusConfig = {
+    Pending: {
+      label: 'Referral Received',
+      pillClass: 'bg-amber-50 text-amber-900 border-amber-300'
+    },
+    Accepted: {
+      label: 'Referral Accepted',
+      pillClass: 'bg-sky-50 text-sky-900 border-sky-300'
+    },
+    Arrived: {
+      label: 'Patient Arrived',
+      pillClass: 'bg-teal-50 text-teal-900 border-teal-300'
+    },
+    Assigned: {
+      label: refItem.doctor_assigned
+        ? `Waiting for ${refItem.doctor_assigned.startsWith('Dr.') ? refItem.doctor_assigned : 'Dr. ' + refItem.doctor_assigned}`
+        : 'Clinician Assigned',
+      pillClass: 'bg-indigo-50 text-indigo-900 border-indigo-300'
+    },
+    'In Consultation': {
+      label: refItem.doctor_assigned
+        ? `In Consultation with ${refItem.doctor_assigned.startsWith('Dr.') ? refItem.doctor_assigned : 'Dr. ' + refItem.doctor_assigned}`
+        : 'In Consultation',
+      pillClass: 'bg-purple-50 text-purple-900 border-purple-300'
+    },
+    Completed: {
+      label: 'Consultation Completed',
+      pillClass: 'bg-emerald-50 text-emerald-900 border-emerald-300'
+    },
+    Cancelled: {
+      label: 'Referral Cancelled',
+      pillClass: 'bg-slate-100 text-slate-700 border-slate-300'
+    }
+  };
+
+  const currentStatus = statusConfig[status] || {
+    label: status,
+    pillClass: 'bg-slate-100 text-slate-700 border-slate-300'
+  };
+
+  const hasAssignedToken = refItem.slot_preference?.includes('Token') || refItem.ai_note?.includes('TOKEN:');
+  const tokenDisplay = refItem.slot_preference || (refItem.ai_note?.match(/TOKEN:\s*([^|]+)/i)?.[1]?.trim() ? `Token #${refItem.ai_note.match(/TOKEN:\s*([^|]+)/i)[1].trim()}` : null);
+
+  const hasVitals = vitals.bp || vitals.pulse || vitals.spo2 || vitals.temp || vitals.respRate || vitals.weight;
+
+  return (
+    <div
+      data-referral-id={refItem.id}
+      data-patient-name={refItem.patient_name}
+      onClick={() => onSelect(refItem)}
+      className="bg-white border border-slate-200/90 rounded-2xl p-4 sm:p-5 shadow-2xs hover:border-[#008080]/60 hover:shadow-md transition-all cursor-pointer group space-y-3.5"
+    >
+      {/* ── LEVEL 1: IMMEDIATE (Identity + State + Dominant Action) ── */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2.5 border-b border-slate-100">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-black text-sm sm:text-base text-slate-900 group-hover:text-[#008080] transition-colors flex items-center gap-1.5">
+            <FileText className="w-4 h-4 text-[#008080] shrink-0" />
+            <span>{refItem.patient_name}</span>
+          </span>
+
+          <span className="font-mono text-xs text-slate-600 bg-slate-100 px-2 py-0.5 rounded font-bold">
+            {refItem.patient_unified_id ? `ID: ${refItem.patient_unified_id}` : (refItem.patient_id ? `ID: ${refItem.patient_id.slice(0, 8)}` : 'ID: Pending')}
+          </span>
+
+          {/* Referral Origin Badge */}
+          <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border flex items-center gap-1 ${origin.badge}`}>
+            <span>{origin.icon}</span>
+            <span>{origin.label}</span>
+          </span>
+
+          {/* Authoritative Priority Badge */}
+          {refItem.priority && (
+            <span className={`text-[10px] font-black px-2 py-0.5 rounded border ${
+              refItem.priority === 'HIGH' || refItem.priority === 'RED'
+                ? 'bg-rose-50 text-rose-800 border-rose-200'
+                : refItem.priority === 'ORANGE'
+                ? 'bg-amber-50 text-amber-900 border-amber-200'
+                : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+            }`}>
+              {refItem.priority_label || refItem.priority}
+            </span>
+          )}
+
+          {/* ASHA Escort Indicator */}
+          {(refItem.symptoms?.includes('ASHA ACCOMPANYING') || refItem.clinical_summary?.includes('ASHA ACCOMPANYING')) && (
+            <span className="text-[10px] font-black px-2 py-0.5 rounded bg-rose-100 text-rose-800 border border-rose-200 flex items-center gap-1">
+              🤰 ASHA Escort
+            </span>
+          )}
+        </div>
+
+        {/* Operational Status Pill */}
+        <div className="flex items-center gap-2 shrink-0">
+          <span className={`text-xs font-black px-3 py-1 rounded-full border shadow-2xs ${currentStatus.pillClass}`}>
+            {currentStatus.label}
+          </span>
+        </div>
+      </div>
+
+      {/* ── LEVEL 2: IMPORTANT CLINICAL & HANDOFF CONTEXT ── */}
+      <div className="space-y-2 text-xs">
+        {/* Chief Complaint / Symptoms */}
+        <div className="text-slate-700 font-medium leading-relaxed">
+          <span className="font-bold text-slate-900">Chief Complaint:</span> {refItem.symptoms || 'Referral intake encounter'}
+        </div>
+
+        {/* Recorded Danger Signs */}
+        {dangerSigns.length > 0 && (
+          <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-900 text-xs font-bold flex items-start gap-2">
+            <ShieldAlert className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+            <div>
+              <span className="font-black uppercase text-[10px] text-rose-700 block tracking-wider">Recorded Danger Signs:</span>
+              <span>{dangerSigns.join(', ')}</span>
+            </div>
+          </div>
+        )}
+
+        {/* Frontline Measured Vitals: Data Availability Indicator (Full vitals in Details) */}
+        {hasVitals && (
+          <div className="pt-0.5">
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-600 bg-slate-100/90 border border-slate-200/80 px-2.5 py-1 rounded-md">
+              <Activity className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <span>Frontline vitals recorded</span>
+            </span>
+          </div>
+        )}
+
+        {/* Care Handoff Trajectory & Origin */}
+        <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500 pt-1">
+          <span className="font-medium text-slate-600">
+            From: <strong className="text-slate-800">{origin.label}</strong>{refItem.created_by ? ` · ${refItem.created_by}` : ''}
+          </span>
+
+          {tokenDisplay && (
+            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[#008F83] bg-[#E8F7F3] border border-[#008F83]/30 px-2.5 py-0.5 rounded-md font-mono shadow-2xs">
+              <Ticket className="w-3 h-3" />
+              <span>{tokenDisplay}</span>
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* ── LEVEL 3: ACTION BAR (>= 44px Touch Targets) ── */}
+      <div
+        className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="text-[11px] text-slate-400 font-medium">
+          {refItem.destination_department && (
+            <span>Dept: <strong className="text-slate-600">{refItem.destination_department}</strong></span>
+          )}
+        </div>
+
+        {/* Action Cluster: ONE DOMINANT ACTION + Secondary Actions */}
+        <div className="flex items-center gap-2.5 ml-auto shrink-0 flex-wrap">
+          {/* Secondary Action: View Details / Case File (>= 44px touch height) */}
+          <button
+            type="button"
+            data-referral-id={refItem.id}
+            data-action="view-case"
+            onClick={() => onSelect(refItem)}
+            className="min-h-[44px] px-4 py-2 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl transition-colors cursor-pointer inline-flex items-center justify-center gap-1.5 active:scale-95"
+            title="Open Clinical Case Details"
+          >
+            <FileText className="w-4 h-4 text-slate-500" />
+            <span>{status === 'Completed' ? 'View Case File' : 'Details'}</span>
+          </button>
+
+          {/* Secondary Action: Assign Token (>= 44px touch height) */}
+          {(status === 'Accepted' || status === 'Pending') && (
+            <button
+              type="button"
+              data-referral-id={refItem.id}
+              data-action="assign-token"
+              onClick={() => onOpenToken(refItem)}
+              className="min-h-[44px] px-4 py-2 text-xs font-bold text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-xl transition-colors cursor-pointer inline-flex items-center justify-center gap-1.5 shadow-2xs active:scale-95"
+              title="Assign or Edit OPD Token & Arrival Slot"
+            >
+              <Ticket className="w-4 h-4 text-amber-700" />
+              <span>{hasAssignedToken ? 'Edit Token' : 'Assign Token'}</span>
+            </button>
+          )}
+
+          {/* ─── DOMINANT PRIMARY NEXT-STEP ACTION (>= 44px Touch Height) ─── */}
+          {status === 'Pending' && (
+            <button
+              type="button"
+              data-referral-id={refItem.id}
+              data-action="accept-referral"
+              onClick={() => onAccept(refItem.id)}
+              className="min-h-[44px] px-6 py-2.5 bg-[#008080] hover:bg-[#006666] text-white font-black text-xs rounded-xl shadow-sm transition-all inline-flex items-center justify-center gap-2 cursor-pointer active:scale-95"
+            >
+              <CheckCircle2 className="w-4 h-4" />
+              <span>Accept Referral</span>
+            </button>
+          )}
+
+          {status === 'Accepted' && (
+            <button
+              type="button"
+              data-referral-id={refItem.id}
+              data-action="mark-arrived"
+              onClick={() => onMarkArrived(refItem.id)}
+              className="min-h-[44px] px-6 py-2.5 bg-[#008080] hover:bg-[#006666] text-white font-black text-xs rounded-xl shadow-sm transition-all inline-flex items-center justify-center gap-2 cursor-pointer active:scale-95"
+            >
+              <UserCheck className="w-4 h-4" />
+              <span>Mark Patient Arrived</span>
+            </button>
+          )}
+
+          {status === 'Arrived' && (
+            <button
+              type="button"
+              data-referral-id={refItem.id}
+              data-action="send-to-doctor"
+              onClick={() => onRouteDoctor(refItem)}
+              className="min-h-[44px] px-6 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-black text-xs rounded-xl shadow-sm transition-all inline-flex items-center justify-center gap-2 cursor-pointer active:scale-95"
+            >
+              <Stethoscope className="w-4 h-4" />
+              <span>Assign Doctor</span>
+            </button>
+          )}
+
+          {status === 'Assigned' && (
+            <button
+              type="button"
+              data-referral-id={refItem.id}
+              data-action="reassign-doctor"
+              onClick={() => onRouteDoctor(refItem)}
+              className="min-h-[44px] px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold text-xs rounded-xl transition-colors cursor-pointer inline-flex items-center justify-center gap-1.5 active:scale-95"
+            >
+              <Stethoscope className="w-4 h-4 text-indigo-600" />
+              <span>Reassign Doctor</span>
+            </button>
+          )}
+
+          {status === 'In Consultation' && (
+            <span className="min-h-[44px] px-4 py-2 text-xs font-bold text-purple-900 bg-purple-50 border border-purple-200 rounded-xl inline-flex items-center gap-1.5">
+              <Stethoscope className="w-4 h-4 text-purple-600" />
+              <span>With {refItem.doctor_assigned ? (refItem.doctor_assigned.startsWith('Dr.') ? refItem.doctor_assigned : 'Dr. ' + refItem.doctor_assigned) : 'Clinician'}</span>
+            </span>
+          )}
+
+          {status === 'Completed' && (
+            <span className="min-h-[44px] px-4 py-2 text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl inline-flex items-center gap-1.5">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+              <span>Encounter Closed</span>
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function HospitalStaffWorkspace({
   isDemoMode = false,
   demoDataEnabled = true,
   onBack,
   goHome,
-  onNavigateToPatientView: _onNavigateToPatientView 
+  onNavigateToPatientView: _onNavigateToPatientView
 }) {
   const handleBack = onBack || goHome;
-  
+
   // Navigation Tabs: 'home' | 'queue' | 'referrals' | 'emergency'
   const [activeTab, setActiveTab] = useState('home');
-  const [queueFilter, setQueueFilter] = useState('ALL'); // 'ALL' | 'Pending' | 'Accepted_Arrived' | 'Completed'
+  const [queueFilter, setQueueFilter] = useState('ALL'); // 'ALL' | 'Pending' | 'Accepted_Arrived' | 'In_Consultation' | 'Completed'
   const [sourceFilter, setSourceFilter] = useState('ALL'); // 'ALL' | 'ASHA' | 'PATIENT_DIRECT' | 'TELECONSULT'
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -333,7 +615,6 @@ export default function HospitalStaffWorkspace({
     }
   };
 
-
   // Fetch real data from Supabase
   const loadSupabaseData = useCallback(async (isSilent = false) => {
     if (!isSilent) setLoading(true);
@@ -450,9 +731,9 @@ export default function HospitalStaffWorkspace({
         ? (demoDataEnabled ? INITIAL_DEMO_REFERRALS : [])
         : (refData || []);
 
-      // 5. Enrich referrals with patients' human-readable unified_id (MH-P-xxxxx)
+      // 6. Enrich referrals with patients' human-readable unified_id (MH-P-xxxxx)
       const patientIds = Array.from(new Set(combinedRefs.map(r => r.patient_id).filter(Boolean)));
-      
+
       let patientsMap = {};
       if (patientIds.length > 0) {
         try {
@@ -484,7 +765,26 @@ export default function HospitalStaffWorkspace({
         };
       });
 
-      setReferrals(enrichedRefs);
+      setReferrals(prev => {
+        if (!prev || prev.length === 0) return enrichedRefs;
+        const statusOrder = ['Pending', 'Accepted', 'Arrived', 'Assigned', 'In Consultation', 'Completed', 'Cancelled'];
+        const localMap = new Map(prev.map(r => [r.id, r]));
+        return enrichedRefs.map(remoteRef => {
+          const local = localMap.get(remoteRef.id);
+          if (!local) return remoteRef;
+          const localIdx = statusOrder.indexOf(local.status);
+          const remoteIdx = statusOrder.indexOf(remoteRef.status);
+          if (localIdx > remoteIdx && localIdx >= 0) {
+            return {
+              ...remoteRef,
+              status: local.status,
+              doctor_assigned: local.doctor_assigned || remoteRef.doctor_assigned,
+              doctor_id: local.doctor_id || remoteRef.doctor_id
+            };
+          }
+          return remoteRef;
+        });
+      });
 
     } catch (err) {
       console.error('[RADVAULT][PHC_REFERRAL_LOAD] Data load error:', err.message);
@@ -535,7 +835,7 @@ export default function HospitalStaffWorkspace({
     if (isDemoMode) {
       setReferrals(prev => prev.map(r => r.id === refId ? { ...r, status: 'Accepted' } : r));
       setSelectedReferral(prev => (prev && prev.id === refId ? { ...prev, status: 'Accepted' } : prev));
-      showToast('✓ Referral accepted and moved to waiting queue.');
+      showToast('✓ Referral accepted and moved to waiting room.');
       return;
     }
 
@@ -573,7 +873,7 @@ export default function HospitalStaffWorkspace({
     if (isDemoMode) {
       setReferrals(prev => prev.map(r => r.id === refId ? { ...r, status: 'Arrived' } : r));
       setSelectedReferral(prev => (prev && prev.id === refId ? { ...prev, status: 'Arrived' } : prev));
-      showToast('✓ Patient marked as arrived. Ready for doctor routing.');
+      showToast('✓ Patient marked as arrived. Ready for clinician assignment.');
       return;
     }
 
@@ -598,7 +898,7 @@ export default function HospitalStaffWorkspace({
 
       setReferrals(prev => prev.map(r => r.id === refId ? { ...r, status: 'Arrived' } : r));
       setSelectedReferral(prev => (prev && prev.id === refId ? { ...prev, status: 'Arrived' } : prev));
-      showToast('✓ Patient marked as arrived.');
+      showToast('✓ Patient physical arrival verified at reception.');
       setTimeout(() => loadSupabaseData(true), 2500);
     } catch (err) {
       console.error('[HospitalStaff] Failed to mark arrival:', err);
@@ -614,7 +914,7 @@ export default function HospitalStaffWorkspace({
       setReferrals(prev => prev.map(r => r.id === refId ? { ...r, doctor_assigned: doctorName, doctor_id: doctorId, status: 'Assigned' } : r));
       setSelectedReferral(prev => (prev && prev.id === refId ? { ...prev, doctor_assigned: doctorName, doctor_id: doctorId, status: 'Assigned' } : prev));
       setShowDoctorRouteModal(null);
-      showToast(`✓ Patient successfully routed to ${doctorName}.`);
+      showToast(`✓ Patient successfully assigned to ${doctorName}.`);
       return;
     }
 
@@ -688,7 +988,9 @@ export default function HospitalStaffWorkspace({
       osc1.stop(ctx.currentTime + 0.16);
       osc2.start(ctx.currentTime + 0.16);
       osc2.stop(ctx.currentTime + 0.36);
-    } catch (_) {}
+    } catch {
+      // AudioContext blocked or not supported
+    }
   }, [emergencyAlarmMuted]);
 
   // Periodic chime when unhandled emergency SOS is pending
@@ -820,12 +1122,13 @@ export default function HospitalStaffWorkspace({
     }
   };
 
-  // Memos for metrics
+  // Memos for metrics across 4 truthful care-handoff stages
   const counts = useMemo(() => {
     const pending = referrals.filter(r => r.status === 'Pending').length;
-    const waiting = referrals.filter(r => r.status === 'Accepted' || r.status === 'Arrived' || r.status === 'Assigned' || r.status === 'In Consultation').length;
+    const waiting = referrals.filter(r => r.status === 'Accepted' || r.status === 'Arrived' || r.status === 'Assigned').length;
+    const inConsultation = referrals.filter(r => r.status === 'In Consultation').length;
     const completed = referrals.filter(r => r.status === 'Completed').length;
-    return { pending, waiting, completed };
+    return { pending, waiting, inConsultation, completed, total: referrals.length };
   }, [referrals]);
 
   // Memos for intake source segregation (ASHA vs Direct Patient vs Teleconsult)
@@ -839,7 +1142,7 @@ export default function HospitalStaffWorkspace({
   // Scoped referrals based on active tab and filters
   const filteredReferrals = useMemo(() => {
     let list = [...referrals];
-    
+
     // Applying source segregation filter (ASHA vs Direct Patient vs Teleconsult)
     if (sourceFilter !== 'ALL') {
       list = list.filter(r => getReferralOrigin(r).key === sourceFilter);
@@ -850,7 +1153,9 @@ export default function HospitalStaffWorkspace({
       if (queueFilter === 'Pending') {
         list = list.filter(r => r.status === 'Pending');
       } else if (queueFilter === 'Accepted_Arrived') {
-        list = list.filter(r => r.status === 'Accepted' || r.status === 'Arrived' || r.status === 'Assigned' || r.status === 'In Consultation');
+        list = list.filter(r => r.status === 'Accepted' || r.status === 'Arrived' || r.status === 'Assigned');
+      } else if (queueFilter === 'In_Consultation') {
+        list = list.filter(r => r.status === 'In Consultation');
       } else if (queueFilter === 'Completed') {
         list = list.filter(r => r.status === 'Completed');
       }
@@ -859,15 +1164,16 @@ export default function HospitalStaffWorkspace({
     // Applying search queries
     const q = searchQuery.toLowerCase().trim();
     if (q) {
-      list = list.filter(r => 
+      list = list.filter(r =>
         (r.patient_name || '').toLowerCase().includes(q) ||
         (r.patient_id || '').toLowerCase().includes(q) ||
+        (r.patient_unified_id || '').toLowerCase().includes(q) ||
         (r.destination_department || '').toLowerCase().includes(q) ||
         (r.symptoms || '').toLowerCase().includes(q) ||
         (r.created_by || '').toLowerCase().includes(q)
       );
     }
-    
+
     return list;
   }, [referrals, activeTab, queueFilter, sourceFilter, searchQuery, getReferralOrigin]);
 
@@ -885,15 +1191,16 @@ export default function HospitalStaffWorkspace({
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[50vh]">
+      <div className="flex flex-col items-center justify-center min-h-[50vh] gap-3">
         <Loader2 className="w-8 h-8 animate-spin text-[#008080]" />
+        <span className="text-xs font-bold text-slate-500">Syncing intake queue...</span>
       </div>
     );
   }
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-4 space-y-6">
-      
+
       {/* ── Toast Message Notification ── */}
       {successMessage && (
         <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 p-4 bg-slate-900 text-white font-extrabold text-xs rounded-2xl shadow-xl flex items-center gap-2 animate-in fade-in slide-in-from-top-3 duration-200">
@@ -909,7 +1216,7 @@ export default function HospitalStaffWorkspace({
           </div>
           <div>
             <h1 className="text-base font-black text-slate-900 leading-tight">
-              PHC Operations Desk
+              Hospital Care Handoff & Reception Desk
             </h1>
             <p className="text-xs text-slate-500 font-bold mt-1 flex items-center gap-1.5">
               <span>📍 {facility?.name || 'Unassigned Facility'}</span>
@@ -933,26 +1240,30 @@ export default function HospitalStaffWorkspace({
           )}
           <button
             onClick={handleRefresh}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-[10px] font-black text-slate-700 transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-[11px] font-black text-slate-700 transition-colors cursor-pointer"
             title="Refresh incoming referrals queue"
           >
-            <RefreshCw className={`w-3 h-3 text-[#008080] ${loading ? 'animate-spin' : ''}`} />
-            <span>Refresh Live</span>
+            <RefreshCw className={`w-3.5 h-3.5 text-[#008080] ${loading ? 'animate-spin' : ''}`} />
+            <span>Refresh Queue</span>
           </button>
         </div>
       </div>
 
+      {/* ── Truthful Network / Error Banner ── */}
       {error && (
-        <div className="p-4 bg-rose-50 border border-rose-200 text-xs text-rose-700 font-bold rounded-2xl flex items-center justify-between gap-2.5">
-          <div className="flex items-start gap-2.5">
-            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-            <div>{error}</div>
+        <div className="p-4 bg-rose-50 border border-rose-300 text-xs text-rose-800 font-bold rounded-2xl flex items-center justify-between gap-3 shadow-2xs">
+          <div className="flex items-center gap-2.5">
+            <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
+            <div>
+              <div className="font-black text-rose-900 text-sm">Unable to sync queue</div>
+              <div className="text-xs text-rose-700 mt-0.5">{error}</div>
+            </div>
           </div>
           <button
             onClick={handleRefresh}
-            className="px-3 py-1 bg-rose-100 hover:bg-rose-200 text-rose-800 rounded-lg text-xs font-bold transition-colors cursor-pointer shrink-0"
+            className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black transition-colors cursor-pointer shrink-0"
           >
-            Retry
+            Retry Connection
           </button>
         </div>
       )}
@@ -975,7 +1286,7 @@ export default function HospitalStaffWorkspace({
                   </span>
                 </div>
                 <p className="text-xs font-black text-white mt-0.5">
-                  Primary Dispatch Desk: Shrirampur Casualty & 108 CAD Network
+                  Emergency Transport Coordination Desk · Shrirampur Casualty (Internal Records)
                 </p>
               </div>
             </div>
@@ -999,7 +1310,7 @@ export default function HospitalStaffWorkspace({
                 onClick={() => setActiveTab('emergency')}
                 className="px-3 py-1.5 bg-black/30 hover:bg-black/40 text-white rounded-xl text-xs font-black border border-white/30 cursor-pointer transition-colors"
               >
-                Open CAD Console
+                Open Transport Desk
               </button>
             </div>
           </div>
@@ -1069,7 +1380,7 @@ export default function HospitalStaffWorkspace({
                       }`}
                     >
                       <Siren className="w-3.5 h-3.5" />
-                      <span>{topCase.ambulanceStatus === 'DISPATCHED' ? `Ambulance Dispatched (${topCase.ambulanceEta})` : 'Dispatch 108'}</span>
+                      <span>{topCase.ambulanceStatus === 'DISPATCHED' ? `Ambulance Recorded (${topCase.ambulanceEta})` : 'Record Ambulance Dispatch'}</span>
                     </button>
 
                     <button
@@ -1082,7 +1393,7 @@ export default function HospitalStaffWorkspace({
                       }`}
                     >
                       <UserCheck className="w-3.5 h-3.5" />
-                      <span>{topCase.ashaStatus === 'ALERTED' ? 'ASHA Alerted' : 'Alert ASHA'}</span>
+                      <span>{topCase.ashaStatus === 'ALERTED' ? 'ASHA Alerted (WhatsApp)' : 'Alert ASHA (WhatsApp)'}</span>
                     </button>
 
                     <button
@@ -1118,12 +1429,12 @@ export default function HospitalStaffWorkspace({
       {/* ── Sub Navigation Tabs ── */}
       <div className="flex items-center gap-2 border-b border-slate-200 pb-1 text-xs overflow-x-auto scrollbar-hide">
         {[
-          { key: 'home', label: 'Home' },
-          { key: 'queue', label: 'Patient Queue' },
-          { key: 'referrals', label: 'Referral Log' },
+          { key: 'home', label: 'Desk Overview' },
+          { key: 'queue', label: 'Patient Desk & Queue' },
+          { key: 'referrals', label: 'Referral Search & Records' },
           {
             key: 'emergency',
-            label: `🚨 Emergency CAD${emergencyCases.length > 0 ? ` (${emergencyCases.length})` : ''}`,
+            label: `🚨 Emergency Transport${emergencyCases.length > 0 ? ` (${emergencyCases.length})` : ''}`,
             isEmergency: true
           }
         ].map(tab => (
@@ -1144,42 +1455,53 @@ export default function HospitalStaffWorkspace({
         ))}
       </div>
 
-      {/* ── TAB 1: OPERATIONAL HOME ── */}
+      {/* ── TAB 1: OPERATIONAL HOME (DESK OVERVIEW) ── */}
       {activeTab === 'home' && (
         <div className="space-y-6 animate-in fade-in duration-150">
-          
-          {/* Quick Stats Grid */}
-          <div className="grid grid-cols-3 gap-3.5">
-            <div 
+
+          {/* Quick Stats Grid: 4 Truthful Handoff Funnels */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div
               onClick={() => { setActiveTab('queue'); setQueueFilter('Pending'); }}
-              className="p-4 bg-white border border-slate-200 hover:border-[#FF9933] rounded-2xl cursor-pointer transition-colors space-y-1"
+              className="p-4 bg-white border border-slate-200 hover:border-amber-400 rounded-2xl cursor-pointer transition-colors space-y-1 shadow-2xs"
             >
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Incoming</span>
-              <div className="flex items-baseline gap-1">
-                <span className="text-xl font-black text-slate-900">{counts.pending}</span>
-                <span className="text-[10px] text-[#FF9933] font-bold">Pending</span>
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">1. Incoming</span>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-2xl font-black text-slate-900">{counts.pending}</span>
+                <span className="text-[11px] text-amber-700 font-bold">Pending Intake</span>
               </div>
             </div>
 
-            <div 
+            <div
               onClick={() => { setActiveTab('queue'); setQueueFilter('Accepted_Arrived'); }}
-              className="p-4 bg-white border border-slate-200 hover:border-[#008080] rounded-2xl cursor-pointer transition-colors space-y-1"
+              className="p-4 bg-white border border-slate-200 hover:border-[#008080] rounded-2xl cursor-pointer transition-colors space-y-1 shadow-2xs"
             >
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Waiting Room</span>
-              <div className="flex items-baseline gap-1">
-                <span className="text-xl font-black text-slate-900">{counts.waiting}</span>
-                <span className="text-[10px] text-[#008080] font-bold">Arrived</span>
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">2. Waiting Room</span>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-2xl font-black text-slate-900">{counts.waiting}</span>
+                <span className="text-[11px] text-[#008080] font-bold">Arrived / Assigned</span>
               </div>
             </div>
 
-            <div 
-              onClick={() => { setActiveTab('queue'); setQueueFilter('Completed'); }}
-              className="p-4 bg-white border border-slate-200 hover:border-emerald-500 rounded-2xl cursor-pointer transition-colors space-y-1"
+            <div
+              onClick={() => { setActiveTab('queue'); setQueueFilter('In_Consultation'); }}
+              className="p-4 bg-white border border-slate-200 hover:border-purple-400 rounded-2xl cursor-pointer transition-colors space-y-1 shadow-2xs"
             >
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Completed</span>
-              <div className="flex items-baseline gap-1">
-                <span className="text-xl font-black text-slate-900">{counts.completed}</span>
-                <span className="text-[10px] text-emerald-600 font-bold">Closed</span>
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">3. With Doctor</span>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-2xl font-black text-slate-900">{counts.inConsultation}</span>
+                <span className="text-[11px] text-purple-700 font-bold">In Consultation</span>
+              </div>
+            </div>
+
+            <div
+              onClick={() => { setActiveTab('queue'); setQueueFilter('Completed'); }}
+              className="p-4 bg-white border border-slate-200 hover:border-emerald-500 rounded-2xl cursor-pointer transition-colors space-y-1 shadow-2xs"
+            >
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">4. Completed Today</span>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-2xl font-black text-slate-900">{counts.completed}</span>
+                <span className="text-[11px] text-emerald-600 font-bold">Signed Closed</span>
               </div>
             </div>
           </div>
@@ -1190,15 +1512,18 @@ export default function HospitalStaffWorkspace({
             className="w-full py-4 bg-[#008080] hover:bg-[#006666] text-white font-black text-sm rounded-2xl shadow-sm flex items-center justify-center gap-2 cursor-pointer transition-transform active:scale-99"
           >
             <Inbox className="w-5 h-5" />
-            <span>Open Patient Queue</span>
+            <span>Open Patient Desk & Queue</span>
           </button>
 
-          {/* Urgent Next Patients Section */}
-          <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-2xs space-y-3.5">
-            <h2 className="text-xs font-black uppercase text-slate-400 tracking-wider">Next Patients</h2>
-            
+          {/* Next Patients Requiring Action */}
+          <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-2xs space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xs font-black uppercase text-slate-400 tracking-wider">Next Patients Requiring Intake Action</h2>
+              <span className="text-xs font-bold text-slate-400">One Dominant Action per Patient</span>
+            </div>
+
             {referrals.filter(r => r.status !== 'Completed').length > 0 ? (
-              <div className="divide-y divide-slate-100">
+              <div className="space-y-3">
                 {referrals
                   .filter(r => r.status !== 'Completed')
                   .sort((a, b) => {
@@ -1210,108 +1535,18 @@ export default function HospitalStaffWorkspace({
                     return 0;
                   })
                   .slice(0, 3)
-                  .map(ref => {
-                    const isHigh = ref.priority === 'HIGH' || ref.priority === 'RED';
-                    const isUrgent = ref.priority === 'ORANGE';
-                    const priorityBg = isHigh ? 'bg-rose-50 text-rose-800' : isUrgent ? 'bg-amber-50 text-amber-900' : 'bg-slate-100 text-slate-700';
-                    
-                    return (
-                      <div 
-                        key={ref.id} 
-                        onClick={() => setSelectedReferral(ref)}
-                        className="py-3 px-2 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50 transition-colors cursor-pointer group first:pt-0 last:pb-0"
-                      >
-                        <div className="min-w-0 space-y-0.5">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-extrabold text-xs text-slate-900 group-hover:text-[#008080] transition-colors flex items-center gap-1.5">
-                              <FileText className="w-3.5 h-3.5 text-[#008080]" />
-                              {ref.patient_name}
-                            </span>
-                            <span className="font-mono text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded font-bold">
-                              {ref.patient_unified_id ? `ID: ${ref.patient_unified_id}` : `ID: ${ref.patient_id?.slice(0, 8)}`}
-                            </span>
-                            <span className={`text-[9px] font-black px-1.5 py-0.2 rounded ${priorityBg}`}>
-                              {ref.priority}
-                            </span>
-                            {(ref.slot_preference?.includes('Token') || ref.ai_note?.includes('TOKEN:')) && (
-                              <span className="inline-flex items-center gap-1 text-[10px] font-black text-[#008F83] bg-[#E8F7F3] border border-[#008F83]/30 px-2 py-0.5 rounded-md font-mono shadow-2xs">
-                                <Ticket className="w-3 h-3" />
-                                {ref.slot_preference || `Token #${ref.ai_note?.match(/TOKEN:\s*([^|]+)/i)?.[1]?.trim()}`}
-                              </span>
-                            )}
-                            {ref.patient_phone && (
-                              <a 
-                                href={`tel:${ref.patient_phone}`} 
-                                onClick={(e) => e.stopPropagation()}
-                                className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 px-1.5 py-0.2 rounded transition-colors" 
-                                title="Call patient"
-                              >
-                                <Phone className="w-2.5 h-2.5 text-[#008080]" />
-                                <span>{ref.patient_phone}</span>
-                              </a>
-                            )}
-                          </div>
-                          <p className="text-xs text-slate-500 font-medium truncate">
-                            {ref.destination_department} · {ref.symptoms}
-                          </p>
-                        </div>
-
-                        <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
-                          <button
-                            type="button"
-                            onClick={() => setSelectedReferral(ref)}
-                            className="px-2.5 py-1.5 bg-teal-50 hover:bg-teal-100 text-[#008080] border border-teal-200 font-bold text-[11px] rounded-lg transition-colors cursor-pointer flex items-center gap-1"
-                            title="Open Clinical Case"
-                          >
-                            <FileText className="w-3 h-3" />
-                            <span>Clinical Case</span>
-                          </button>
-                          
-                          {ref.status !== 'Completed' && ref.status !== 'COMPLETED' && (
-                            <button
-                              type="button"
-                              onClick={() => handleOpenTokenModal(ref)}
-                              className="px-3.5 py-1.5 bg-[#FF9933] hover:bg-[#e68a2e] text-slate-950 font-black text-[11px] rounded-lg transition-colors cursor-pointer flex items-center gap-1 shadow-2xs"
-                              title="Assign Queue Token & Exact Arrival Slot"
-                            >
-                              <Ticket className="w-3 h-3" />
-                              <span>{ref.slot_preference?.includes('Token') || ref.ai_note?.includes('TOKEN:') ? 'Edit Token' : 'Assign Token & Slot'}</span>
-                            </button>
-                          )}
-
-                          {ref.status === 'Pending' && (
-                            <button
-                              type="button"
-                              onClick={() => handleAcceptReferral(ref.id)}
-                              className="px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white font-black text-[11px] rounded-lg transition-colors cursor-pointer"
-                            >
-                              Accept
-                            </button>
-                          )}
-
-                          {(ref.status === 'Accepted' || ref.status === 'Pending') && (
-                            <button
-                              type="button"
-                              onClick={() => handleMarkArrived(ref.id)}
-                              className="px-3 py-1.5 bg-[#008080] hover:bg-[#006666] text-white font-black text-[11px] rounded-lg transition-colors cursor-pointer"
-                            >
-                              Arrive
-                            </button>
-                          )}
-
-                          {(ref.status === 'Arrived' || ref.status === 'Accepted') && (
-                            <button
-                              type="button"
-                              onClick={() => setShowDoctorRouteModal(ref)}
-                              className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-black text-[11px] rounded-lg transition-colors cursor-pointer"
-                            >
-                              Route
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
+                  .map(ref => (
+                    <ReferralActionCard
+                      key={ref.id}
+                      refItem={ref}
+                      onSelect={setSelectedReferral}
+                      onAccept={handleAcceptReferral}
+                      onMarkArrived={handleMarkArrived}
+                      onRouteDoctor={setShowDoctorRouteModal}
+                      onOpenToken={handleOpenTokenModal}
+                      getReferralOrigin={getReferralOrigin}
+                    />
+                  ))}
               </div>
             ) : (
               <div className="text-center py-6 text-xs text-slate-400 font-medium">
@@ -1322,13 +1557,13 @@ export default function HospitalStaffWorkspace({
         </div>
       )}
 
-      {/* ── TAB 2: ACTIVE QUEUE ── */}
+      {/* ── TAB 2: PATIENT DESK & QUEUE (THE PRIMARY OPERATIONAL VIEW) ── */}
       {activeTab === 'queue' && (
         <div className="space-y-4 animate-in fade-in duration-150">
-          
-          {/* Source Segregation Bar (ASHA vs Direct Patient vs Teleconsult) */}
+
+          {/* Source Segregation Filter (ASHA vs Direct Patient vs Teleconsult) */}
           <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-2.5 flex items-center gap-1.5 overflow-x-auto text-xs shadow-2xs">
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider shrink-0 px-2">Origin Filter:</span>
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider shrink-0 px-2">Origin:</span>
             {[
               { key: 'ALL', label: `All Sources (${sourceCounts.total})` },
               { key: 'ASHA', label: `🚨 ASHA Referrals (${sourceCounts.asha})` },
@@ -1350,18 +1585,19 @@ export default function HospitalStaffWorkspace({
             ))}
           </div>
 
-          {/* Sub Filtering Controls */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
+          {/* 4 Truthful Handoff Funnel Filters */}
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs scrollbar-hide">
             {[
-              { key: 'ALL', label: 'All Queue' },
+              { key: 'ALL', label: `All Queue (${referrals.length})` },
               { key: 'Pending', label: `Incoming (${counts.pending})` },
               { key: 'Accepted_Arrived', label: `Waiting Room (${counts.waiting})` },
-              { key: 'Completed', label: `Completed (${counts.completed})` }
+              { key: 'In_Consultation', label: `With Doctor (${counts.inConsultation})` },
+              { key: 'Completed', label: `Completed Today (${counts.completed})` }
             ].map(filterBtn => (
               <button
                 key={filterBtn.key}
                 onClick={() => setQueueFilter(filterBtn.key)}
-                className={`px-3 py-1.5 rounded-xl font-extrabold text-[11px] shrink-0 transition-colors cursor-pointer ${
+                className={`px-3.5 py-1.5 rounded-xl font-extrabold text-[11px] shrink-0 transition-colors cursor-pointer ${
                   queueFilter === filterBtn.key
                     ? 'bg-[#008080] text-white shadow-xs'
                     : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
@@ -1372,232 +1608,60 @@ export default function HospitalStaffWorkspace({
             ))}
           </div>
 
-          {/* Referral Queue Listing */}
+          {/* Instant Search Bar */}
+          <div className="relative">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search queue by patient name, ID, symptoms, or department..."
+              className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 focus:border-[#008080] rounded-xl text-xs font-semibold text-slate-900 outline-none transition-colors shadow-2xs"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+
+          {/* Referral Queue Stream */}
           {filteredReferrals.length > 0 ? (
             <div className="space-y-3">
-              {filteredReferrals.map(ref => {
-                const isHigh = ref.priority === 'HIGH' || ref.priority === 'RED';
-                const isUrgent = ref.priority === 'ORANGE';
-                const priorityClass = isHigh
-                  ? 'bg-rose-50 text-rose-800 border-rose-200'
-                  : isUrgent
-                  ? 'bg-amber-50 text-amber-800 border-amber-200'
-                  : 'bg-emerald-50 text-emerald-800 border-emerald-200';
-
-                let statusPillColor = 'bg-slate-100 text-slate-700 border-slate-200';
-                if (ref.status === 'Accepted') statusPillColor = 'bg-sky-50 text-sky-800 border-sky-200';
-                if (ref.status === 'Arrived') statusPillColor = 'bg-teal-50 text-teal-800 border-teal-200';
-                if (ref.status === 'Completed') statusPillColor = 'bg-emerald-50 text-emerald-800 border-emerald-200';
-
-                const origin = getReferralOrigin(ref);
-
-                return (
-                  <div 
-                    key={ref.id}
-                    data-referral-id={ref.id}
-                    data-patient-name={ref.patient_name}
-                    onClick={() => setSelectedReferral(ref)}
-                    className="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs space-y-3.5 hover:border-[#008080]/60 hover:shadow-md transition-all cursor-pointer group"
-                  >
-                    {/* Header Row */}
-                    <div className="flex flex-wrap items-center justify-between gap-2.5">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-black text-sm text-slate-900 group-hover:text-[#008080] transition-colors flex items-center gap-1.5">
-                          <FileText className="w-4 h-4 text-[#008080]" />
-                          {ref.patient_name}
-                        </span>
-                        <span className="font-mono text-xs text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded font-bold">
-                          {ref.patient_unified_id ? `ID: ${ref.patient_unified_id}` : `ID: ${ref.patient_id?.slice(0, 8)}`}
-                        </span>
-
-                        {/* Origin Tag */}
-                        <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border flex items-center gap-1 ${origin.badge}`}>
-                          <span>{origin.icon}</span>
-                          <span>{origin.label}</span>
-                        </span>
-
-                        <span className={`text-[10px] font-black px-2 py-0.5 rounded border ${priorityClass}`}>
-                          {ref.priority_label || ref.priority}
-                        </span>
-                        {ref.patient_phone && (
-                          <a 
-                            href={`tel:${ref.patient_phone}`} 
-                            onClick={(e) => e.stopPropagation()}
-                            className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 px-2 py-0.5 rounded transition-colors" 
-                            title="Call patient"
-                          >
-                            <Phone className="w-3 h-3 text-[#008080]" />
-                            <span>{ref.patient_phone}</span>
-                          </a>
-                        )}
-                        {(ref.symptoms?.includes('ASHA ACCOMPANYING') || ref.clinical_summary?.includes('ASHA ACCOMPANYING')) && (
-                          <span className="text-[10px] font-black px-2 py-0.5 rounded bg-rose-100 text-rose-800 border border-rose-200 flex items-center gap-1">
-                            🤰 ASHA Escort
-                          </span>
-                        )}
-                      </div>
-
-                      <span className={`text-[11px] font-black px-2.5 py-0.5 rounded border ${statusPillColor}`}>
-                        {ref.status}
-                      </span>
-                    </div>
-
-                    {/* Vitals Summary snippet if present */}
-                    {ref.vitals && Object.keys(ref.vitals).length > 0 && (
-                      <div className="flex items-center gap-3 text-[11px] text-slate-500 font-medium flex-wrap bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-                        {ref.vitals.bp && <span>BP: <strong>{ref.vitals.bp}</strong></span>}
-                        {ref.vitals.pulse && <span>Pulse: <strong>{ref.vitals.pulse} bpm</strong></span>}
-                        {ref.vitals.spo2 && <span>SpO₂: <strong>{ref.vitals.spo2}%</strong></span>}
-                        {ref.vitals.temp && <span>Temp: <strong>{ref.vitals.temp}°F</strong></span>}
-                      </div>
-                    )}
-
-                    {/* Symptoms notes */}
-                    <div className="text-xs text-slate-600 font-medium space-y-1">
-                      <div>
-                        <strong className="text-slate-700">Complaint:</strong> {ref.symptoms}
-                      </div>
-                      {ref.created_by && (
-                        <div className="text-[10px] text-slate-400">
-                          Referred by {ref.created_by}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Actions and Routing footer */}
-                    <div 
-                      className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {(ref.slot_preference?.includes('Token') || ref.ai_note?.includes('TOKEN:')) && (
-                          <div className="inline-flex items-center gap-1.5 text-xs font-black text-[#008F83] bg-[#E8F7F3] border border-[#008F83]/30 px-2.5 py-1 rounded-lg font-mono">
-                            <Ticket className="w-3.5 h-3.5" />
-                            <span>{ref.slot_preference || `Token #${ref.ai_note?.match(/TOKEN:\s*([^|]+)/i)?.[1]?.trim()}`}</span>
-                          </div>
-                        )}
-
-                        {ref.doctor_assigned && (
-                          <div className="text-[10px] font-bold text-slate-500 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-lg">
-                            🩺 Specialist Assigned: <span className="text-slate-900">{ref.doctor_assigned}</span>
-                          </div>
-                        )}
-                        
-                        {!ref.doctor_assigned && <div className="text-[10px] italic text-slate-400">No clinician assigned yet</div>}
-                      </div>
-
-                      <div className="flex items-center gap-2 ml-auto shrink-0">
-                        <button
-                          type="button"
-                          data-referral-id={ref.id}
-                          data-action="view-case"
-                          onClick={() => setSelectedReferral(ref)}
-                          className="px-3 py-1.5 text-xs font-bold text-[#008080] bg-teal-50/70 hover:bg-teal-100 border border-teal-200 rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs"
-                          title="Open Clinical Case File"
-                        >
-                          <FileText className="w-3.5 h-3.5" />
-                          <span>Clinical Case</span>
-                        </button>
-
-                        {ref.status !== 'Completed' && ref.status !== 'COMPLETED' && (
-                          <button
-                            type="button"
-                            data-referral-id={ref.id}
-                            data-action="assign-token"
-                            onClick={() => handleOpenTokenModal(ref)}
-                            className="px-4 py-1.5 bg-[#FF9933] hover:bg-[#e68a2e] text-slate-950 font-black text-xs rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs"
-                          >
-                            <Ticket className="w-3.5 h-3.5" />
-                            <span>{ref.slot_preference?.includes('Token') || ref.ai_note?.includes('TOKEN:') ? 'Update Token & Slot' : 'Assign Token & Slot'}</span>
-                          </button>
-                        )}
-
-                        {ref.status === 'Pending' && (
-                          <button
-                            type="button"
-                            data-referral-id={ref.id}
-                            data-action="accept-referral"
-                            onClick={() => handleAcceptReferral(ref.id)}
-                            className="px-3.5 py-1.5 bg-teal-600 hover:bg-teal-700 text-white font-black text-xs rounded-xl transition-colors cursor-pointer"
-                          >
-                            Accept
-                          </button>
-                        )}
-
-                        {(ref.status === 'Accepted' || ref.status === 'Pending') && (
-                          <button
-                            type="button"
-                            data-referral-id={ref.id}
-                            data-action="mark-arrived"
-                            onClick={() => handleMarkArrived(ref.id)}
-                            className="px-4 py-1.5 bg-[#008080] hover:bg-[#006666] text-white font-black text-xs rounded-xl transition-colors cursor-pointer"
-                          >
-                            Mark Arrived
-                          </button>
-                        )}
-
-                        {(ref.status === 'Arrived' || ref.status === 'Accepted') && (
-                          <button
-                            type="button"
-                            data-referral-id={ref.id}
-                            data-action="send-to-doctor"
-                            onClick={() => setShowDoctorRouteModal(ref)}
-                            className="px-4 py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-black text-xs rounded-xl transition-colors cursor-pointer"
-                          >
-                            Send to Doctor
-                          </button>
-                        )}
-
-                        {ref.status === 'Assigned' && (
-                          <button
-                            type="button"
-                            data-referral-id={ref.id}
-                            data-action="reassign-doctor"
-                            onClick={() => setShowDoctorRouteModal(ref)}
-                            className="px-3.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold text-xs rounded-xl transition-colors cursor-pointer"
-                          >
-                            Re-assign Doctor
-                          </button>
-                        )}
-
-                        {ref.status === 'In Consultation' && (
-                          <span className="px-3 py-1.5 text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-xl">
-                            In Consultation
-                          </span>
-                        )}
-                        
-                        {ref.status === 'Completed' && (
-                          <button
-                            type="button"
-                            onClick={() => setSelectedReferral(ref)}
-                            className="px-3.5 py-1.5 text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
-                            title="Open Completed Clinical Case"
-                          >
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span>View Case File</span>
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                  </div>
-                );
-              })}
+              {filteredReferrals.map(ref => (
+                <ReferralActionCard
+                  key={ref.id}
+                  refItem={ref}
+                  onSelect={setSelectedReferral}
+                  onAccept={handleAcceptReferral}
+                  onMarkArrived={handleMarkArrived}
+                  onRouteDoctor={setShowDoctorRouteModal}
+                  onOpenToken={handleOpenTokenModal}
+                  getReferralOrigin={getReferralOrigin}
+                />
+              ))}
             </div>
           ) : (
             <div className="text-center py-12 bg-white rounded-3xl border border-slate-200 shadow-2xs space-y-2">
               <Inbox className="w-8 h-8 text-slate-300 mx-auto mb-1" />
-              <p className="text-sm font-bold text-slate-800">No patient matching queue filters</p>
-              <p className="text-xs text-slate-400">All referrals for this category are up to date.</p>
+              <p className="text-sm font-black text-slate-800">No referrals currently in this queue.</p>
+              <p className="text-xs text-slate-400 font-medium">
+                {searchQuery
+                  ? 'No referrals matched your search keywords.'
+                  : 'Incoming referrals from frontline workers and outpatient desks will appear here automatically.'}
+              </p>
             </div>
           )}
         </div>
       )}
 
-      {/* ── TAB 3: REFERRAL SEARCH LOG ── */}
+      {/* ── TAB 3: REFERRAL SEARCH & RECORDS ── */}
       {activeTab === 'referrals' && (
         <div className="space-y-6 animate-in fade-in duration-150">
-          
+
           {/* Search Input */}
           <div className="relative">
             <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -1605,17 +1669,17 @@ export default function HospitalStaffWorkspace({
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search referrals by name, ABHA/Unified ID, department, or symptoms..."
+              placeholder="Search historical & active records by patient name, ID, department, or symptoms..."
               className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 focus:border-[#008080] rounded-xl text-xs font-semibold text-slate-900 outline-none transition-colors shadow-2xs"
             />
           </div>
 
-          {/* Simple Search Results Table */}
+          {/* Historical Search Results Table */}
           <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
             <div className="px-4 py-3 border-b border-slate-100 text-xs font-bold text-slate-500 bg-slate-50/50 flex items-center justify-between">
-              <span>{filteredReferrals.length} Referrals Found</span>
+              <span>{filteredReferrals.length} Referral Records Found</span>
               {searchQuery && (
-                <button onClick={() => setSearchQuery('')} className="text-[#008080] hover:underline">Clear Search</button>
+                <button onClick={() => setSearchQuery('')} className="text-[#008080] hover:underline font-bold">Clear Search</button>
               )}
             </div>
 
@@ -1631,14 +1695,14 @@ export default function HospitalStaffWorkspace({
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-extrabold text-xs text-slate-900">{ref.patient_name}</span>
                         <span className="font-mono text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded font-bold">
-                          {ref.patient_unified_id ? `ID: ${ref.patient_unified_id}` : `ID: ${ref.patient_id?.slice(0, 8)}`}
+                          {ref.patient_unified_id ? `ID: ${ref.patient_unified_id}` : (ref.patient_id ? `ID: ${ref.patient_id.slice(0, 8)}` : 'ID: Pending')}
                         </span>
-                        <span className="text-[9px] font-black px-1.5 py-0.2 rounded bg-slate-100 text-slate-700">
+                        <span className="text-[10px] font-black px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
                           {ref.status}
                         </span>
                       </div>
                       <p className="text-[11px] text-slate-500 mt-0.5">
-                        {ref.destination_department} · Referred on {new Date(ref.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                        {ref.destination_department} · Intake {new Date(ref.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                       </p>
                     </div>
 
@@ -1658,7 +1722,7 @@ export default function HospitalStaffWorkspace({
       {/* ── TAB 4: 24x7 EMERGENCY DISPATCH DESK (CAD CONSOLE) ── */}
       {activeTab === 'emergency' && (
         <div className="space-y-6 animate-in fade-in duration-150">
-          
+
           {/* Header & Quick Filter Pills */}
           <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-2xs space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -1669,14 +1733,14 @@ export default function HospitalStaffWorkspace({
                 <div>
                   <div className="flex items-center gap-2">
                     <h2 className="text-base font-black text-slate-900 leading-tight">
-                      Computer-Aided Dispatch (CAD) Operations Desk
+                      Emergency Transport &amp; Intake Coordination Desk
                     </h2>
                     <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-red-100 text-red-800 border border-red-200">
-                      Live Dispatch Active
+                      Internal Coordination (care_requests)
                     </span>
                   </div>
                   <p className="text-xs text-slate-500 font-bold mt-1">
-                    Direct helpline calls, 108 Ambulance tracking &amp; ASHA emergency escort pipeline
+                    Direct helpline intake, manual ambulance dispatch logging, and WhatsApp ASHA mobilization. (Internal PHC facility coordination, not live government telematics).
                   </p>
                 </div>
               </div>
@@ -1712,13 +1776,13 @@ export default function HospitalStaffWorkspace({
                 </span>
               </div>
               <div className="p-3 bg-amber-50/60 rounded-2xl border border-amber-100">
-                <span className="text-[10px] font-black uppercase text-amber-700 block">108 Ambulances En Route</span>
+                <span className="text-[10px] font-black uppercase text-amber-700 block">Ambulances Logged as Dispatched</span>
                 <span className="text-xl font-black text-amber-900 mt-0.5 block">
                   {allEmergencyLogs.filter(c => c.ambulanceStatus === 'DISPATCHED').length}
                 </span>
               </div>
               <div className="p-3 bg-teal-50/60 rounded-2xl border border-teal-100">
-                <span className="text-[10px] font-black uppercase text-teal-700 block">ASHA Escorts Mobilized</span>
+                <span className="text-[10px] font-black uppercase text-teal-700 block">ASHA Alerted (WhatsApp)</span>
                 <span className="text-xl font-black text-teal-900 mt-0.5 block">
                   {allEmergencyLogs.filter(c => c.ashaStatus === 'ALERTED').length}
                 </span>
@@ -1785,7 +1849,7 @@ export default function HospitalStaffWorkspace({
 
                     {/* Core Triage Information Grid */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
-                      
+
                       {/* Column 1: Contact & Location */}
                       <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-100 space-y-2">
                         <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider block">
@@ -1798,8 +1862,8 @@ export default function HospitalStaffWorkspace({
                               {sos.phone || 'No phone provided'}
                             </a>
                           </p>
-                          <p className="flex items-center gap-1.5 text-slate-600">
-                            <MapPin className="w-3.5 h-3.5 text-red-500" />
+                          <p className="flex items-center gap-1.5">
+                            <MapPin className="w-3.5 h-3.5 text-slate-500" />
                             <span>{sos.village}</span>
                           </p>
                           {sos.mapsLink && (
@@ -1807,165 +1871,133 @@ export default function HospitalStaffWorkspace({
                               href={sos.mapsLink}
                               target="_blank"
                               rel="noreferrer"
-                              className="inline-flex items-center gap-1 text-[11px] font-black text-[#008080] hover:underline pt-0.5"
+                              className="text-[11px] font-bold text-[#008080] hover:underline flex items-center gap-1 mt-1"
                             >
-                              <Navigation className="w-3 h-3" />
-                              <span>Open Live GPS in Google Maps ({sos.gps})</span>
+                              <span>Open Google Maps GPS</span>
+                              <ExternalLink className="w-3 h-3" />
                             </a>
                           )}
                         </div>
                       </div>
 
-                      {/* Column 2: Rapid Clinical Assessment */}
+                      {/* Column 2: Clinical CAD Assessment */}
                       <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-100 space-y-2">
                         <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider block">
-                          Initial Triage Assessment
+                          CAD Clinical Assessment
                         </span>
-                        <div className="space-y-1.5">
-                          <div className="flex items-center gap-2">
-                            <span className="text-slate-500 font-medium">Breathing:</span>
-                            <span className={`font-black px-2 py-0.5 rounded text-[11px] ${
-                              sos.breathing === 'Not Breathing' ? 'bg-red-600 text-white' : sos.breathing === 'Gasping' ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'
-                            }`}>
-                              {sos.breathing}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-slate-500 font-medium">Consciousness:</span>
-                            <span className={`font-black px-2 py-0.5 rounded text-[11px] ${
-                              sos.consciousness === 'Unconscious' ? 'bg-red-600 text-white' : sos.consciousness === 'Drowsy' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
-                            }`}>
-                              {sos.consciousness}
-                            </span>
-                          </div>
-                          {sos.signs && (
-                            <p className="text-[11px] text-red-700 font-bold leading-tight">
-                              ⚠️ Danger Signs: {sos.signs}
-                            </p>
-                          )}
+                        <div className="space-y-1 text-slate-700">
+                          <p>
+                            <span className="text-slate-400 font-bold">Breathing:</span>{' '}
+                            <strong className="text-slate-900">{sos.breathing || 'Not reported'}</strong>
+                          </p>
+                          <p>
+                            <span className="text-slate-400 font-bold">Consciousness:</span>{' '}
+                            <strong className="text-slate-900">{sos.consciousness || 'Not reported'}</strong>
+                          </p>
+                          <p className="text-[11px] text-rose-950 font-bold bg-rose-50 p-1.5 rounded-lg border border-rose-100">
+                            {sos.signs || 'Immediate ambulance response advised'}
+                          </p>
                         </div>
                       </div>
 
-                      {/* Column 3: Multi-Agency Dispatch Status Matrix */}
+                      {/* Column 3: Dispatch & Escort Status */}
                       <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-100 space-y-2">
                         <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider block">
-                          CAD Dispatch Matrix
+                          Dispatch Status
                         </span>
-                        <div className="space-y-1.5 text-[11px]">
-                          <div className="flex items-center justify-between">
-                            <span className="text-slate-600">📞 Phone Call:</span>
-                            <span className={`font-black px-2 py-0.5 rounded ${sos.callLogged ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
-                              {sos.callLogged ? 'Call Logged' : 'Not Called Yet'}
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-slate-600">🚑 108 Ambulance:</span>
-                            <span className={`font-black px-2 py-0.5 rounded ${sos.ambulanceStatus === 'DISPATCHED' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'}`}>
-                              {sos.ambulanceStatus === 'DISPATCHED' ? `${sos.ambulanceVehicle || '108'} (${sos.ambulanceEta})` : 'Not Dispatched'}
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-slate-600">👩‍⚕️ Village ASHA:</span>
-                            <span className={`font-black px-2 py-0.5 rounded ${sos.ashaStatus === 'ALERTED' ? 'bg-teal-100 text-teal-800' : 'bg-slate-200 text-slate-700'}`}>
-                              {sos.ashaStatus === 'ALERTED' ? 'Alerted via WhatsApp' : 'Pending Alert'}
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-slate-600">🩺 Doctor Escorted:</span>
-                            <span className={`font-black px-2 py-0.5 rounded ${sos.doctorStatus === 'NOTIFIED' ? 'bg-purple-100 text-purple-800' : 'bg-slate-200 text-slate-700'}`}>
-                              {sos.doctorStatus === 'NOTIFIED' ? 'Doctor Notified' : 'Casualty Desk'}
-                            </span>
-                          </div>
+                        <div className="space-y-1 text-slate-700">
+                          <p className="flex items-center gap-1.5">
+                            <Siren className="w-3.5 h-3.5 text-slate-500" />
+                            <span>108: <strong>{sos.ambulanceStatus === 'DISPATCHED' ? `Dispatched (${sos.ambulanceVehicle})` : 'Not Dispatched'}</strong></span>
+                          </p>
+                          <p className="flex items-center gap-1.5">
+                            <UserCheck className="w-3.5 h-3.5 text-slate-500" />
+                            <span>ASHA Escort: <strong>{sos.ashaStatus === 'ALERTED' ? 'Alerted via WhatsApp' : 'Not Contacted'}</strong></span>
+                          </p>
+                          <p className="flex items-center gap-1.5">
+                            <Stethoscope className="w-3.5 h-3.5 text-slate-500" />
+                            <span>Doctor: <strong>{sos.doctorStatus === 'NOTIFIED' ? `Notified (${sos.doctor_assigned})` : 'Not Assigned'}</strong></span>
+                          </p>
                         </div>
                       </div>
 
                     </div>
 
-                    {/* Dispatch Control Bar */}
-                    <div className="flex flex-wrap items-center justify-between gap-2.5 pt-2 border-t border-slate-100">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {/* 1. Direct Call */}
-                        <a
-                          href={`tel:${sos.phone}`}
-                          onClick={() => handleLogCall(sos)}
-                          className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-black text-xs rounded-xl shadow-xs transition-transform active:scale-95 flex items-center gap-1.5 cursor-pointer"
-                        >
-                          <Phone className="w-3.5 h-3.5" />
-                          <span>Call Patient</span>
-                        </a>
+                    {/* CAD Dispatch Action Toolbar */}
+                    {!isResolved && (
+                      <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <a
+                            href={`tel:${sos.phone}`}
+                            onClick={() => handleLogCall(sos)}
+                            className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-black text-xs rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <Phone className="w-3.5 h-3.5 text-[#008080]" />
+                            <span>{sos.callLogged ? 'Call Logged (Redial)' : 'Call Caller'}</span>
+                          </a>
 
-                        {/* 2. Dispatch 108 Ambulance */}
-                        <button
-                          type="button"
-                          onClick={() => setDispatchModalSOS(sos)}
-                          className={`px-3.5 py-2 text-xs font-black rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer ${
-                            sos.ambulanceStatus === 'DISPATCHED'
-                              ? 'bg-emerald-600 text-white hover:bg-emerald-700'
-                              : 'bg-red-600 hover:bg-red-700 text-white animate-pulse'
-                          }`}
-                        >
-                          <Siren className="w-3.5 h-3.5" />
-                          <span>{sos.ambulanceStatus === 'DISPATCHED' ? `Update Ambulance (${sos.ambulanceEta})` : 'Dispatch 108 Ambulance'}</span>
-                        </button>
+                          <button
+                            type="button"
+                            onClick={() => setDispatchModalSOS(sos)}
+                            className={`px-4 py-2 text-xs font-black rounded-xl transition-all shadow-sm flex items-center gap-1.5 cursor-pointer ${
+                              sos.ambulanceStatus === 'DISPATCHED'
+                                ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                                : 'bg-red-600 hover:bg-red-700 text-white shadow-md'
+                            }`}
+                          >
+                            <Siren className="w-3.5 h-3.5" />
+                            <span>{sos.ambulanceStatus === 'DISPATCHED' ? `Update Ambulance (${sos.ambulanceEta})` : 'Dispatch 108 Ambulance'}</span>
+                          </button>
 
-                        {/* 3. Alert Village ASHA Escort */}
-                        <button
-                          type="button"
-                          onClick={() => handleAlertASHA(sos)}
-                          className={`px-3.5 py-2 text-xs font-black rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer ${
-                            sos.ashaStatus === 'ALERTED'
-                              ? 'bg-teal-600 text-white'
-                              : 'bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200'
-                          }`}
-                        >
-                          <Send className="w-3.5 h-3.5" />
-                          <span>{sos.ashaStatus === 'ALERTED' ? 'Alerted ASHA (Re-send)' : 'Alert Village ASHA (WhatsApp)'}</span>
-                        </button>
+                          <button
+                            type="button"
+                            onClick={() => handleAlertASHA(sos)}
+                            className={`px-3.5 py-2 text-xs font-black rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer border ${
+                              sos.ashaStatus === 'ALERTED'
+                                ? 'bg-teal-50 text-teal-800 border-teal-200'
+                                : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
+                            }`}
+                          >
+                            <UserCheck className="w-3.5 h-3.5 text-teal-600" />
+                            <span>{sos.ashaStatus === 'ALERTED' ? 'ASHA Mobilized' : 'Alert Village ASHA'}</span>
+                          </button>
 
-                        {/* 4. Escalate to Doctor */}
-                        <button
-                          type="button"
-                          onClick={() => handleEscalateDoctor(sos)}
-                          className={`px-3.5 py-2 text-xs font-black rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer ${
-                            sos.doctorStatus === 'NOTIFIED'
-                              ? 'bg-purple-700 text-white'
-                              : 'bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200'
-                          }`}
-                        >
-                          <Stethoscope className="w-3.5 h-3.5" />
-                          <span>{sos.doctorStatus === 'NOTIFIED' ? 'Doctor Notified' : 'Escalate to Doctor'}</span>
-                        </button>
+                          <button
+                            type="button"
+                            onClick={() => handleEscalateDoctor(sos)}
+                            className={`px-3.5 py-2 text-xs font-black rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer border ${
+                              sos.doctorStatus === 'NOTIFIED'
+                                ? 'bg-purple-50 text-purple-800 border-purple-200'
+                                : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
+                            }`}
+                          >
+                            <Stethoscope className="w-3.5 h-3.5 text-purple-600" />
+                            <span>{sos.doctorStatus === 'NOTIFIED' ? 'Doctor Alerted' : 'Route to Doctor'}</span>
+                          </button>
+                        </div>
+
+                        <div>
+                          <button
+                            type="button"
+                            disabled={actionLoadingId === sos.id}
+                            onClick={() => handleResolveSOS(sos)}
+                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl shadow-sm transition-colors flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <CheckCircle2 className="w-4 h-4" />
+                            <span>Mark Resolved</span>
+                          </button>
+                        </div>
                       </div>
-
-                      {/* 5. Mark Resolved */}
-                      {!isResolved ? (
-                        <button
-                          type="button"
-                          disabled={actionLoadingId === sos.id}
-                          onClick={() => handleResolveSOS(sos)}
-                          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer shrink-0"
-                        >
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>Mark Case Stabilized &amp; Resolved</span>
-                        </button>
-                      ) : (
-                        <span className="text-xs font-black text-emerald-700 flex items-center gap-1">
-                          <CheckCircle2 className="w-4 h-4" />
-                          <span>Closed &amp; Archived</span>
-                        </span>
-                      )}
-                    </div>
+                    )}
 
                   </div>
                 );
               })
             ) : (
-              <div className="p-12 text-center bg-white border border-slate-200 rounded-3xl space-y-2">
-                <span className="text-4xl">🟢</span>
-                <h3 className="font-black text-sm text-slate-800">No Active Emergency Calls</h3>
-                <p className="text-xs text-slate-400 font-medium">
-                  The 24x7 CAD pipeline is standby. Incoming SOS alerts will sound and trigger here in real-time.
-                </p>
+              <div className="text-center py-12 bg-white rounded-3xl border border-slate-200 shadow-2xs space-y-2">
+                <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-1" />
+                <p className="text-sm font-black text-slate-800">No active CAD emergency dispatch alerts</p>
+                <p className="text-xs text-slate-400">All helpline and 108 calls are monitored in real-time.</p>
               </div>
             )}
           </div>
@@ -1973,30 +2005,20 @@ export default function HospitalStaffWorkspace({
         </div>
       )}
 
-      {/* ─── MODAL: 108 AMBULANCE DISPATCH ASSIGNMENT ─── */}
+      {/* ─── MODAL: 108 AMBULANCE DISPATCH ─── */}
       {dispatchModalSOS && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="bg-white rounded-3xl max-w-lg w-full border border-slate-200 shadow-2xl overflow-hidden space-y-5 p-6">
-            <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-red-100 text-red-600 flex items-center justify-center font-black text-lg">
-                  🚑
-                </div>
-                <div>
-                  <h3 className="font-black text-base text-slate-900 leading-tight">
-                    Dispatch 108 Emergency Ambulance
-                  </h3>
-                  <p className="text-xs text-slate-500 font-bold mt-0.5">
-                    Assign vehicle &amp; estimated arrival time for CAD dispatch
-                  </p>
-                </div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 border border-slate-200 shadow-2xl space-y-4">
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="font-black text-base text-slate-900">Record Emergency Transport Dispatch</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Internal Facility Log · Allocate transport vehicle &amp; staff-estimated ETA</p>
               </div>
               <button
-                type="button"
                 onClick={() => setDispatchModalSOS(null)}
-                className="p-1.5 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
+                className="p-1.5 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 cursor-pointer"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4" />
               </button>
             </div>
 
@@ -2014,10 +2036,10 @@ export default function HospitalStaffWorkspace({
                 </p>
               </div>
 
-              {/* 108 Vehicle Plate */}
+              {/* Vehicle Identification */}
               <div className="space-y-1.5">
                 <label className="font-black text-slate-700 uppercase tracking-wider text-[10px]">
-                  108 Ambulance Registration Plate
+                  Ambulance Vehicle Identification (Staff-Recorded Plate)
                 </label>
                 <input
                   type="text"
@@ -2031,7 +2053,7 @@ export default function HospitalStaffWorkspace({
               {/* ETA Presets */}
               <div className="space-y-1.5">
                 <label className="font-black text-slate-700 uppercase tracking-wider text-[10px]">
-                  Estimated Time of Arrival (ETA)
+                  Staff-Entered Estimated Time of Arrival (Manual Estimate)
                 </label>
                 <div className="flex gap-2 flex-wrap">
                   {['6-8 mins', '10-12 mins', '15 mins', '20-25 mins'].map(preset => (
@@ -2058,10 +2080,9 @@ export default function HospitalStaffWorkspace({
                 />
               </div>
 
-              {/* Paramedic note */}
-              <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px] font-medium leading-relaxed">
-                🚨 <strong>Foreign CAD Dispatch Standard:</strong> Once confirmed, ETA and vehicle plate number are broadcast immediately to the caller's live tracking screen in real-time.
-              </div>
+              <p className="text-[10px] text-slate-400 italic">
+                * Record is saved locally in facility care_requests. Does not connect to live government 108 GPS telematics.
+              </p>
             </div>
 
             <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
@@ -2079,31 +2100,30 @@ export default function HospitalStaffWorkspace({
                 className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-black text-xs rounded-xl shadow-md transition-all cursor-pointer flex items-center gap-1.5"
               >
                 <Siren className="w-3.5 h-3.5" />
-                <span>Confirm 108 Dispatch</span>
+                <span>Confirm &amp; Log Dispatch</span>
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ─── MODAL 1: CLINICAL CASE DOSSIER & INTAKE CONTEXT ─── */}
+      {/* ─── MODAL 1: CLINICAL CASE DOSSIER & PROGRESSIVE DISCLOSURE ─── */}
       {selectedReferral && (() => {
         const isHighRisk = selectedReferral.priority === 'HIGH' || selectedReferral.priority === 'RED';
         const isUrgent = selectedReferral.priority === 'ORANGE';
-        const priorityBadgeStyle = isHighRisk 
+        const priorityBadgeStyle = isHighRisk
           ? 'bg-rose-100 text-rose-800 border-rose-200'
-          : isUrgent 
-          ? 'bg-amber-100 text-amber-900 border-amber-200' 
+          : isUrgent
+          ? 'bg-amber-100 text-amber-900 border-amber-200'
           : 'bg-emerald-100 text-emerald-900 border-emerald-200';
 
         let statusBadgeStyle = 'bg-slate-100 text-slate-700 border-slate-200';
         if (selectedReferral.status === 'Accepted') statusBadgeStyle = 'bg-sky-100 text-sky-800 border-sky-200';
         if (selectedReferral.status === 'Arrived') statusBadgeStyle = 'bg-teal-100 text-teal-800 border-teal-200';
         if (selectedReferral.status === 'Assigned') statusBadgeStyle = 'bg-indigo-100 text-indigo-800 border-indigo-200';
-        if (selectedReferral.status === 'In Consultation') statusBadgeStyle = 'bg-amber-100 text-amber-800 border-amber-200';
+        if (selectedReferral.status === 'In Consultation') statusBadgeStyle = 'bg-purple-100 text-purple-800 border-purple-200';
         if (selectedReferral.status === 'Completed') statusBadgeStyle = 'bg-emerald-100 text-emerald-800 border-emerald-200';
 
-        // Safe danger signs normalization
         const dangerSigns = Array.isArray(selectedReferral.danger_signs)
           ? selectedReferral.danger_signs
           : (typeof selectedReferral.danger_signs === 'string' && selectedReferral.danger_signs.trim())
@@ -2116,32 +2136,32 @@ export default function HospitalStaffWorkspace({
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/50 backdrop-blur-xs animate-in fade-in duration-150">
             <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[92vh] flex flex-col border border-slate-200 shadow-2xl overflow-hidden">
-              
+
               {/* Modal Top Header */}
               <div className="p-5 border-b border-slate-100 bg-slate-50/60 flex items-start justify-between gap-3 shrink-0">
                 <div className="space-y-1">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-[#008080]/10 text-[#008080] border border-[#008080]/20">
                       <FileText className="w-3 h-3" />
-                      Clinical Case File
+                      Care Handoff Case File
                     </span>
-                    {modalOrigin === 'ASHA' && (
+                    {modalOrigin.key === 'ASHA' && (
                       <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 border border-emerald-200">
-                        🚨 ASHA Referral
+                        🚨 ASHA Field Referral
                       </span>
                     )}
-                    {modalOrigin === 'PATIENT_DIRECT' && (
+                    {modalOrigin.key === 'PATIENT_DIRECT' && (
                       <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 border border-blue-200">
                         👤 Direct Patient Booking
                       </span>
                     )}
-                    {modalOrigin === 'TELECONSULT' && (
+                    {modalOrigin.key === 'TELECONSULT' && (
                       <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-md bg-purple-100 text-purple-800 border border-purple-200">
                         📹 Virtual Teleconsult
                       </span>
                     )}
                     <span className={`text-[10px] font-black px-2 py-0.5 rounded-md border ${priorityBadgeStyle}`}>
-                      {selectedReferral.priority_label || selectedReferral.priority}
+                      {selectedReferral.priority_label || selectedReferral.priority || 'Routine Priority'}
                     </span>
                     <span className={`text-[10px] font-black px-2 py-0.5 rounded-md border ${statusBadgeStyle}`}>
                       Status: {selectedReferral.status}
@@ -2154,10 +2174,10 @@ export default function HospitalStaffWorkspace({
 
                   <div className="flex items-center gap-3 text-xs text-slate-600 font-medium flex-wrap">
                     <span className="font-mono text-[11px] font-bold bg-slate-200/80 px-2 py-0.5 rounded text-slate-800">
-                      {selectedReferral.patient_unified_id ? `ABHA / ID: ${selectedReferral.patient_unified_id}` : `ID: ${selectedReferral.patient_id}`}
+                      {selectedReferral.patient_unified_id ? `Unified ID: ${selectedReferral.patient_unified_id}` : (selectedReferral.patient_id ? `ID: ${selectedReferral.patient_id.slice(0, 8)}` : 'ID: Not assigned')}
                     </span>
                     {(selectedReferral.patient_gender || selectedReferral.patient_age) && (
-                      <span className="text-slate-500">
+                      <span className="text-slate-600">
                         {[selectedReferral.patient_gender, selectedReferral.patient_age ? `${selectedReferral.patient_age} yrs` : null].filter(Boolean).join(' · ')}
                       </span>
                     )}
@@ -2172,7 +2192,7 @@ export default function HospitalStaffWorkspace({
                 <button
                   onClick={() => setSelectedReferral(null)}
                   className="p-2 rounded-full bg-white hover:bg-slate-100 text-slate-500 border border-slate-200 shadow-2xs transition-colors cursor-pointer"
-                  aria-label="Close clinical case file"
+                  aria-label="Close case file"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -2180,22 +2200,22 @@ export default function HospitalStaffWorkspace({
 
               {/* Scrollable Case Body */}
               <div className="p-5 overflow-y-auto space-y-4 text-xs font-semibold text-slate-700 divide-y divide-slate-100">
-                
-                {/* Contact & Facility Overview */}
+
+                {/* 1. Contact & Destination Overview */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                   <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100 space-y-1">
                     <span className="text-[10px] text-slate-400 font-black uppercase tracking-wider block">Patient Phone & Direct Call</span>
                     {selectedReferral.patient_phone ? (
-                      <a 
-                        href={`tel:${selectedReferral.patient_phone}`} 
+                      <a
+                        href={`tel:${selectedReferral.patient_phone}`}
                         className="inline-flex items-center gap-1.5 text-sm font-black text-[#008080] hover:underline"
                       >
                         <Phone className="w-3.5 h-3.5" />
                         <span>{selectedReferral.patient_phone}</span>
-                        <span className="text-[10px] bg-teal-100 text-teal-800 px-1.5 py-0.2 rounded ml-1 font-bold">Call Now</span>
+                        <span className="text-[10px] bg-teal-100 text-teal-800 px-1.5 py-0.2 rounded ml-1 font-bold">Call</span>
                       </a>
                     ) : (
-                      <span className="text-slate-400 italic text-xs">No phone recorded</span>
+                      <span className="text-slate-400 italic text-xs">Not recorded</span>
                     )}
                   </div>
 
@@ -2203,38 +2223,34 @@ export default function HospitalStaffWorkspace({
                     <span className="text-[10px] text-slate-400 font-black uppercase tracking-wider block">Destination Facility & Unit</span>
                     <div className="text-xs font-black text-slate-900 flex items-center gap-1.5">
                       <Building2 className="w-3.5 h-3.5 text-slate-500" />
-                      <span>{selectedReferral.destination_hospital || 'District Hospital / PHC'}</span>
+                      <span>{selectedReferral.destination_hospital || facility?.name || 'Primary Health Centre'}</span>
                     </div>
                     <div className="text-[11px] text-slate-500">
-                      Unit: <span className="font-bold text-slate-700">{selectedReferral.destination_department || 'OPD Triage'}</span>
+                      Target Dept: <span className="font-bold text-slate-700">{selectedReferral.destination_department || 'General Medicine'}</span>
                     </div>
                   </div>
                 </div>
 
-                {/* Assigned Clinician Desk */}
+                {/* 2. Clinician & Handoff Responsibility */}
                 <div className="pt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div>
-                    <span className="text-[10px] text-slate-400 font-black uppercase tracking-wider block">Doctor / Specialist Desk</span>
+                    <span className="text-[10px] text-slate-400 font-black uppercase tracking-wider block">Assigned Doctor Desk</span>
                     <div className="text-sm font-extrabold text-slate-900 flex items-center gap-1.5 mt-0.5">
                       <Stethoscope className="w-4 h-4 text-[#008080]" />
                       {selectedReferral.doctor_assigned ? (
                         <span className="text-slate-900">{selectedReferral.doctor_assigned}</span>
                       ) : (
-                        <span className="text-amber-700 italic">Not Assigned (Awaiting OPD Triage Desk)</span>
+                        <span className="text-amber-700 italic">Not Assigned (Awaiting Reception Desk)</span>
                       )}
                     </div>
                   </div>
 
                   <div className="text-right sm:text-right">
                     <span className="text-[10px] text-slate-400 font-black uppercase tracking-wider block">
-                      {modalOrigin === 'PATIENT_DIRECT' 
-                        ? 'Booked Directly By' 
-                        : modalOrigin === 'TELECONSULT' 
-                        ? 'Consultation Origin' 
-                        : 'Referred By Frontline Worker'}
+                      Referred By
                     </span>
                     <span className="text-xs font-bold text-slate-800">
-                      {selectedReferral.created_by || (modalOrigin === 'PATIENT_DIRECT' ? 'Direct Patient (Self-Booking)' : modalOrigin === 'TELECONSULT' ? 'Virtual Teleconsultation' : 'ASHA Community Worker')}
+                      {selectedReferral.created_by || 'Frontline Community Worker'}
                     </span>
                     <div className="text-[10px] text-slate-400">
                       {new Date(selectedReferral.created_at).toLocaleString('en-IN', {
@@ -2243,12 +2259,12 @@ export default function HospitalStaffWorkspace({
                         year: 'numeric',
                         hour: '2-digit',
                         minute: '2-digit'
-                      })}
+                      })} · Intake elapsed: {getWaitDuration(selectedReferral.created_at)}
                     </div>
                   </div>
                 </div>
 
-                {/* Flagged Danger Signs */}
+                {/* 3. Flagged Danger Signs */}
                 {dangerSigns.length > 0 && (
                   <div className="pt-4">
                     <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl space-y-1.5">
@@ -2265,57 +2281,57 @@ export default function HospitalStaffWorkspace({
                   </div>
                 )}
 
-                {/* Pregnancy / Special Escort Flag */}
+                {/* 4. Pregnancy / Escort Flag */}
                 {(selectedReferral.is_pregnant || selectedReferral.symptoms?.includes('ASHA ACCOMPANYING') || selectedReferral.clinical_summary?.includes('ASHA ACCOMPANYING')) && (
                   <div className="pt-3">
                     <div className="p-2.5 bg-purple-50 border border-purple-200 rounded-xl flex items-center gap-2 text-xs font-bold text-purple-900">
                       <span className="text-base">🤰</span>
-                      <span>High-Priority Antenatal / Escorted Case — ASHA worker accompanying for priority OPD admission.</span>
+                      <span>High-Priority Antenatal / Escorted Case — ASHA worker accompanying for priority intake.</span>
                     </div>
                   </div>
                 )}
 
-                {/* Frontline Triage Vitals */}
+                {/* 5. Frontline Recorded Vitals (Raw measurements with units only) */}
                 <div className="pt-4 space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] text-slate-400 font-black uppercase tracking-wider flex items-center gap-1">
                       <Activity className="w-3.5 h-3.5 text-[#008080]" />
-                      Recorded Vitals at Triage
+                      Recorded Frontline Vitals
                     </span>
-                    <span className="text-[10px] text-slate-400 font-bold">Standard Health Mission Parameters</span>
+                    <span className="text-[10px] text-slate-400 font-bold">Standard Clinical Units</span>
                   </div>
 
                   {Object.keys(vitals).length > 0 ? (
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                       <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
                         <span className="text-[10px] text-slate-400 block font-bold">Blood Pressure</span>
-                        <span className="text-sm font-black text-slate-900">{vitals.bp || '—'}</span>
+                        <span className="text-sm font-black text-slate-900">{vitals.bp || 'Not recorded'}</span>
                         <span className="text-[9px] text-slate-400 block font-medium">mmHg</span>
                       </div>
 
                       <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
-                        <span className="text-[10px] text-slate-400 block font-bold">Pulse / HR</span>
-                        <span className="text-sm font-black text-slate-900">{vitals.pulse ? `${vitals.pulse} bpm` : '—'}</span>
-                        <span className="text-[9px] text-slate-400 block font-medium">Beats/min</span>
+                        <span className="text-[10px] text-slate-400 block font-bold">Pulse Rate</span>
+                        <span className="text-sm font-black text-slate-900">{vitals.pulse ? `${vitals.pulse} bpm` : 'Not recorded'}</span>
+                        <span className="text-[9px] text-slate-400 block font-medium">Beats / min</span>
                       </div>
 
-                      <div className={`p-2.5 rounded-xl border ${vitals.spo2 && Number(vitals.spo2) < 95 ? 'bg-amber-50 border-amber-200 text-amber-900' : 'bg-slate-50 border-slate-200'}`}>
+                      <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
                         <span className="text-[10px] text-slate-400 block font-bold">Oxygen (SpO₂)</span>
-                        <span className="text-sm font-black text-slate-900">{vitals.spo2 ? `${vitals.spo2}%` : '—'}</span>
-                        <span className="text-[9px] text-slate-400 block font-medium">{vitals.spo2 && Number(vitals.spo2) < 95 ? '⚠️ Low Oxygen' : 'Normal'}</span>
+                        <span className="text-sm font-black text-slate-900">{vitals.spo2 ? `${vitals.spo2}%` : 'Not recorded'}</span>
+                        <span className="text-[9px] text-slate-400 block font-medium">Saturation</span>
                       </div>
 
-                      <div className={`p-2.5 rounded-xl border ${vitals.temp && Number(vitals.temp) >= 100 ? 'bg-amber-50 border-amber-200 text-amber-900' : 'bg-slate-50 border-slate-200'}`}>
+                      <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
                         <span className="text-[10px] text-slate-400 block font-bold">Temperature</span>
-                        <span className="text-sm font-black text-slate-900">{vitals.temp ? `${vitals.temp}°F` : '—'}</span>
-                        <span className="text-[9px] text-slate-400 block font-medium">{vitals.temp && Number(vitals.temp) >= 100 ? '⚠️ Fever' : 'Normal'}</span>
+                        <span className="text-sm font-black text-slate-900">{vitals.temp ? `${vitals.temp}°F` : 'Not recorded'}</span>
+                        <span className="text-[9px] text-slate-400 block font-medium">Fahrenheit</span>
                       </div>
 
                       {vitals.respRate && (
                         <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
                           <span className="text-[10px] text-slate-400 block font-bold">Respiration</span>
-                          <span className="text-sm font-black text-slate-900">{vitals.respRate}/min</span>
-                          <span className="text-[9px] text-slate-400 block font-medium">Breaths</span>
+                          <span className="text-sm font-black text-slate-900">{vitals.respRate} /min</span>
+                          <span className="text-[9px] text-slate-400 block font-medium">Breaths / min</span>
                         </div>
                       )}
 
@@ -2323,7 +2339,7 @@ export default function HospitalStaffWorkspace({
                         <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
                           <span className="text-[10px] text-slate-400 block font-bold">Weight</span>
                           <span className="text-sm font-black text-slate-900">{vitals.weight} kg</span>
-                          <span className="text-[9px] text-slate-400 block font-medium">Body mass</span>
+                          <span className="text-[9px] text-slate-400 block font-medium">Body weight</span>
                         </div>
                       )}
                     </div>
@@ -2334,35 +2350,40 @@ export default function HospitalStaffWorkspace({
                   )}
                 </div>
 
-                {/* Chief Complaint / Symptoms */}
+                {/* 6. Chief Complaint */}
                 <div className="pt-4 space-y-1.5">
-                  <span className="text-[10px] text-slate-400 font-black uppercase tracking-wider block">Intake Symptoms & Notes</span>
+                  <span className="text-[10px] text-slate-400 font-black uppercase tracking-wider block">Intake Symptoms & Clinical Complaint</span>
                   <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs text-slate-800 leading-relaxed font-medium">
                     {selectedReferral.symptoms || 'No detailed symptoms specified.'}
                   </div>
                 </div>
 
-                {/* ASHA AI Clinical Assessment Note */}
+                {/* 7. AI-Assisted Triage Note (Clearly Labeled) */}
                 {(selectedReferral.ai_note || selectedReferral.clinical_summary) && (
                   <div className="pt-4 space-y-1.5">
-                    <span className="text-[10px] text-purple-700 font-black uppercase tracking-wider flex items-center gap-1">
-                      <Sparkles className="w-3.5 h-3.5 text-purple-600" />
-                      ASHA AI Clinical Assessment Note
-                    </span>
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <span className="text-[10px] text-purple-700 font-black uppercase tracking-wider flex items-center gap-1">
+                        <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                        AI-Assisted Triage Recommendation
+                      </span>
+                      <span className="text-[9px] text-slate-400 font-medium italic">
+                        Frontline clinical prioritization · Not a physician diagnosis
+                      </span>
+                    </div>
                     <div className="p-3.5 bg-purple-50/70 border border-purple-200 rounded-2xl text-xs text-purple-950 font-semibold leading-relaxed">
                       {selectedReferral.ai_note || selectedReferral.clinical_summary}
                     </div>
                   </div>
                 )}
 
-                {/* Attached Medical Records / Scans */}
+                {/* 8. Attached Medical Records / Scans */}
                 {selectedReferral.attached_file_url && (
                   <div className="pt-4 space-y-1.5">
                     <span className="text-[10px] text-slate-400 font-black uppercase tracking-wider block">Attached Medical Record / Scan</span>
                     <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-between gap-3">
                       <div className="flex items-center gap-2">
                         <FileText className="w-4 h-4 text-[#008080]" />
-                        <span className="text-xs font-bold text-slate-800 truncate">Patient Health Document / Scan</span>
+                        <span className="text-xs font-bold text-slate-800 truncate">Attached Patient Document / Diagnostic Scan</span>
                       </div>
                       <a
                         href={selectedReferral.attached_file_url}
@@ -2370,7 +2391,7 @@ export default function HospitalStaffWorkspace({
                         rel="noopener noreferrer"
                         className="px-3 py-1.5 bg-[#008080] hover:bg-[#006666] text-white text-[11px] font-bold rounded-lg flex items-center gap-1 transition-colors"
                       >
-                        <span>View Scan</span>
+                        <span>View Document</span>
                         <ExternalLink className="w-3 h-3" />
                       </a>
                     </div>
@@ -2379,49 +2400,81 @@ export default function HospitalStaffWorkspace({
 
               </div>
 
-              {/* Modal Action Footer */}
+              {/* Modal Action Footer: One Dominant Next Action */}
               <div className="p-4 border-t border-slate-200 bg-slate-50 flex flex-wrap items-center justify-between gap-3 shrink-0">
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedReferral(null)}
-                    className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-bold rounded-xl cursor-pointer transition-colors shadow-2xs"
-                  >
-                    Close Case
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedReferral(null)}
+                  className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-bold rounded-xl cursor-pointer transition-colors shadow-2xs"
+                >
+                  Close Case File
+                </button>
 
                 <div className="flex items-center gap-2">
-                  {selectedReferral.status !== 'Completed' && selectedReferral.status !== 'COMPLETED' && (
+                  {/* Secondary Token button */}
+                  {(selectedReferral.status === 'Accepted' || selectedReferral.status === 'Pending') && (
                     <button
                       type="button"
+                      data-referral-id={selectedReferral.id}
+                      data-action="assign-token"
                       onClick={() => handleOpenTokenModal(selectedReferral)}
-                      className="px-4 py-2 bg-[#FF9933] hover:bg-[#e68a2e] text-slate-950 font-black text-xs rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
+                      className="px-4 py-2 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-xs rounded-xl shadow-2xs transition-colors cursor-pointer flex items-center gap-1.5"
                     >
-                      <Ticket className="w-4 h-4" />
-                      <span>{selectedReferral.slot_preference?.includes('Token') || selectedReferral.ai_note?.includes('TOKEN:') ? 'Update Token & Arrival Slot' : 'Assign Token & Arrival Slot'}</span>
+                      <Ticket className="w-4 h-4 text-amber-700" />
+                      <span>{selectedReferral.slot_preference?.includes('Token') || selectedReferral.ai_note?.includes('TOKEN:') ? 'Edit Token' : 'Assign Token'}</span>
+                    </button>
+                  )}
+
+                  {/* Dominant Action in Modal */}
+                  {selectedReferral.status === 'Pending' && (
+                    <button
+                      type="button"
+                      data-referral-id={selectedReferral.id}
+                      data-action="accept-referral"
+                      onClick={() => handleAcceptReferral(selectedReferral.id)}
+                      className="px-5 py-2 bg-[#008080] hover:bg-[#006666] text-white font-black text-xs rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Accept Referral</span>
                     </button>
                   )}
 
                   {selectedReferral.status === 'Accepted' && (
                     <button
                       type="button"
+                      data-referral-id={selectedReferral.id}
+                      data-action="mark-arrived"
                       onClick={() => handleMarkArrived(selectedReferral.id)}
-                      className="px-4 py-2 bg-[#008080] hover:bg-[#006666] text-white font-black text-xs rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
+                      className="px-5 py-2 bg-[#008080] hover:bg-[#006666] text-white font-black text-xs rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
                     >
-                      <CheckCircle2 className="w-4 h-4" />
+                      <UserCheck className="w-4 h-4" />
                       <span>Mark Patient Arrived</span>
                     </button>
                   )}
 
-                  {(selectedReferral.status === 'Arrived' || selectedReferral.status === 'Accepted') && (
+                  {selectedReferral.status === 'Arrived' && (
                     <button
                       type="button"
+                      data-referral-id={selectedReferral.id}
+                      data-action="send-to-doctor"
                       onClick={() => setShowDoctorRouteModal(selectedReferral)}
-                      className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-black text-xs rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
+                      className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-black text-xs rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
                     >
                       <Stethoscope className="w-4 h-4" />
-                      <span>{selectedReferral.doctor_assigned ? 'Reassign Doctor Desk' : 'Assign Doctor Desk'}</span>
+                      <span>Assign Doctor Desk</span>
+                    </button>
+                  )}
+
+                  {selectedReferral.status === 'Assigned' && (
+                    <button
+                      type="button"
+                      data-referral-id={selectedReferral.id}
+                      data-action="reassign-doctor"
+                      onClick={() => setShowDoctorRouteModal(selectedReferral)}
+                      className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold text-xs rounded-xl transition-colors cursor-pointer flex items-center gap-1.5"
+                    >
+                      <Stethoscope className="w-4 h-4 text-indigo-600" />
+                      <span>Reassign Doctor Desk</span>
                     </button>
                   )}
                 </div>
@@ -2432,15 +2485,15 @@ export default function HospitalStaffWorkspace({
         );
       })()}
 
-      {/* ─── MODAL 2: ROUTE TO CLINICIAN ─── */}
+      {/* ─── MODAL 2: ROUTE PATIENT TO CLINICIAN DESK ─── */}
       {showDoctorRouteModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-in fade-in">
           <div className="bg-white rounded-3xl max-w-md w-full p-5 border border-slate-200 shadow-2xl space-y-4">
-            
+
             <div className="flex items-start justify-between">
               <div>
-                <h2 className="text-sm font-black text-slate-900">Route Patient to Doctor</h2>
-                <p className="text-xs text-slate-500 mt-0.5">Assign clinician desk for {showDoctorRouteModal.patient_name}</p>
+                <h2 className="text-sm font-black text-slate-900">Assign Patient to Doctor Desk</h2>
+                <p className="text-xs text-slate-500 mt-0.5">Select verified clinician for {showDoctorRouteModal.patient_name}</p>
               </div>
               <button
                 onClick={() => setShowDoctorRouteModal(null)}
@@ -2488,11 +2541,11 @@ export default function HospitalStaffWorkspace({
         </div>
       )}
 
-      {/* ── ASSIGN OFFICIAL OPD TOKEN & ARRIVAL SLOT MODAL ── */}
+      {/* ─── MODAL 3: ASSIGN OFFICIAL OPD TOKEN & ARRIVAL SLOT ─── */}
       {showTokenModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
           <div className="bg-white rounded-3xl max-w-lg w-full max-h-[92vh] flex flex-col border border-slate-200 shadow-2xl overflow-hidden">
-            
+
             {/* Header */}
             <div className="bg-gradient-to-r from-[#16324F] to-[#008F83] px-6 py-4 text-white flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
@@ -2501,7 +2554,7 @@ export default function HospitalStaffWorkspace({
                 </div>
                 <div>
                   <h3 className="font-black text-sm text-white">Assign Official OPD Token & Arrival Slot</h3>
-                  <p className="text-[11px] text-teal-100 font-medium">PHC Shirwal Intake Desk · Staggered Queue Management</p>
+                  <p className="text-[11px] text-teal-100 font-medium">Intake Reception Desk · Staggered Queue Management</p>
                 </div>
               </div>
               <button
@@ -2514,7 +2567,7 @@ export default function HospitalStaffWorkspace({
 
             {/* Body */}
             <div className="p-6 overflow-y-auto space-y-4 text-xs font-sans text-slate-800 flex-1">
-              
+
               {/* Patient Info Strip */}
               <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-between">
                 <div>
@@ -2556,7 +2609,7 @@ export default function HospitalStaffWorkspace({
                   Recommended Staggered Arrival Time Slot
                 </label>
                 <p className="text-[11px] text-slate-500 font-medium">
-                  Allocating spaced arrival times prevents 100+ patients crowding the morning OPD hallway at once.
+                  Allocating spaced arrival times prevents crowded waiting areas.
                 </p>
                 <div className="grid grid-cols-2 gap-2 pt-1">
                   {[
@@ -2631,7 +2684,7 @@ export default function HospitalStaffWorkspace({
               {/* 4. Counter Guidance Instruction */}
               <div className="space-y-1">
                 <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider block">
-                  Patient Counter Guidance
+                  Patient Guidance Instruction
                 </label>
                 <input
                   type="text"
