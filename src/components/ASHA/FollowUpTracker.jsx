@@ -277,6 +277,22 @@ function buildReferralItems(careRequests, t) {
         : 1;
 
       if (daysSinceCompletion <= 14 && daysSinceCompletion >= 0) {
+        // Extract doctor clinical prescription notes if available
+        const docDiag = req.asha_notes?.match(/DIAGNOSIS:\s*([^|]+)/i)?.[1]?.trim();
+        let docRx = req.asha_notes?.match(/RX:\s*([^|]+)/i)?.[1]?.trim();
+        try {
+          if (docRx && docRx.startsWith('[')) {
+            const parsed = JSON.parse(docRx);
+            docRx = parsed.map(m => m.name).join(', ');
+          }
+        } catch (_) {}
+        const docFollowUp = req.asha_notes?.match(/FOLLOWUP:\s*([^|]+)/i)?.[1]?.trim();
+        const docDoctor = req.doctor_assigned || req.asha_notes?.match(/DOCTOR:\s*([^|]+)/i)?.[1]?.trim();
+
+        const dynamicDetail = (docDiag || docRx)
+          ? `🩺 ${docDoctor ? docDoctor + ': ' : ''}${docDiag ? docDiag + '. ' : ''}${docRx ? 'Rx: ' + docRx + '. ' : ''}${docFollowUp ? 'Review: ' + docFollowUp : ''}`
+          : t.postTreatmentDetail;
+
         items.push({
           id: `post-treat-${req.id}`,
           patientId: req.patient_id,
@@ -285,7 +301,7 @@ function buildReferralItems(careRequests, t) {
           village: req.village || "Shirwal",
           type: "postTreatment",
           label: t.postTreatment,
-          detail: t.postTreatmentDetail,
+          detail: dynamicDetail,
           urgencyDays: daysSinceCompletion <= 1 ? 0 : daysSinceCompletion >= 4 ? -1 : 1,
           actionLabel: t.checkRecovery,
           referralId: req.id,

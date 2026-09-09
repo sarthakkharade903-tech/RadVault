@@ -287,7 +287,7 @@ function ReferralCard({ req, lang, onViewRx }) {
 
         <div className="flex items-center justify-between mt-2 pt-1 text-[11px] text-slate-500 font-semibold flex-wrap gap-2">
           <span>{req.created_by ? `Origin: ${req.created_by}` : "Self-scheduled"}</span>
-          {isTele && req.status === "COMPLETED" && (
+          {req.status === "COMPLETED" && (
             <button
               onClick={() => onViewRx && onViewRx(req)}
               className="text-[11px] font-extrabold text-[#008F83] hover:underline flex items-center gap-1 cursor-pointer"
@@ -1205,11 +1205,31 @@ function RxViewModal({ req, member, onClose }) {
     { name: "Tab. Cetirizine 10mg", dosage: "1 tablet at bedtime if nasal congestion persists" }
   ];
 
-  const medicines = session?.rx_medicines?.length ? session.rx_medicines : defaultMedicines;
-  const diagnosis = session?.diagnosis || "Acute Viral Febrile Illness with mild upper respiratory inflammation";
-  const doctor = session?.doctor_name || "Dr. Priya Sharma (MBBS, DGO)";
-  const facility = session?.facility || req?.facility || "Primary Health Centre - Shirwal";
-  const advice = session?.doctor_advice || "Take adequate rest, monitor temperature every 6 hours, inform ASHA Priya Deshmukh if fever exceeds 102°F.";
+  // Parse from care_request asha_notes if available (from DoctorWorkspace sign-off)
+  const notesDiagnosis = req?.asha_notes?.match(/DIAGNOSIS:\s*([^|]+)/i)?.[1]?.trim();
+  let notesMeds = null;
+  const rawRx = req?.asha_notes?.match(/RX:\s*([^|]+)/i)?.[1]?.trim();
+  if (rawRx) {
+    try {
+      if (rawRx.startsWith('[')) {
+        notesMeds = JSON.parse(rawRx);
+      } else {
+        notesMeds = rawRx.split(';').map(m => {
+          const parts = m.trim().split('(');
+          return { name: parts[0]?.trim() || m.trim(), dosage: parts[1]?.replace(')', '')?.trim() || 'As directed' };
+        });
+      }
+    } catch (_) {}
+  }
+  const notesAdvice = req?.asha_notes?.match(/ADVICE:\s*([^|]+)/i)?.[1]?.trim();
+  const notesDoctor = req?.doctor_assigned || req?.asha_notes?.match(/DOCTOR:\s*([^|]+)/i)?.[1]?.trim();
+  const notesFacility = req?.facility || req?.asha_notes?.match(/FACILITY:\s*([^|]+)/i)?.[1]?.trim();
+
+  const medicines = notesMeds?.length ? notesMeds : session?.rx_medicines?.length ? session.rx_medicines : defaultMedicines;
+  const diagnosis = notesDiagnosis || session?.diagnosis || "Acute Viral Febrile Illness with mild upper respiratory inflammation";
+  const doctor = notesDoctor || session?.doctor_name || "Dr. Arvind Kulkarni (Medical Officer)";
+  const facility = notesFacility || session?.facility || req?.facility || "Primary Health Centre - Shirwal";
+  const advice = notesAdvice || session?.doctor_advice || "Take adequate rest, monitor temperature every 6 hours, inform ASHA Priya Deshmukh if fever exceeds 102°F.";
   const dateStr = session?.created_at ? new Date(session.created_at).toLocaleDateString("en-IN") : new Date(req?.created_at || Date.now()).toLocaleDateString("en-IN");
 
   return (

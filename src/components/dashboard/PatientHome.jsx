@@ -10,6 +10,7 @@ import { getLatestVitals } from "../../services/ashaService";
 import UpdateVitalsModal from "../Patient/UpdateVitalsModal";
 import VitalsHistory from "../Patient/VitalsHistory";
 import AbhaModal from "../Patient/AbhaModal";
+import EmergencyPassportModal from "../Patient/EmergencyPassportModal";
 
 function formatDate(iso) {
   if (!iso) return null;
@@ -82,6 +83,7 @@ export default function PatientHome({ member, onNavigateTab }) {
   const [updateMetric, setUpdateMetric] = useState(null);
   const [showHistory, setShowHistory] = useState(false);
   const [showAbhaModal, setShowAbhaModal] = useState(false);
+  const [showEmergencyPassport, setShowEmergencyPassport] = useState(false);
   
   // Stored ABHA ID with localStorage persistence
   const savedAbha = (member?.id && localStorage.getItem(`radvault_abha_${member.id}`)) || member?.abha_id || "";
@@ -278,6 +280,23 @@ export default function PatientHome({ member, onNavigateTab }) {
                      </span>
                    )}
                 </div>
+
+                {/* 🚨 Emergency QR Medical Passport Badge */}
+                <div
+                   onClick={() => setShowEmergencyPassport(true)}
+                   className="mt-4 sm:ml-2.5 bg-gradient-to-r from-red-600 to-rose-700 text-white rounded-2xl p-3.5 border-2 border-red-400 inline-flex items-center gap-3 shadow-md hover:shadow-lg hover:from-red-700 hover:to-rose-800 hover:scale-102 transition-all cursor-pointer group"
+                 >
+                   <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center border border-white/30 shrink-0 shadow-inner">
+                     <QrCode className="w-5 h-5 text-white" />
+                   </div>
+                   <div>
+                     <p className="text-[9px] font-black text-red-100 uppercase tracking-[0.2em] mb-0.5">24x7 Triage</p>
+                     <p className="text-[13px] font-black text-white tracking-wide leading-none flex items-center gap-1.5">
+                       <span>Emergency QR</span>
+                       <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+                     </p>
+                   </div>
+                 </div>
               </div>
             </div>
 
@@ -446,6 +465,15 @@ export default function PatientHome({ member, onNavigateTab }) {
         <VitalsHistory
           patientId={member.id}
           onClose={() => setShowHistory(false)}
+        />
+      )}
+
+      {showEmergencyPassport && (
+        <EmergencyPassportModal
+          member={member}
+          latestVitals={latestVitals}
+          onClose={() => setShowEmergencyPassport(false)}
+          onOpenEmergency={() => onNavigateTab && onNavigateTab("emergency")}
         />
       )}
 

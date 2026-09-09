@@ -713,15 +713,51 @@ export default function DoctorWorkspace({
 
       if (refErr) throw refErr;
 
-      // Sync care_request status to COMPLETED
+      // Sync care_request status to COMPLETED with full clinical diagnosis, Rx, and follow-up
       try {
+        const rxList = prescriptions.map(p => ({
+          name: p.name,
+          dosage: `${p.dose || '1 dose'} · ${p.freq || 'daily'} · ${p.duration || '5 days'}`
+        }));
+        const docNotes = `DIAGNOSIS:${diagnosis || 'Clinical evaluation complete'}|RX:${JSON.stringify(rxList)}|ADVICE:${treatmentAdvice || 'Review follow-up'}|FOLLOWUP:${followUpDate || 'Within 7 days'}|DOCTOR:${doctorProfile.name}|FACILITY:${doctorProfile.facility_name || 'Shirwal PHC'}`;
+
         await supabase
           .from('care_requests')
           .update({
             status: 'COMPLETED',
-            completed_at: new Date().toISOString()
+            doctor_assigned: doctorProfile.name,
+            asha_notes: docNotes,
+            completed_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
           })
           .eq('patient_id', activeCase.patient_id);
+
+        if (activeCase.id) {
+          await supabase
+            .from('care_requests')
+            .update({
+              status: 'COMPLETED',
+              doctor_assigned: doctorProfile.name,
+              asha_notes: docNotes,
+              completed_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', activeCase.id);
+        }
+
+        // Try to log encounter for ASHA follow-up tracker
+        try {
+          await supabase
+            .from('encounters')
+            .insert([{
+              patient_id: activeCase.patient_id,
+              doctor_id: doctorProfile.id,
+              follow_up_recommended_date: followUpDate || new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
+              follow_up_completed: false,
+              chief_complaint: diagnosis || 'Clinical evaluation complete',
+              assessment: `${treatmentAdvice || 'Follow-up recovery check'}. Rx: ${prescriptions.map(p => p.name).join(', ')}`
+            }]);
+        } catch (_) {}
       } catch (e) {
         console.warn('[RadVault Doctor] Care request sync skipped:', e.message);
       }
