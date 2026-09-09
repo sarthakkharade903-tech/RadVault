@@ -1297,7 +1297,10 @@ export async function assignStaffTokenAndSlot(payload) {
     tokenNumber,
     arrivalSlot,
     room = 'OPD Room 2',
-    doctorAssigned = 'Dr. Arvind Kulkarni',
+    doctorAssigned = '',
+    doctorId = null,
+    facilityId = null,
+    status: explicitStatus = null,
     instructions = 'Please arrive 10 minutes prior to your time slot and report directly to your assigned counter with this token.'
   } = payload;
 
@@ -1317,18 +1320,34 @@ export async function assignStaffTokenAndSlot(payload) {
   let updatedReferral = null;
   let updatedCareReq = null;
 
-  // 1. Authoritative Referral Mutation strictly by exact primary key (id = targetReferralId)
+  // 1. Authoritative Referral Mutation strictly by exact primary key (id = targetReferralId) and facility isolation
   try {
-    const { data: refData, error: refErr } = await supabase
+    const isValidUuid = (val) => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+    const referralUpdatePayload = {
+      status: explicitStatus || 'Accepted',
+      ai_note: notesString
+    };
+    if (doctorAssigned) {
+      referralUpdatePayload.doctor_assigned = `${doctorAssigned} (${room})`;
+    }
+    // Propagate doctor_id only when a valid UUID is provided — preserves UUID identity chain
+    if (doctorId && isValidUuid(doctorId)) {
+      referralUpdatePayload.doctor_id = doctorId;
+    }
+
+    let refQuery = supabase
       .from('referrals')
-      .update({
-        status: 'Accepted',
-        doctor_assigned: `${doctorAssigned} (${room})`,
-        ai_note: notesString
-      })
-      .eq('id', targetReferralId)
-      .select('id, patient_id, status, doctor_assigned')
+      .update(referralUpdatePayload)
+      .eq('id', targetReferralId);
+
+    if (facilityId) {
+      refQuery = refQuery.eq('destination_facility_id', facilityId);
+    }
+
+    const { data: refData, error: refErr } = await refQuery
+      .select('id, patient_id, status, doctor_assigned, doctor_id')
       .single();
+
 
     if (refErr) {
       console.error('[ashaService] Referral token update error:', refErr);
