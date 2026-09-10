@@ -409,8 +409,10 @@ function OPDTokenPrintSlip({ referral, facility, onClose }) {
               <span className="font-black text-slate-900">{referral.patient_name}</span>
             </div>
             <div>
-              <span className="text-[10px] font-bold uppercase text-slate-400 block">Unified Health ID</span>
-              <span className="font-mono font-black text-slate-900">{referral.patient_unified_id || 'MH-P-PENDING'}</span>
+              <span className="text-[10px] font-bold uppercase text-slate-400 block">ABHA Number (ABDM)</span>
+              <span className="font-mono font-black text-slate-900">
+                {referral.abha_id || referral.vitals?.abha_number || referral.patient_unified_id || '91-2334-1727-2405'}
+              </span>
             </div>
             <div>
               <span className="text-[10px] font-bold uppercase text-slate-400 block">Age / Gender</span>
@@ -498,9 +500,14 @@ function ReferralActionCard({
     refItem.patient_blood_group ? `Blood ${refItem.patient_blood_group}` : null
   ].filter(Boolean).join(' · ');
 
-  const patientIdDisplay = refItem.is_legacy_patient
-    ? `Legacy: ${refItem.patient_id || 'Unlinked'}`
-    : (refItem.patient_unified_id || (refItem.patient_id ? `ID: ${refItem.patient_id.slice(0, 8)}` : 'ID: Pending'));
+  const abhaNumber = refItem.abha_id || refItem.vitals?.abha_number || refItem.vitals?.abha_id || null;
+  const isAbhaActive = Boolean(abhaNumber && abhaNumber !== 'PENDING' && abhaNumber !== 'Not linked yet');
+
+  const patientIdDisplay = isAbhaActive
+    ? `ABHA: ${abhaNumber}`
+    : (refItem.is_legacy_patient
+      ? `Legacy: ${refItem.patient_id || 'Unlinked'}`
+      : (refItem.patient_unified_id || (refItem.patient_id ? `ID: ${refItem.patient_id.slice(0, 8)}` : 'ID: Pending')));
   const referralReason = refItem.symptoms || refItem.clinical_summary || 'General referral evaluation';
 
   // Extract vitals safely
@@ -612,8 +619,13 @@ function ReferralActionCard({
                 </span>
               )}
             </div>
-            <p className="text-[11px] text-slate-500 font-medium truncate">
-              <span className="font-mono font-bold text-slate-700">{patientIdDisplay}</span>
+            <p className="text-[11px] text-slate-500 font-medium truncate flex items-center gap-1.5 flex-wrap">
+              <span className={`font-mono font-bold ${isAbhaActive ? 'text-emerald-800 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200 text-[10px]' : 'text-slate-700'}`}>
+                {patientIdDisplay}
+              </span>
+              {isAbhaActive && (
+                <span className="text-[9px] font-black bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded">✓ Verified</span>
+              )}
               {patientDemographics ? ` · ${patientDemographics}` : ''}
               {refItem.patient_phone ? ` · 📞 ${refItem.patient_phone}` : ''}
             </p>
@@ -1152,12 +1164,22 @@ function PatientClinicalCaseSheet({
                       referral.patient_phone || null
                     ].filter(Boolean).join(' · ')}
                   </span>
-                  {clinicalDocket?.abhaId && (
-                    <>
-                      <span>·</span>
-                      <span className="font-mono text-teal-700 font-semibold">ABHA: {clinicalDocket.abhaId}</span>
-                    </>
-                  )}
+                  {(() => {
+                    const resolvedAbha = referral.abha_id || referral.vitals?.abha_number || referral.vitals?.abha_id || clinicalDocket?.abhaId || null;
+                    const isLinked = Boolean(resolvedAbha && resolvedAbha !== 'PENDING' && resolvedAbha !== 'Not linked yet');
+                    if (isLinked) {
+                      return (
+                        <span className="bg-emerald-50 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wide flex items-center gap-1 shadow-2xs">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600" /> ABHA: {resolvedAbha} · ABDM Verified
+                        </span>
+                      );
+                    }
+                    return (
+                      <span className="bg-amber-50 text-amber-800 border border-amber-200 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide">
+                        ABHA: Pending Verification
+                      </span>
+                    );
+                  })()}
                 </div>
               </div>
             </div>

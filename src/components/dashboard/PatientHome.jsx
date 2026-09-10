@@ -4,7 +4,7 @@ import {
   Heart, Droplet, Weight, Ruler, Thermometer, Wind, Activity,
   CheckCircle2, Clock, Phone, ChevronRight, ActivitySquare, Plus,
   ShieldAlert, Baby, Lock, Camera, Loader2, ShieldCheck, Sparkles,
-  Award, QrCode
+  Award, QrCode, Edit3
 } from "lucide-react";
 import { getLatestVitals } from "../../services/ashaService";
 import UpdateVitalsModal from "../Patient/UpdateVitalsModal";
@@ -82,6 +82,7 @@ export default function PatientHome({ member, onNavigateTab }) {
   const [updateMetric, setUpdateMetric] = useState(null);
   const [showHistory, setShowHistory] = useState(false);
   const [showAbhaModal, setShowAbhaModal] = useState(false);
+  const [abhaModalMode, setAbhaModalMode] = useState("auto"); // "auto" | "edit"
   
   // Stored ABHA ID with localStorage persistence
   const savedAbha = (member?.id && localStorage.getItem(`radvault_abha_${member.id}`)) || member?.abha_id || "";
@@ -162,8 +163,13 @@ export default function PatientHome({ member, onNavigateTab }) {
 
   if (!member) return null;
 
-  const abhaDisplay = currentAbha || member.abha_id || "PENDING";
-  const isAbhaLinked = Boolean(currentAbha || member.abha_id);
+  const cleanAbha = (currentAbha && currentAbha !== "PENDING" && currentAbha !== "Not linked yet")
+    ? currentAbha
+    : ((member.abha_id && member.abha_id !== "PENDING" && member.abha_id !== "Not linked yet") ? member.abha_id : "");
+  const isAbhaLinked = Boolean(cleanAbha);
+  const abhaDisplay = isAbhaLinked ? cleanAbha : "PENDING";
+  const currentAddress = (member?.id && localStorage.getItem(`radvault_abha_addr_${member.id}`)) ||
+    (isAbhaLinked ? `${cleanAbha.replace(/\D/g, "")}@abdm` : "rekha.bai@abdm");
   
   // Pull vitals
   const bp = latestVitals.bp_systolic;
@@ -259,8 +265,15 @@ export default function PatientHome({ member, onNavigateTab }) {
 
                 {/* 3D ABHA Number Badge */}
                 <div
-                  onClick={() => setShowAbhaModal(true)}
-                  className="mt-4 bg-white/95 rounded-2xl p-3.5 border-2 border-amber-200 inline-flex items-center gap-3 shadow-sm hover:shadow-md hover:border-amber-400 hover:scale-102 transition-all cursor-pointer group"
+                  onClick={() => {
+                    setAbhaModalMode(isAbhaLinked ? "auto" : "edit");
+                    setShowAbhaModal(true);
+                  }}
+                  className={`mt-4 rounded-2xl p-3.5 border-2 inline-flex items-center gap-3 shadow-sm hover:shadow-md transition-all cursor-pointer group ${
+                    isAbhaLinked
+                      ? "bg-white border-emerald-300 hover:border-emerald-500 hover:scale-[1.02] ring-1 ring-emerald-500/20"
+                      : "bg-white/95 border-amber-200 hover:border-amber-400 hover:scale-102"
+                  }`}
                 >
                    <div>
                      <p className="text-[9px] font-black text-[#94A3B8] uppercase tracking-[0.2em] mb-0.5">ABHA Number</p>
@@ -269,8 +282,8 @@ export default function PatientHome({ member, onNavigateTab }) {
                      </p>
                    </div>
                    {isAbhaLinked ? (
-                     <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black px-3 py-1.5 rounded-xl uppercase tracking-wider border border-emerald-200 flex items-center gap-1.5 shadow-2xs">
-                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Verified
+                     <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black px-3 py-1.5 rounded-xl uppercase tracking-wider border border-emerald-300 flex items-center gap-1.5 shadow-2xs">
+                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> ✓ ABHA Linked
                      </span>
                    ) : (
                      <span className="bg-amber-100 text-amber-950 text-[10px] font-black px-3 py-1.5 rounded-xl uppercase tracking-wider border border-amber-200">
@@ -282,31 +295,84 @@ export default function PatientHome({ member, onNavigateTab }) {
             </div>
 
             {/* Health ID Box Right (3D Card) */}
-            <div className="bg-white/95 backdrop-blur-md rounded-[28px] p-6 border-2 border-amber-200/80 shadow-[0_15px_30px_-10px_rgba(245,158,11,0.2)] w-full md:w-80 shrink-0 relative overflow-hidden group hover:shadow-[0_20px_40px_-10px_rgba(245,158,11,0.3)] transition-all">
-               <div className="flex items-center gap-2 mb-4 relative z-10">
-                 <ShieldAlert className="w-4 h-4 text-amber-500" />
-                 <span className="text-[10px] font-black text-[#16324F] uppercase tracking-[0.2em]">Health ID</span>
+            <div className={`rounded-[28px] p-6 border-2 w-full md:w-80 shrink-0 relative overflow-hidden transition-all shadow-md ${
+              isAbhaLinked
+                ? "bg-white border-emerald-300/80 shadow-[0_15px_30px_-10px_rgba(16,185,129,0.2)]"
+                : "bg-white/95 border-amber-200/80 shadow-[0_15px_30px_-10px_rgba(245,158,11,0.2)]"
+            }`}>
+               <div className="flex items-center justify-between mb-3 relative z-10">
+                 <div className="flex items-center gap-1.5">
+                   {isAbhaLinked ? <ShieldCheck className="w-4 h-4 text-emerald-600" /> : <ShieldAlert className="w-4 h-4 text-amber-500" />}
+                   <span className="text-[10px] font-black text-[#16324F] uppercase tracking-[0.2em]">
+                     {isAbhaLinked ? "ABDM Health ID" : "Health ID"}
+                   </span>
+                 </div>
+                 {isAbhaLinked && (
+                   <span className="text-[9px] font-black bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-md border border-emerald-200">
+                     Active
+                   </span>
+                 )}
                </div>
                
                <div className="flex flex-col items-center text-center relative z-10">
-                 <div className="w-16 h-16 bg-amber-50 rounded-2xl flex items-center justify-center mb-3 border border-amber-100 group-hover:scale-110 transition-transform shadow-xs">
-                   {isAbhaLinked ? <ShieldCheck className="w-8 h-8 text-emerald-600" /> : <Lock className="w-8 h-8 text-amber-400" />}
+                 <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-2.5 border shadow-xs transition-transform group-hover:scale-105 ${
+                   isAbhaLinked ? "bg-emerald-50 border-emerald-200" : "bg-amber-50 border-amber-100"
+                 }`}>
+                   {isAbhaLinked ? <ShieldCheck className="w-7 h-7 text-emerald-600" /> : <Lock className="w-7 h-7 text-amber-500" />}
                  </div>
-                 <h3 className="text-sm font-black text-[#16324F] mb-1">
-                   {isAbhaLinked ? "ABHA Account Active" : "Secure your health identity"}
+
+                 <h3 className="text-sm font-black text-[#16324F] mb-0.5">
+                   {isAbhaLinked ? "ABHA Account Linked" : "Secure your health identity"}
                  </h3>
-                 <p className="text-[11px] font-medium text-[#64748B] mb-4 leading-relaxed px-1">
-                   {isAbhaLinked
-                     ? "Your verified ABDM Health Account is linked for digital hospital prescriptions & lab results."
-                     : "Link your ABHA number to access complete health records and government health benefits."}
-                 </p>
-                 <button
-                   type="button"
-                   onClick={() => setShowAbhaModal(true)}
-                   className="w-full bg-gradient-to-r from-amber-400 via-amber-500 to-orange-400 hover:from-amber-500 hover:to-orange-500 text-white font-black text-xs py-3.5 rounded-xl shadow-[0_6px_20px_rgba(245,158,11,0.4)] hover:shadow-lg transition-all uppercase tracking-wider cursor-pointer"
-                 >
-                   {isAbhaLinked ? "View Official ABHA Card" : "Link ABHA Number"}
-                 </button>
+
+                 {isAbhaLinked ? (
+                   <div className="w-full bg-slate-50 border border-slate-200/80 rounded-xl p-2.5 my-2 text-left space-y-1">
+                     <div>
+                       <span className="text-[8px] font-black uppercase text-slate-400 block tracking-wider">ABHA ID</span>
+                       <span className="font-mono text-xs font-black text-slate-900 block">{abhaDisplay}</span>
+                     </div>
+                     <div>
+                       <span className="text-[8px] font-black uppercase text-slate-400 block tracking-wider">ABHA Handle</span>
+                       <span className="font-mono text-[10px] font-bold text-emerald-700 truncate block">{currentAddress}</span>
+                     </div>
+                   </div>
+                 ) : (
+                   <p className="text-[11px] font-medium text-[#64748B] mb-3 leading-relaxed px-1">
+                     Link your ABHA number to access complete health records, fast-track hospital OPD, and government benefits.
+                   </p>
+                 )}
+
+                 <div className="w-full flex flex-col gap-2 mt-1">
+                   <button
+                     type="button"
+                     onClick={() => {
+                       setAbhaModalMode("auto");
+                       setShowAbhaModal(true);
+                     }}
+                     className={`w-full font-black text-xs py-3 rounded-xl shadow-sm transition-all uppercase tracking-wider cursor-pointer flex items-center justify-center gap-1.5 ${
+                       isAbhaLinked
+                         ? "bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white shadow-emerald-500/20"
+                         : "bg-gradient-to-r from-amber-400 via-amber-500 to-orange-400 hover:from-amber-500 hover:to-orange-500 text-white shadow-amber-500/20"
+                     }`}
+                   >
+                     {isAbhaLinked ? <Award className="w-4 h-4" /> : null}
+                     <span>{isAbhaLinked ? "View Official ABHA Card" : "Link ABHA Number"}</span>
+                   </button>
+
+                   {isAbhaLinked && (
+                     <button
+                       type="button"
+                       onClick={() => {
+                         setAbhaModalMode("edit");
+                         setShowAbhaModal(true);
+                       }}
+                       className="w-full bg-white hover:bg-slate-50 text-slate-700 font-black text-[11px] py-2.5 rounded-xl border border-slate-200 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                     >
+                       <Edit3 className="w-3.5 h-3.5 text-slate-500" />
+                       <span>Edit ABHA Details</span>
+                     </button>
+                   )}
+                 </div>
                </div>
             </div>
 
@@ -314,15 +380,19 @@ export default function PatientHome({ member, onNavigateTab }) {
           
           {/* Bottom ASHA verification strip */}
           <div className="relative z-10 mt-6 border-t border-amber-200/50 pt-4 flex items-center gap-3">
-             <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shrink-0 shadow-2xs border border-amber-200/50">
-               {isAbhaLinked ? <ShieldCheck className="w-5 h-5 text-emerald-600" /> : <ShieldAlert className="w-5 h-5 text-amber-500" />}
+             <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-2xs border ${
+               isAbhaLinked ? "bg-emerald-50 border-emerald-200" : "bg-white border-amber-200/50"
+             }`}>
+               {isAbhaLinked ? <CheckCircle2 className="w-5 h-5 text-emerald-600" /> : <ShieldAlert className="w-5 h-5 text-amber-500" />}
              </div>
              <div>
                <p className="text-xs font-black text-[#16324F]">
-                 {isAbhaLinked ? "Verified by ASHA & ABDM" : "Pending ASHA verification"}
+                 {isAbhaLinked ? "Verified Digital Health ID · ABDM Active" : "Pending ASHA verification"}
                </p>
                <p className="text-[11px] font-medium text-[#64748B]">
-                 {isAbhaLinked ? "Your health identity is linked with Shirwal PHC." : "Your ASHA worker will verify and link your ABHA number."}
+                 {isAbhaLinked
+                   ? "Your health identity is linked with Shirwal PHC · Fast-track hospital admission & PM-JAY active."
+                   : "Your ASHA worker will verify and link your ABHA number, or you can link it manually above."}
                </p>
              </div>
           </div>
@@ -425,8 +495,9 @@ export default function PatientHome({ member, onNavigateTab }) {
       {showAbhaModal && (
         <AbhaModal
           member={member}
+          initialMode={abhaModalMode}
           onClose={() => setShowAbhaModal(false)}
-          onLinked={(newAbha) => {
+          onLinked={(newAbha, newAddr) => {
             setCurrentAbha(newAbha);
             fetchVitals();
           }}

@@ -1517,7 +1517,7 @@ export async function getFullPatientClinicalDocket(patientId, patientName = null
           has_chronic: ptConditions.length > 0,
           is_pregnant: false,
           tb_symptoms: false,
-          abha_id: null
+          abha_id: ptVitals.abha_number || ptVitals.abha_id || (typeof window !== 'undefined' ? localStorage.getItem(`radvault_patient_abha_${targetUuid}`) : null) || null
         };
       }
     }
@@ -1540,7 +1540,7 @@ export async function getFullPatientClinicalDocket(patientId, patientName = null
     result.bloodGroup = clinicalProfile.blood_group || null;
     result.age = clinicalProfile.age_years || null;
     result.gender = clinicalProfile.gender || null;
-    result.abhaId = clinicalProfile.abha_id || null;
+    result.abhaId = clinicalProfile.abha_id || (typeof window !== 'undefined' ? localStorage.getItem(`radvault_patient_abha_${targetUuid}`) : null) || null;
 
     // 2. Vitals history strictly by verified targetUuid
     const { data: vitals } = await supabase
