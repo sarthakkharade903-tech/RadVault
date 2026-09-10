@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Inbox,
   AlertTriangle,
@@ -9,21 +9,17 @@ import {
   X,
   RefreshCw,
   Phone,
-  FileText,
   Stethoscope,
-  Activity,
-  Building2,
-  ShieldAlert,
   CheckCircle2,
   ExternalLink,
-  Sparkles,
   Ticket,
   Clock,
   Siren,
   Volume2,
   VolumeX,
   MapPin,
-  UserCheck
+  UserCheck,
+  Building2
 } from 'lucide-react';
 import { supabase, ensureRoleAuth } from '../../services/supabase';
 import { assignStaffTokenAndSlot } from '../../services/ashaService';
@@ -195,18 +191,7 @@ const DEMO_EMERGENCY_SOS = [
   }
 ];
 
-// Helper: Operational elapsed time formatting
-const getWaitDuration = (isoString) => {
-  if (!isoString) return null;
-  const diffMs = Date.now() - new Date(isoString).getTime();
-  if (isNaN(diffMs) || diffMs < 0) return 'Just now';
-  const mins = Math.floor(diffMs / (1000 * 60));
-  if (mins < 60) return `${mins} min${mins === 1 ? '' : 's'}`;
-  const hrs = Math.floor(mins / 60);
-  return `${hrs} hr${hrs === 1 ? '' : 's'} ${mins % 60}m`;
-};
-
-// ─── REFERRAL CARD: CARE-HANDOFF FIRST / ONE DOMINANT ACTION ───
+// ─── REFERRAL CARD: SCANNABLE DECISION CARD ───
 function ReferralActionCard({
   refItem,
   onSelect,
@@ -214,213 +199,201 @@ function ReferralActionCard({
   onMarkArrived,
   onRouteDoctor,
   onOpenToken,
-  getReferralOrigin
+  actionLoadingId,
+  getReferralOrigin: _getReferralOrigin
 }) {
-  const origin = getReferralOrigin(refItem);
-  const dangerSigns = Array.isArray(refItem.danger_signs)
-    ? refItem.danger_signs
-    : (typeof refItem.danger_signs === 'string' && refItem.danger_signs.trim())
-    ? [refItem.danger_signs]
-    : [];
-
-  const vitals = refItem.vitals || {};
   const status = refItem.status;
+  const isActionLoading = actionLoadingId === refItem.id;
+  const docName = refItem.doctor_assigned
+    ? (refItem.doctor_assigned.startsWith('Dr.') ? refItem.doctor_assigned : 'Dr. ' + refItem.doctor_assigned)
+    : null;
 
-  // Truthful operational status configuration
-  const statusConfig = {
-    Pending: {
-      label: 'Referral Received',
-      pillClass: 'bg-amber-50 text-amber-900 border-amber-300'
-    },
-    Accepted: {
-      label: 'Referral Accepted',
-      pillClass: 'bg-sky-50 text-sky-900 border-sky-300'
-    },
-    Arrived: {
-      label: 'Patient Arrived',
-      pillClass: 'bg-teal-50 text-teal-900 border-teal-300'
-    },
-    Assigned: {
-      label: refItem.doctor_assigned
-        ? `Waiting for ${refItem.doctor_assigned.startsWith('Dr.') ? refItem.doctor_assigned : 'Dr. ' + refItem.doctor_assigned}`
-        : 'Clinician Assigned',
-      pillClass: 'bg-indigo-50 text-indigo-900 border-indigo-300'
-    },
-    'In Consultation': {
-      label: refItem.doctor_assigned
-        ? `In Consultation with ${refItem.doctor_assigned.startsWith('Dr.') ? refItem.doctor_assigned : 'Dr. ' + refItem.doctor_assigned}`
-        : 'In Consultation',
-      pillClass: 'bg-purple-50 text-purple-900 border-purple-300'
-    },
-    Completed: {
-      label: 'Consultation Completed',
-      pillClass: 'bg-emerald-50 text-emerald-900 border-emerald-300'
-    },
-    Cancelled: {
-      label: 'Referral Cancelled',
-      pillClass: 'bg-slate-100 text-slate-700 border-slate-300'
-    }
-  };
+  const patientDemographics = [
+    refItem.patient_age ? `${refItem.patient_age} yrs` : null,
+    refItem.patient_gender,
+    refItem.patient_blood_group ? `${refItem.patient_blood_group}` : null
+  ].filter(Boolean).join(' · ');
 
-  const currentStatus = statusConfig[status] || {
-    label: status,
-    pillClass: 'bg-slate-100 text-slate-700 border-slate-300'
-  };
+  const patientIdDisplay = refItem.is_legacy_patient
+    ? `Legacy: ${refItem.patient_id || 'Unlinked'}`
+    : (refItem.patient_unified_id || (refItem.patient_id ? `ID: ${refItem.patient_id.slice(0, 8)}` : 'ID: Pending'));
+  const referralReason = refItem.symptoms || refItem.clinical_summary || 'General referral evaluation';
 
-  const hasAssignedToken = refItem.slot_preference?.includes('Token') || refItem.ai_note?.includes('TOKEN:');
-  const tokenDisplay = refItem.slot_preference || (refItem.ai_note?.match(/TOKEN:\s*([^|]+)/i)?.[1]?.trim() ? `Token #${refItem.ai_note.match(/TOKEN:\s*([^|]+)/i)[1].trim()}` : null);
+  // Patient initial for avatar badge
+  const initial = (refItem.patient_name || 'P').trim()[0].toUpperCase();
 
-  const hasVitals = vitals.bp || vitals.pulse || vitals.spo2 || vitals.temp || vitals.respRate || vitals.weight;
+  // Priority color: truthful frontline/heuristic priority
+  const priorityKey = (refItem.priority || '').toUpperCase();
+  const priorityBorder =
+    priorityKey === 'HIGH' || priorityKey === 'RED' ? 'border-l-rose-500' :
+    priorityKey === 'ORANGE' ? 'border-l-amber-400' :
+    'border-l-teal-500';
+  const priorityBadge =
+    priorityKey === 'HIGH' || priorityKey === 'RED'
+      ? 'bg-rose-50 text-rose-700 border-rose-200'
+      : priorityKey === 'ORANGE'
+      ? 'bg-amber-50 text-amber-700 border-amber-200'
+      : 'bg-slate-50 text-slate-500 border-slate-200';
+  const priorityLabel =
+    priorityKey === 'HIGH' || priorityKey === 'RED' ? 'Frontline: High' :
+    priorityKey === 'ORANGE' ? 'Frontline: Urgent' :
+    priorityKey === 'EMERGENCY' ? 'Frontline: Urgent' : 'Routine';
+
+  // Elapsed wait time
+  const elapsedMins = refItem.created_at
+    ? Math.round((Date.now() - new Date(refItem.created_at).getTime()) / 60000)
+    : null;
+  const elapsedLabel = elapsedMins === null ? null
+    : elapsedMins < 60 ? `${elapsedMins}m ago`
+    : `${Math.floor(elapsedMins / 60)}h ${elapsedMins % 60}m ago`;
+
+  // Status badge color
+  const statusBadge =
+    status === 'Pending' ? 'bg-amber-50 text-amber-800 border-amber-200' :
+    status === 'Accepted' ? 'bg-slate-100 text-slate-700 border-slate-200' :
+    status === 'Arrived' ? 'bg-teal-50 text-teal-800 border-teal-200' :
+    status === 'Assigned' ? 'bg-blue-50 text-blue-800 border-blue-200' :
+    status === 'In Consultation' ? 'bg-purple-50 text-purple-800 border-purple-200' :
+    status === 'Completed' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+    'bg-slate-100 text-slate-600 border-slate-200';
+
+  const statusText =
+    status === 'Pending' ? 'Pending Acceptance' :
+    status === 'Accepted' ? 'Waiting for Patient' :
+    status === 'Arrived' ? 'Arrived at Reception' :
+    status === 'Assigned' ? `In Queue: ${docName || 'Doctor'}` :
+    status === 'In Consultation' ? `With ${docName || 'Doctor'}` :
+    status === 'Completed' ? 'Completed' : status;
+
+  // Hand-off responsibility & next action
+  const responsibility =
+    status === 'Pending'
+      ? { badge: 'Reception Desk', badgeColor: 'bg-amber-100 text-amber-800', nextText: 'Action: Review & Accept' } :
+    status === 'Accepted'
+      ? { badge: 'Patient En Route', badgeColor: 'bg-slate-100 text-slate-700', nextText: 'Waiting: Arrival at desk' } :
+    status === 'Arrived'
+      ? { badge: 'Reception Desk', badgeColor: 'bg-teal-100 text-teal-800', nextText: 'Action: Assign Clinician' } :
+    status === 'Assigned'
+      ? { badge: docName ? `${docName}` : 'Doctor Queue', badgeColor: 'bg-blue-100 text-blue-800', nextText: 'Next: Clinician Calling' } :
+    status === 'In Consultation'
+      ? { badge: docName ? `With ${docName}` : 'Consultation', badgeColor: 'bg-purple-100 text-purple-800', nextText: 'In Progress: Clinical Exam' } :
+    status === 'Completed'
+      ? { badge: 'Completed', badgeColor: 'bg-emerald-100 text-emerald-800', nextText: 'Encounter closed' } :
+      { badge: 'Front Desk', badgeColor: 'bg-slate-100 text-slate-700', nextText: 'Next Step' };
+
+  // 3-Tier Visual Hierarchy
+  const isActionNeeded = status === 'Pending' || status === 'Arrived';
+  const isCompleted = status === 'Completed';
+
+  const cardStyle = isActionNeeded
+    ? `bg-white border-slate-200/90 border-l-4 ${priorityBorder} hover:border-teal-300 hover:shadow-xs shadow-2xs ring-1 ring-teal-500/10`
+    : isCompleted
+    ? 'bg-slate-50/60 border-slate-200/70 border-l-4 border-l-emerald-500/40 hover:bg-white hover:border-slate-300 opacity-85'
+    : `bg-slate-50/40 border-slate-200/80 border-l-4 ${priorityBorder} hover:bg-white hover:border-slate-300 shadow-2xs`;
 
   return (
     <div
       data-referral-id={refItem.id}
       data-patient-name={refItem.patient_name}
+      data-action="open-case"
       onClick={() => onSelect(refItem)}
-      className="bg-white border border-slate-200/90 rounded-2xl p-4 sm:p-5 shadow-2xs hover:border-[#008080]/60 hover:shadow-md transition-all cursor-pointer group space-y-3.5"
+      className={`p-4 sm:p-5 rounded-2xl border transition-all cursor-pointer space-y-3 ${cardStyle}`}
     >
-      {/* ── LEVEL 1: IMMEDIATE (Identity + State + Dominant Action) ── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2.5 border-b border-slate-100">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="font-black text-sm sm:text-base text-slate-900 group-hover:text-[#008080] transition-colors flex items-center gap-1.5">
-            <FileText className="w-4 h-4 text-[#008080] shrink-0" />
-            <span>{refItem.patient_name}</span>
-          </span>
-
-          <span className="font-mono text-xs text-slate-600 bg-slate-100 px-2 py-0.5 rounded font-bold">
-            {refItem.patient_unified_id ? `ID: ${refItem.patient_unified_id}` : (refItem.patient_id ? `ID: ${refItem.patient_id.slice(0, 8)}` : 'ID: Pending')}
-          </span>
-
-          {/* Referral Origin Badge */}
-          <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border flex items-center gap-1 ${origin.badge}`}>
-            <span>{origin.icon}</span>
-            <span>{origin.label}</span>
-          </span>
-
-          {/* Authoritative Priority Badge */}
-          {refItem.priority && (
-            <span className={`text-[10px] font-black px-2 py-0.5 rounded border ${
-              refItem.priority === 'HIGH' || refItem.priority === 'RED'
-                ? 'bg-rose-50 text-rose-800 border-rose-200'
-                : refItem.priority === 'ORANGE'
-                ? 'bg-amber-50 text-amber-900 border-amber-200'
-                : 'bg-emerald-50 text-emerald-800 border-emerald-200'
-            }`}>
-              {refItem.priority_label || refItem.priority}
-            </span>
-          )}
-
-          {/* ASHA Escort Indicator */}
-          {(refItem.symptoms?.includes('ASHA ACCOMPANYING') || refItem.clinical_summary?.includes('ASHA ACCOMPANYING')) && (
-            <span className="text-[10px] font-black px-2 py-0.5 rounded bg-rose-100 text-rose-800 border border-rose-200 flex items-center gap-1">
-              🤰 ASHA Escort
-            </span>
-          )}
+      {/* Row 1: Patient avatar + identity + Status badge & Responsibility */}
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-3 min-w-0">
+          <div className="w-10 h-10 rounded-xl bg-teal-50 text-[#008F83] border border-teal-100 flex items-center justify-center font-black text-sm shrink-0">
+            {initial}
+          </div>
+          <div className="min-w-0">
+            <h3 className="text-sm sm:text-base font-black text-[#16324F] leading-tight truncate flex items-center gap-1.5">
+              <span>{refItem.patient_name}</span>
+              {refItem.is_legacy_patient && (
+                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">
+                  Legacy Record
+                </span>
+              )}
+            </h3>
+            <p className="text-[11px] text-slate-500 font-medium mt-0.5 truncate">
+              {patientIdDisplay}{patientDemographics ? ` · ${patientDemographics}` : ''}
+            </p>
+          </div>
         </div>
 
-        {/* Operational Status Pill */}
-        <div className="flex items-center gap-2 shrink-0">
-          <span className={`text-xs font-black px-3 py-1 rounded-full border shadow-2xs ${currentStatus.pillClass}`}>
-            {currentStatus.label}
+        <div className="text-right shrink-0">
+          <span className={`inline-block text-[10px] font-black px-2.5 py-0.5 rounded-full border ${statusBadge}`}>
+            {statusText}
+          </span>
+          <span className="text-[10px] font-bold text-slate-400 block mt-0.5">
+            {responsibility.nextText}
           </span>
         </div>
       </div>
 
-      {/* ── LEVEL 2: IMPORTANT CLINICAL & HANDOFF CONTEXT ── */}
-      <div className="space-y-2 text-xs">
-        {/* Chief Complaint / Symptoms */}
-        <div className="text-slate-700 font-medium leading-relaxed">
-          <span className="font-bold text-slate-900">Chief Complaint:</span> {refItem.symptoms || 'Referral intake encounter'}
-        </div>
+      {/* Row 2: Reason for referral */}
+      <p className="text-xs text-slate-600 font-medium line-clamp-2 leading-relaxed">
+        {referralReason}
+      </p>
 
-        {/* Recorded Danger Signs */}
-        {dangerSigns.length > 0 && (
-          <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-900 text-xs font-bold flex items-start gap-2">
-            <ShieldAlert className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-            <div>
-              <span className="font-black uppercase text-[10px] text-rose-700 block tracking-wider">Recorded Danger Signs:</span>
-              <span>{dangerSigns.join(', ')}</span>
-            </div>
-          </div>
-        )}
-
-        {/* Frontline Measured Vitals: Data Availability Indicator (Full vitals in Details) */}
-        {hasVitals && (
-          <div className="pt-0.5">
-            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-600 bg-slate-100/90 border border-slate-200/80 px-2.5 py-1 rounded-md">
-              <Activity className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-              <span>Frontline vitals recorded</span>
-            </span>
-          </div>
-        )}
-
-        {/* Care Handoff Trajectory & Origin */}
-        <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500 pt-1">
-          <span className="font-medium text-slate-600">
-            From: <strong className="text-slate-800">{origin.label}</strong>{refItem.created_by ? ` · ${refItem.created_by}` : ''}
-          </span>
-
-          {tokenDisplay && (
-            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[#008F83] bg-[#E8F7F3] border border-[#008F83]/30 px-2.5 py-0.5 rounded-md font-mono shadow-2xs">
-              <Ticket className="w-3 h-3" />
-              <span>{tokenDisplay}</span>
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* ── LEVEL 3: ACTION BAR (>= 44px Touch Targets) ── */}
+      {/* Row 3: Action + metadata */}
       <div
-        className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+        className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t border-slate-100"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="text-[11px] text-slate-400 font-medium">
-          {refItem.destination_department && (
-            <span>Dept: <strong className="text-slate-600">{refItem.destination_department}</strong></span>
+        {/* Left metadata: origin, department, elapsed time */}
+        <div className="flex items-center gap-2 text-[11px] text-slate-400 font-medium flex-wrap">
+          {elapsedLabel && (
+            <span className={`font-bold ${elapsedMins > 60 ? 'text-amber-700' : 'text-slate-500'}`}>
+              {elapsedLabel}
+            </span>
+          )}
+          {elapsedLabel && <span>·</span>}
+          <span>{refItem.destination_department || 'General OPD'}</span>
+          {priorityKey && priorityKey !== 'GREEN' && (
+            <>
+              <span>·</span>
+              <span className={`text-[10px] font-black px-1.5 py-0.5 rounded border ${priorityBadge}`}>
+                {priorityLabel}
+              </span>
+            </>
           )}
         </div>
 
-        {/* Action Cluster: ONE DOMINANT ACTION + Secondary Actions */}
-        <div className="flex items-center gap-2.5 ml-auto shrink-0 flex-wrap">
-          {/* Secondary Action: View Details / Case File (>= 44px touch height) */}
-          <button
-            type="button"
-            data-referral-id={refItem.id}
-            data-action="view-case"
-            onClick={() => onSelect(refItem)}
-            className="min-h-[44px] px-4 py-2 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl transition-colors cursor-pointer inline-flex items-center justify-center gap-1.5 active:scale-95"
-            title="Open Clinical Case Details"
-          >
-            <FileText className="w-4 h-4 text-slate-500" />
-            <span>{status === 'Completed' ? 'View Case File' : 'Details'}</span>
-          </button>
-
-          {/* Secondary Action: Assign Token (>= 44px touch height) */}
+        {/* Right: action buttons */}
+        <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+          {/* Token link for Pending/Accepted */}
           {(status === 'Accepted' || status === 'Pending') && (
             <button
               type="button"
               data-referral-id={refItem.id}
               data-action="assign-token"
               onClick={() => onOpenToken(refItem)}
-              className="min-h-[44px] px-4 py-2 text-xs font-bold text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-xl transition-colors cursor-pointer inline-flex items-center justify-center gap-1.5 shadow-2xs active:scale-95"
-              title="Assign or Edit OPD Token & Arrival Slot"
+              className="text-[11px] text-slate-400 hover:text-slate-700 underline font-medium cursor-pointer"
             >
-              <Ticket className="w-4 h-4 text-amber-700" />
-              <span>{hasAssignedToken ? 'Edit Token' : 'Assign Token'}</span>
+              Token
             </button>
           )}
 
-          {/* ─── DOMINANT PRIMARY NEXT-STEP ACTION (>= 44px Touch Height) ─── */}
+          {/* PRIMARY ACTION BUTTON — one dominant action per status */}
           {status === 'Pending' && (
             <button
               type="button"
               data-referral-id={refItem.id}
               data-action="accept-referral"
+              disabled={isActionLoading}
               onClick={() => onAccept(refItem.id)}
-              className="min-h-[44px] px-6 py-2.5 bg-[#008080] hover:bg-[#006666] text-white font-black text-xs rounded-xl shadow-sm transition-all inline-flex items-center justify-center gap-2 cursor-pointer active:scale-95"
+              className={`px-4 py-1.5 bg-[#008F83] hover:bg-[#007369] text-white font-black text-xs rounded-xl shadow-2xs transition-colors cursor-pointer flex items-center gap-1.5 ${
+                isActionLoading ? 'opacity-60 cursor-not-allowed' : ''
+              }`}
             >
-              <CheckCircle2 className="w-4 h-4" />
-              <span>Accept Referral</span>
+              {isActionLoading ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Accepting...</span>
+                </>
+              ) : (
+                'Accept Referral'
+              )}
             </button>
           )}
 
@@ -429,11 +402,20 @@ function ReferralActionCard({
               type="button"
               data-referral-id={refItem.id}
               data-action="mark-arrived"
+              disabled={isActionLoading}
               onClick={() => onMarkArrived(refItem.id)}
-              className="min-h-[44px] px-6 py-2.5 bg-[#008080] hover:bg-[#006666] text-white font-black text-xs rounded-xl shadow-sm transition-all inline-flex items-center justify-center gap-2 cursor-pointer active:scale-95"
+              className={`px-4 py-1.5 bg-[#16324F] hover:bg-[#1f456e] text-white font-black text-xs rounded-xl shadow-2xs transition-colors cursor-pointer flex items-center gap-1.5 ${
+                isActionLoading ? 'opacity-60 cursor-not-allowed' : ''
+              }`}
             >
-              <UserCheck className="w-4 h-4" />
-              <span>Mark Patient Arrived</span>
+              {isActionLoading ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Marking...</span>
+                </>
+              ) : (
+                'Mark Arrived'
+              )}
             </button>
           )}
 
@@ -442,11 +424,20 @@ function ReferralActionCard({
               type="button"
               data-referral-id={refItem.id}
               data-action="send-to-doctor"
+              disabled={isActionLoading}
               onClick={() => onRouteDoctor(refItem)}
-              className="min-h-[44px] px-6 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-black text-xs rounded-xl shadow-sm transition-all inline-flex items-center justify-center gap-2 cursor-pointer active:scale-95"
+              className={`px-4 py-1.5 bg-[#008F83] hover:bg-[#007369] text-white font-black text-xs rounded-xl shadow-2xs transition-colors cursor-pointer flex items-center gap-1.5 ${
+                isActionLoading ? 'opacity-60 cursor-not-allowed' : ''
+              }`}
             >
-              <Stethoscope className="w-4 h-4" />
-              <span>Assign Doctor</span>
+              {isActionLoading ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Assigning...</span>
+                </>
+              ) : (
+                'Assign Doctor'
+              )}
             </button>
           )}
 
@@ -455,26 +446,38 @@ function ReferralActionCard({
               type="button"
               data-referral-id={refItem.id}
               data-action="reassign-doctor"
+              disabled={isActionLoading}
               onClick={() => onRouteDoctor(refItem)}
-              className="min-h-[44px] px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold text-xs rounded-xl transition-colors cursor-pointer inline-flex items-center justify-center gap-1.5 active:scale-95"
+              className={`px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 font-bold text-xs rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 ${
+                isActionLoading ? 'opacity-60 cursor-not-allowed' : ''
+              }`}
             >
-              <Stethoscope className="w-4 h-4 text-indigo-600" />
-              <span>Reassign Doctor</span>
+              Reassign
             </button>
           )}
 
           {status === 'In Consultation' && (
-            <span className="min-h-[44px] px-4 py-2 text-xs font-bold text-purple-900 bg-purple-50 border border-purple-200 rounded-xl inline-flex items-center gap-1.5">
-              <Stethoscope className="w-4 h-4 text-purple-600" />
-              <span>With {refItem.doctor_assigned ? (refItem.doctor_assigned.startsWith('Dr.') ? refItem.doctor_assigned : 'Dr. ' + refItem.doctor_assigned) : 'Clinician'}</span>
-            </span>
+            <button
+              type="button"
+              data-referral-id={refItem.id}
+              data-action="view-case"
+              onClick={() => onSelect(refItem)}
+              className="px-3.5 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 font-bold text-xs rounded-xl transition-colors cursor-pointer"
+            >
+              With Doctor · View
+            </button>
           )}
 
           {status === 'Completed' && (
-            <span className="min-h-[44px] px-4 py-2 text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl inline-flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-              <span>Encounter Closed</span>
-            </span>
+            <button
+              type="button"
+              data-referral-id={refItem.id}
+              data-action="view-case"
+              onClick={() => onSelect(refItem)}
+              className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200 font-bold text-xs rounded-xl transition-colors cursor-pointer"
+            >
+              View Summary
+            </button>
           )}
         </div>
       </div>
@@ -491,8 +494,8 @@ export default function HospitalStaffWorkspace({
 }) {
   const handleBack = onBack || goHome;
 
-  // Navigation Tabs: 'home' | 'queue' | 'referrals' | 'emergency'
-  const [activeTab, setActiveTab] = useState('home');
+  // Navigation Tabs: 'queue' | 'home' | 'emergency'
+  const [activeTab, setActiveTab] = useState('queue');
   const [queueFilter, setQueueFilter] = useState('ALL'); // 'ALL' | 'Pending' | 'Accepted_Arrived' | 'In_Consultation' | 'Completed'
   const [sourceFilter, setSourceFilter] = useState('ALL'); // 'ALL' | 'ASHA' | 'PATIENT_DIRECT' | 'TELECONSULT'
   const [searchQuery, setSearchQuery] = useState('');
@@ -512,6 +515,10 @@ export default function HospitalStaffWorkspace({
   const [emergencyAlarmMuted, setEmergencyAlarmMuted] = useState(false);
   const [emergencyFilter, setEmergencyFilter] = useState('ACTIVE'); // 'ACTIVE' | 'ALL' | 'RESOLVED'
   const [actionLoadingId, setActionLoadingId] = useState(null);
+  const actionLoadingIdRef = useRef(actionLoadingId);
+  useEffect(() => {
+    actionLoadingIdRef.current = actionLoadingId;
+  }, [actionLoadingId]);
   const [dispatchModalSOS, setDispatchModalSOS] = useState(null);
   const [ambulanceVehicleInput, setAmbulanceVehicleInput] = useState('108-MH-12-8821');
   const [ambulanceEtaInput, setAmbulanceEtaInput] = useState('10-12 mins');
@@ -537,7 +544,8 @@ export default function HospitalStaffWorkspace({
   const [assignTokenNum, setAssignTokenNum] = useState('SHIR-OPD-014');
   const [assignSlot, setAssignSlot] = useState('10:30 AM – 11:00 AM');
   const [assignRoom, setAssignRoom] = useState('Counter 2 · General OPD');
-  const [assignDoctor, setAssignDoctor] = useState('Dr. Arvind Kulkarni');
+  const [assignDoctor, setAssignDoctor] = useState('');
+  const [assignDoctorId, setAssignDoctorId] = useState(null);
   const [assignInstruction, setAssignInstruction] = useState('Report directly to Counter 2 with this token for priority triage.');
   const [assigningLoading, setAssigningLoading] = useState(false);
 
@@ -554,18 +562,26 @@ export default function HospitalStaffWorkspace({
       ref.asha_notes?.match(/SLOT:\s*([^|]+)/i)?.[1]?.trim() ||
       '10:30 AM – 11:00 AM';
 
+    // Default to first available DB doctor, or empty
+    const defaultDoctor = doctors.length > 0 ? doctors[0] : null;
     setAssignTokenNum(existingToken);
     setAssignSlot(existingSlot);
     setAssignRoom('Counter 2 · General OPD');
-    setAssignDoctor('Dr. Arvind Kulkarni (Medical Officer)');
+    setAssignDoctor(ref.doctor_assigned || defaultDoctor?.name || '');
+    setAssignDoctorId(ref.doctor_id || defaultDoctor?.id || null);
     setAssignInstruction('Report directly to Counter 2 with this token for priority triage.');
     setShowTokenModal(ref);
   };
 
   const handleConfirmTokenAssignment = async () => {
-    if (!showTokenModal) return;
+    if (!showTokenModal || assigningLoading) return;
+    if (!facility?.id && !isDemoMode) {
+      setError('Facility information unavailable. Action aborted.');
+      return;
+    }
     setAssigningLoading(true);
     try {
+      const targetStatus = showTokenModal.status === 'Pending' ? 'Accepted' : showTokenModal.status;
       if (!isDemoMode) {
         const res = await assignStaffTokenAndSlot({
           referralId: showTokenModal.id,
@@ -574,6 +590,9 @@ export default function HospitalStaffWorkspace({
           arrivalSlot: assignSlot,
           room: assignRoom,
           doctorAssigned: assignDoctor,
+          doctorId: assignDoctorId,
+          facilityId: facility.id,
+          status: targetStatus,
           instructions: assignInstruction
         });
         if (!res?.success) {
@@ -587,8 +606,9 @@ export default function HospitalStaffWorkspace({
       // Scoped strictly to the target referral ID (no patient_id multi-match)
       setReferrals(prev => prev.map(r => r.id === showTokenModal.id ? {
         ...r,
-        status: 'Accepted',
-        doctor_assigned: `${assignDoctor} (${assignRoom})`,
+        status: targetStatus,
+        doctor_assigned: assignDoctor ? `${assignDoctor} (${assignRoom})` : r.doctor_assigned,
+        doctor_id: assignDoctorId || r.doctor_id,
         ai_note: assignedNote,
         asha_notes: assignedNote,
         slot_preference: slotPref
@@ -597,8 +617,9 @@ export default function HospitalStaffWorkspace({
       if (selectedReferral && selectedReferral.id === showTokenModal.id) {
         setSelectedReferral(prev => ({
           ...prev,
-          status: 'Accepted',
-          doctor_assigned: `${assignDoctor} (${assignRoom})`,
+          status: targetStatus,
+          doctor_assigned: assignDoctor ? `${assignDoctor} (${assignRoom})` : prev.doctor_assigned,
+          doctor_id: assignDoctorId || prev.doctor_id,
           ai_note: assignedNote,
           asha_notes: assignedNote,
           slot_preference: slotPref
@@ -654,13 +675,13 @@ export default function HospitalStaffWorkspace({
 
       if (staffErr) throw staffErr;
 
-      if (!staffData) {
-        throw new Error(`Hospital staff record not found for user account (${activeUser.email}). Please verify your staff profile mapping in the database.`);
+      if (!staffData || !staffData.facility_id || !staffData.facilities) {
+        throw new Error('Facility information unavailable. Please retry or contact an administrator.');
       }
 
       const resolvedFacilityId = staffData.facility_id;
-      const resolvedFacilityName = staffData.facilities?.name || 'Shrirampur Primary Health Centre';
-      const resolvedFacilityDistrict = staffData.facilities?.district || 'District';
+      const resolvedFacilityName = staffData.facilities.name;
+      const resolvedFacilityDistrict = staffData.facilities.district || 'District';
       const resolvedStaffName = staffData.name || activeUser.email?.split('@')[0] || 'Hospital Staff';
 
       setStaffProfile({
@@ -700,6 +721,7 @@ export default function HospitalStaffWorkspace({
           .from('care_requests')
           .select('*')
           .eq('source', 'EMERGENCY_SOS')
+          .eq('facility', resolvedFacilityName)
           .order('created_at', { ascending: false });
 
         if (careData && careData.length > 0) {
@@ -732,15 +754,17 @@ export default function HospitalStaffWorkspace({
         : (refData || []);
 
       // 6. Enrich referrals with patients' human-readable unified_id (MH-P-xxxxx)
-      const patientIds = Array.from(new Set(combinedRefs.map(r => r.patient_id).filter(Boolean)));
+      // Canonical patient identity is UUID; filter to prevent Postgres syntax error on legacy strings
+      const isUuid = (val) => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+      const patientUuids = Array.from(new Set(combinedRefs.map(r => r.patient_id).filter(isUuid)));
 
       let patientsMap = {};
-      if (patientIds.length > 0) {
+      if (patientUuids.length > 0) {
         try {
           const { data: pts } = await supabase
             .from('patients')
             .select('id, unified_id, full_name, age, gender, phone_number, blood_group')
-            .in('id', patientIds);
+            .in('id', patientUuids);
 
           if (pts && pts.length > 0) {
             pts.forEach(p => {
@@ -753,37 +777,32 @@ export default function HospitalStaffWorkspace({
       }
 
       const enrichedRefs = combinedRefs.map(r => {
-        const linkedPatient = patientsMap[r.patient_id];
+        const hasValidPatientUuid = isUuid(r.patient_id);
+        const linkedPatient = hasValidPatientUuid ? patientsMap[r.patient_id] : null;
+        const isLegacyId = r.patient_id && !hasValidPatientUuid;
         return {
           ...r,
-          patient_name: r.patient_name || linkedPatient?.full_name || 'Patient',
-          patient_unified_id: linkedPatient?.unified_id || (r.patient_id && !r.patient_id.includes('-') ? r.patient_id : null),
+          is_legacy_patient: isLegacyId,
+          patient_name: r.patient_name || linkedPatient?.full_name || (isLegacyId ? `Patient (${r.patient_id})` : 'Patient'),
+          patient_unified_id: linkedPatient?.unified_id || (isLegacyId ? `Legacy ID: ${r.patient_id}` : (r.patient_id && !r.patient_id.includes('-') ? r.patient_id : null)),
           patient_phone: linkedPatient?.phone_number || r.vitals?.phone || null,
-          patient_age: linkedPatient?.age || null,
-          patient_gender: linkedPatient?.gender || null,
-          patient_blood_group: linkedPatient?.blood_group || null
+          patient_age: linkedPatient?.age || r.patient_age || null,
+          patient_gender: linkedPatient?.gender || r.patient_gender || null,
+          patient_blood_group: linkedPatient?.blood_group || r.patient_blood_group || null
         };
       });
 
       setReferrals(prev => {
         if (!prev || prev.length === 0) return enrichedRefs;
-        const statusOrder = ['Pending', 'Accepted', 'Arrived', 'Assigned', 'In Consultation', 'Completed', 'Cancelled'];
-        const localMap = new Map(prev.map(r => [r.id, r]));
-        return enrichedRefs.map(remoteRef => {
-          const local = localMap.get(remoteRef.id);
-          if (!local) return remoteRef;
-          const localIdx = statusOrder.indexOf(local.status);
-          const remoteIdx = statusOrder.indexOf(remoteRef.status);
-          if (localIdx > remoteIdx && localIdx >= 0) {
-            return {
-              ...remoteRef,
-              status: local.status,
-              doctor_assigned: local.doctor_assigned || remoteRef.doctor_assigned,
-              doctor_id: local.doctor_id || remoteRef.doctor_id
-            };
+        // If an item is actively executing an in-flight mutation, retain its active in-flight status until mutation resolves
+        const currentLoadingId = actionLoadingIdRef.current;
+        if (currentLoadingId) {
+          const inFlight = prev.find(r => r.id === currentLoadingId);
+          if (inFlight) {
+            return enrichedRefs.map(remoteRef => remoteRef.id === currentLoadingId ? inFlight : remoteRef);
           }
-          return remoteRef;
-        });
+        }
+        return enrichedRefs;
       });
 
     } catch (err) {
@@ -809,7 +828,7 @@ export default function HospitalStaffWorkspace({
 
       const interval = setInterval(() => {
         loadSupabaseData(true);
-      }, 4000);
+      }, 30000);
 
       return () => {
         supabase.removeChannel(channel1);
@@ -829,9 +848,15 @@ export default function HospitalStaffWorkspace({
     showToast(isDemoMode ? '✓ Demo referrals queue refreshed.' : '✓ Live referrals queue updated.');
   };
 
-  // ─── STATUS TRANSITIONS (STRICT STATE MACHINE & ID TARGETING) ───
+  // ─── STATUS TRANSITIONS (APPLICATION-LEVEL REFERRAL WORKFLOW) ───
   // 1. Pending -> Accepted
   const handleAcceptReferral = async (refId) => {
+    if (actionLoadingId) return;
+    if (!facility?.id && !isDemoMode) {
+      setError('Facility information unavailable. Action aborted.');
+      return;
+    }
+
     if (isDemoMode) {
       setReferrals(prev => prev.map(r => r.id === refId ? { ...r, status: 'Accepted' } : r));
       setSelectedReferral(prev => (prev && prev.id === refId ? { ...prev, status: 'Accepted' } : prev));
@@ -845,11 +870,15 @@ export default function HospitalStaffWorkspace({
       return;
     }
 
+    setActionLoadingId(refId);
     try {
-      const { data: updatedRow, error } = await supabase
+      let updateQuery = supabase
         .from('referrals')
         .update({ status: 'Accepted' })
         .eq('id', refId)
+        .eq('destination_facility_id', facility.id);
+
+      const { data: updatedRow, error } = await updateQuery
         .select('id, status')
         .single();
 
@@ -860,20 +889,29 @@ export default function HospitalStaffWorkspace({
 
       setReferrals(prev => prev.map(r => r.id === refId ? { ...r, status: 'Accepted' } : r));
       setSelectedReferral(prev => (prev && prev.id === refId ? { ...prev, status: 'Accepted' } : prev));
-      showToast('✓ Referral accepted successfully.');
+      showToast('✓ Referral accepted — now waiting for patient arrival at reception.');
       setTimeout(() => loadSupabaseData(true), 2500);
     } catch (err) {
       console.error('[HospitalStaff] Failed to accept referral:', err);
       setError(`Failed to accept referral: ${err.message}`);
+      await loadSupabaseData(true);
+    } finally {
+      setActionLoadingId(null);
     }
   };
 
   // 2. Accepted -> Arrived
   const handleMarkArrived = async (refId) => {
+    if (actionLoadingId) return;
+    if (!facility?.id && !isDemoMode) {
+      setError('Facility information unavailable. Action aborted.');
+      return;
+    }
+
     if (isDemoMode) {
       setReferrals(prev => prev.map(r => r.id === refId ? { ...r, status: 'Arrived' } : r));
       setSelectedReferral(prev => (prev && prev.id === refId ? { ...prev, status: 'Arrived' } : prev));
-      showToast('✓ Patient marked as arrived. Ready for clinician assignment.');
+      showToast('✓ Patient physical arrival recorded at reception — ready for clinician assignment.');
       return;
     }
 
@@ -883,11 +921,15 @@ export default function HospitalStaffWorkspace({
       return;
     }
 
+    setActionLoadingId(refId);
     try {
-      const { data: updatedRow, error } = await supabase
+      let updateQuery = supabase
         .from('referrals')
         .update({ status: 'Arrived' })
         .eq('id', refId)
+        .eq('destination_facility_id', facility.id);
+
+      const { data: updatedRow, error } = await updateQuery
         .select('id, status')
         .single();
 
@@ -898,11 +940,14 @@ export default function HospitalStaffWorkspace({
 
       setReferrals(prev => prev.map(r => r.id === refId ? { ...r, status: 'Arrived' } : r));
       setSelectedReferral(prev => (prev && prev.id === refId ? { ...prev, status: 'Arrived' } : prev));
-      showToast('✓ Patient physical arrival verified at reception.');
+      showToast('✓ Patient physical arrival verified at reception — please assign a clinician desk.');
       setTimeout(() => loadSupabaseData(true), 2500);
     } catch (err) {
       console.error('[HospitalStaff] Failed to mark arrival:', err);
       setError(`Failed to mark arrival: ${err.message}`);
+      await loadSupabaseData(true);
+    } finally {
+      setActionLoadingId(null);
     }
   };
 
@@ -910,11 +955,17 @@ export default function HospitalStaffWorkspace({
   const handleRouteToDoctor = async (refId, doctorName, doctorId = null) => {
     const isUuid = (val) => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
 
+    if (actionLoadingId) return;
+    if (!facility?.id && !isDemoMode) {
+      setError('Facility information unavailable. Action aborted.');
+      return;
+    }
+
     if (isDemoMode) {
       setReferrals(prev => prev.map(r => r.id === refId ? { ...r, doctor_assigned: doctorName, doctor_id: doctorId, status: 'Assigned' } : r));
       setSelectedReferral(prev => (prev && prev.id === refId ? { ...prev, doctor_assigned: doctorName, doctor_id: doctorId, status: 'Assigned' } : prev));
       setShowDoctorRouteModal(null);
-      showToast(`✓ Patient successfully assigned to ${doctorName}.`);
+      showToast(`✓ Patient routed to ${doctorName} (Assigned) — clinician consultation queue updated.`);
       return;
     }
 
@@ -929,6 +980,7 @@ export default function HospitalStaffWorkspace({
       return;
     }
 
+    setActionLoadingId(refId);
     try {
       const updatePayload = {
         doctor_assigned: doctorName,
@@ -936,10 +988,13 @@ export default function HospitalStaffWorkspace({
         status: 'Assigned'
       };
 
-      const { data: updatedRow, error } = await supabase
+      let updateQuery = supabase
         .from('referrals')
         .update(updatePayload)
         .eq('id', refId)
+        .eq('destination_facility_id', facility.id);
+
+      const { data: updatedRow, error } = await updateQuery
         .select('id, status, doctor_assigned, doctor_id')
         .single();
 
@@ -951,11 +1006,14 @@ export default function HospitalStaffWorkspace({
       setReferrals(prev => prev.map(r => r.id === refId ? { ...r, ...updatePayload } : r));
       setSelectedReferral(prev => (prev && prev.id === refId ? { ...prev, ...updatePayload } : prev));
       setShowDoctorRouteModal(null);
-      showToast(`✓ Patient routed to ${doctorName}. Status → Assigned. Doctor desk notified.`);
+      showToast(`✓ Patient routed to ${doctorName} (Assigned) — clinician consultation queue updated.`);
       setTimeout(() => loadSupabaseData(true), 3000);
     } catch (err) {
       console.error('[HospitalStaff] Failed to assign specialist:', err);
       setError(`Failed to assign specialist: ${err.message}`);
+      await loadSupabaseData(true);
+    } finally {
+      setActionLoadingId(null);
     }
   };
 
@@ -1034,7 +1092,7 @@ export default function HospitalStaffWorkspace({
       if (isDemoMode) {
         setEmergencyCases(prev => prev.map(c => c.id === sos.id ? { ...c, ambulanceStatus: 'DISPATCHED', ambulanceVehicle: vNum, ambulanceEta: etaVal, status: 'DISPATCHED' } : c));
         setAllEmergencyLogs(prev => prev.map(c => c.id === sos.id ? { ...c, ambulanceStatus: 'DISPATCHED', ambulanceVehicle: vNum, ambulanceEta: etaVal, status: 'DISPATCHED' } : c));
-        showToast(`🚑 108 Ambulance Dispatched (${vNum} · ETA ${etaVal})`);
+        showToast(`🚑 Ambulance request recorded (${vNum} · Recorded ETA: ${etaVal})`);
         setDispatchModalSOS(null);
         return;
       }
@@ -1044,7 +1102,7 @@ export default function HospitalStaffWorkspace({
         ambulance_eta: etaVal,
         status: 'DISPATCHED'
       });
-      showToast(`🚑 108 Ambulance Dispatched (${vNum} · ETA ${etaVal})`);
+      showToast(`🚑 Ambulance request recorded (${vNum} · Recorded ETA: ${etaVal})`);
       setDispatchModalSOS(null);
       await loadSupabaseData(true);
     } catch (err) {
@@ -1058,7 +1116,8 @@ export default function HospitalStaffWorkspace({
   const handleAlertASHA = async (sos) => {
     setActionLoadingId(sos.id);
     try {
-      const msg = `🚨 *EMERGENCY SOS DISPATCH ALERT*\n*Patient:* ${sos.patient_name || 'Citizen'}\n*Phone:* ${sos.phone}\n*Emergency:* ${sos.nature} (${sos.cadCategory})\n*Location:* ${sos.village}\n*GPS Map:* ${sos.mapsLink || 'Near PHC'}\n*Signs:* ${sos.signs || 'Immediate response needed'}\n*Hospital:* Shrirampur PHC\nPlease escort or reach immediately!`;
+      const hospitalName = facility?.name || (isDemoMode ? 'Shrirampur Primary Health Centre' : 'Primary Health Centre');
+      const msg = `🚨 *EMERGENCY SOS DISPATCH ALERT*\n*Patient:* ${sos.patient_name || 'Citizen'}\n*Phone:* ${sos.phone}\n*Emergency:* ${sos.nature} (${sos.cadCategory})\n*Location:* ${sos.village}\n*GPS Map:* ${sos.mapsLink || 'Near Facility'}\n*Signs:* ${sos.signs || 'Immediate response needed'}\n*Hospital:* ${hospitalName}\nPlease escort or reach immediately!`;
       const waUrl = `https://wa.me/?text=${encodeURIComponent(msg)}`;
       window.open(waUrl, '_blank');
 
@@ -1081,18 +1140,19 @@ export default function HospitalStaffWorkspace({
 
   const handleEscalateDoctor = async (sos) => {
     setActionLoadingId(sos.id);
+    const onDutyDoctor = doctors.length > 0 ? doctors[0].name : 'Emergency Medical Officer';
     try {
       if (isDemoMode) {
-        setEmergencyCases(prev => prev.map(c => c.id === sos.id ? { ...c, doctorStatus: 'NOTIFIED', doctor_assigned: 'Dr. Arvind Kulkarni' } : c));
-        setAllEmergencyLogs(prev => prev.map(c => c.id === sos.id ? { ...c, doctorStatus: 'NOTIFIED', doctor_assigned: 'Dr. Arvind Kulkarni' } : c));
-        showToast('🩺 Escalated to Emergency Medical Officer / Doctor Desk');
+        setEmergencyCases(prev => prev.map(c => c.id === sos.id ? { ...c, doctorStatus: 'NOTIFIED', doctor_assigned: onDutyDoctor } : c));
+        setAllEmergencyLogs(prev => prev.map(c => c.id === sos.id ? { ...c, doctorStatus: 'NOTIFIED', doctor_assigned: onDutyDoctor } : c));
+        showToast(`🩺 Escalated to ${onDutyDoctor}`);
         return;
       }
       await updateEmergencyDispatch(sos.id, {
         doctor_status: 'NOTIFIED',
-        doctor_assigned: 'Dr. Arvind Kulkarni'
+        doctor_assigned: onDutyDoctor
       });
-      showToast('🩺 Escalated to Emergency Medical Officer / Doctor Desk');
+      showToast(`🩺 Escalated to ${onDutyDoctor}`);
       await loadSupabaseData(true);
     } catch (err) {
       console.error(err);
@@ -1125,14 +1185,16 @@ export default function HospitalStaffWorkspace({
   // Memos for metrics across 4 truthful care-handoff stages
   const counts = useMemo(() => {
     const pending = referrals.filter(r => r.status === 'Pending').length;
+    const arrived = referrals.filter(r => r.status === 'Arrived').length;
+    const actionNeeded = pending + arrived;
     const waiting = referrals.filter(r => r.status === 'Accepted' || r.status === 'Arrived' || r.status === 'Assigned').length;
     const inConsultation = referrals.filter(r => r.status === 'In Consultation').length;
     const completed = referrals.filter(r => r.status === 'Completed').length;
-    return { pending, waiting, inConsultation, completed, total: referrals.length };
+    return { pending, arrived, actionNeeded, waiting, inConsultation, completed, total: referrals.length };
   }, [referrals]);
 
   // Memos for intake source segregation (ASHA vs Direct Patient vs Teleconsult)
-  const sourceCounts = useMemo(() => {
+  const _sourceCounts = useMemo(() => {
     const asha = referrals.filter(r => getReferralOrigin(r).key === 'ASHA').length;
     const direct = referrals.filter(r => getReferralOrigin(r).key === 'PATIENT_DIRECT').length;
     const tele = referrals.filter(r => getReferralOrigin(r).key === 'TELECONSULT').length;
@@ -1150,7 +1212,9 @@ export default function HospitalStaffWorkspace({
 
     // Applying tab filters
     if (activeTab === 'queue') {
-      if (queueFilter === 'Pending') {
+      if (queueFilter === 'ACTION_NEEDED') {
+        list = list.filter(r => r.status === 'Pending' || r.status === 'Arrived');
+      } else if (queueFilter === 'Pending') {
         list = list.filter(r => r.status === 'Pending');
       } else if (queueFilter === 'Accepted_Arrived') {
         list = list.filter(r => r.status === 'Accepted' || r.status === 'Arrived' || r.status === 'Assigned');
@@ -1199,7 +1263,8 @@ export default function HospitalStaffWorkspace({
   }
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-4 space-y-6">
+    <div className="min-h-screen bg-[#F8FAFC]">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
 
       {/* ── Toast Message Notification ── */}
       {successMessage && (
@@ -1209,43 +1274,73 @@ export default function HospitalStaffWorkspace({
       )}
 
       {/* ── Operations Desk Header ── */}
-      <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-start gap-3.5">
-          <div className="w-12 h-12 bg-[#E6F2F2] border border-[#008080]/30 rounded-2xl flex items-center justify-center text-xl shrink-0 shadow-inner">
-            🏥
+      <div className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-2xs space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-start gap-3.5">
+            <div className="w-11 h-11 bg-teal-50 border border-teal-200/80 text-[#008F83] rounded-2xl flex items-center justify-center shrink-0 shadow-2xs">
+              <Building2 className="w-6 h-6 text-[#008F83]" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="text-base sm:text-lg font-black text-[#16324F] leading-tight">
+                  Hospital Referral Desk &amp; Intake
+                </h1>
+                {isDemoMode ? (
+                  <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
+                    Demo Mode
+                  </span>
+                ) : error ? (
+                  <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-rose-50 text-rose-800 border border-rose-200 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                    Sync Disrupted
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-teal-50 text-teal-800 border border-teal-200 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-teal-600 animate-pulse" />
+                    Live Subscription (30s Fallback)
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-500 font-semibold mt-1 flex items-center gap-1.5 flex-wrap">
+                <span className="text-slate-700 font-bold">📍 {facility?.name || 'Primary Health Centre'}</span>
+                <span className="text-slate-300">·</span>
+                <span>Staff: {staffProfile?.name || 'Coordination Desk'}</span>
+              </p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-base font-black text-slate-900 leading-tight">
-              Hospital Care Handoff & Reception Desk
-            </h1>
-            <p className="text-xs text-slate-500 font-bold mt-1 flex items-center gap-1.5">
-              <span>📍 {facility?.name || 'Unassigned Facility'}</span>
-              <span>·</span>
-              <span className="text-[#008080]">{staffProfile?.name || 'Staff User'}</span>
-            </p>
+
+          {/* Actions: Back & Refresh buttons */}
+          <div className="flex items-center gap-2 self-start sm:self-auto">
+            {handleBack && (
+              <button
+                onClick={handleBack}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 transition-colors cursor-pointer"
+                title="Return to Main Portals"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+                <span>Back to Portals</span>
+              </button>
+            )}
+            <button
+              onClick={handleRefresh}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-slate-50 hover:bg-teal-50/60 border border-slate-200 hover:border-teal-300 rounded-xl text-[11px] font-black text-slate-700 hover:text-teal-900 transition-colors cursor-pointer shadow-2xs"
+              title="Refresh incoming referrals queue"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 text-[#008F83] ${loading ? 'animate-spin' : ''}`} />
+              <span>Refresh Queue</span>
+            </button>
           </div>
         </div>
 
-        {/* Actions: Back & Refresh buttons */}
-        <div className="flex items-center gap-2 self-start sm:self-auto">
-          {handleBack && (
-            <button
-              onClick={handleBack}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 transition-colors cursor-pointer"
-              title="Return to Main Portals"
-            >
-              <ChevronLeft className="w-3.5 h-3.5" />
-              <span>Back to Portals</span>
-            </button>
-          )}
-          <button
-            onClick={handleRefresh}
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-[11px] font-black text-slate-700 transition-colors cursor-pointer"
-            title="Refresh incoming referrals queue"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 text-[#008080] ${loading ? 'animate-spin' : ''}`} />
-            <span>Refresh Queue</span>
-          </button>
+        {/* Subtle Operational Summary */}
+        <div className="pt-3 border-t border-slate-100 flex items-center gap-3 sm:gap-4 text-xs text-slate-500 font-medium flex-wrap">
+          <span>Needs Action: <strong className={counts.actionNeeded > 0 ? "text-amber-800 font-black" : "text-slate-900 font-bold"}>{counts.actionNeeded}</strong></span>
+          <span className="text-slate-300">·</span>
+          <span>Waiting Room: <strong className="text-slate-900 font-bold">{counts.waiting}</strong></span>
+          <span className="text-slate-300">·</span>
+          <span>With Doctor: <strong className="text-slate-900 font-bold">{counts.inConsultation}</strong></span>
+          <span className="text-slate-300">·</span>
+          <span>Completed: <strong className="text-emerald-700 font-bold">{counts.completed}</strong></span>
         </div>
       </div>
 
@@ -1270,39 +1365,64 @@ export default function HospitalStaffWorkspace({
 
       {/* ── HIGH PRIORITY 24x7 EMERGENCY SOS COMMAND BANNER ── */}
       {emergencyCases.length > 0 && (
-        <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-red-600 via-rose-600 to-red-700 text-white shadow-xl border-2 border-red-400 space-y-4 animate-in fade-in duration-200">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/20 pb-3">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-xl shrink-0 animate-pulse">
+        <div className="px-4 py-3 rounded-2xl bg-gradient-to-r from-red-600 via-rose-600 to-red-700 text-white shadow-lg border border-red-400 animate-in fade-in duration-200">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            {/* Left: alert identity */}
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center text-base shrink-0 animate-pulse">
                 🚨
               </div>
-              <div>
+              <div className="min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-[10px] font-black uppercase tracking-widest bg-white text-red-700 px-2.5 py-0.5 rounded-full shadow-xs">
-                    CRITICAL EMERGENCY SOS ALERT
+                  <span className="text-[10px] font-black uppercase tracking-wider bg-white text-red-700 px-2 py-0.5 rounded-full">
+                    EMERGENCY SOS
                   </span>
-                  <span className="text-xs font-bold text-red-100">
-                    {emergencyCases.length} Active Call{emergencyCases.length > 1 ? 's' : ''} Pending Dispatch
+                  <span className="text-sm font-black text-white truncate">
+                    {emergencyCases[0].patient_name || 'Emergency Caller'}
+                  </span>
+                  <span className="text-xs text-red-100">
+                    · {emergencyCases[0].nature} · 📍 {emergencyCases[0].village}
                   </span>
                 </div>
-                <p className="text-xs font-black text-white mt-0.5">
-                  Emergency Transport Coordination Desk · Shrirampur Casualty (Internal Records)
-                </p>
+                {emergencyCases.length > 1 && (
+                  <p className="text-[11px] text-red-200 mt-0.5">
+                    +{emergencyCases.length - 1} more active call{emergencyCases.length > 2 ? 's' : ''}
+                  </p>
+                )}
               </div>
             </div>
 
-            <div className="flex items-center gap-2 self-start sm:self-auto">
+            {/* Right: quick actions + open desk */}
+            <div className="flex items-center gap-2 flex-wrap shrink-0">
+              <a
+                href={`tel:${emergencyCases[0].phone}`}
+                onClick={() => handleLogCall(emergencyCases[0])}
+                className="px-3 py-1.5 bg-white hover:bg-red-50 text-red-700 font-black text-xs rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                <Phone className="w-3.5 h-3.5" />
+                <span>Call</span>
+              </a>
+
+              <button
+                type="button"
+                onClick={() => setDispatchModalSOS(emergencyCases[0])}
+                className={`px-3 py-1.5 text-xs font-black rounded-xl transition-all flex items-center gap-1.5 cursor-pointer ${
+                  emergencyCases[0].ambulanceStatus === 'DISPATCHED'
+                    ? 'bg-emerald-500 text-white'
+                    : 'bg-amber-400 hover:bg-amber-300 text-slate-900'
+                }`}
+              >
+                <Siren className="w-3.5 h-3.5" />
+                <span>{emergencyCases[0].ambulanceStatus === 'DISPATCHED' ? 'Ambulance Logged ✓' : 'Log Ambulance'}</span>
+              </button>
+
               <button
                 type="button"
                 onClick={() => setEmergencyAlarmMuted(prev => !prev)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer border transition-colors ${
-                  emergencyAlarmMuted
-                    ? 'bg-white/20 text-white border-white/30 hover:bg-white/30'
-                    : 'bg-white text-red-700 border-white hover:bg-red-50 shadow-sm'
-                }`}
+                className="p-1.5 rounded-xl bg-white/20 hover:bg-white/30 text-white cursor-pointer"
+                title={emergencyAlarmMuted ? 'Unmute siren' : 'Mute siren'}
               >
-                {emergencyAlarmMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5 animate-bounce" />}
-                <span>{emergencyAlarmMuted ? 'Unmute Siren' : 'Mute Siren'}</span>
+                {emergencyAlarmMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
               </button>
 
               <button
@@ -1310,131 +1430,28 @@ export default function HospitalStaffWorkspace({
                 onClick={() => setActiveTab('emergency')}
                 className="px-3 py-1.5 bg-black/30 hover:bg-black/40 text-white rounded-xl text-xs font-black border border-white/30 cursor-pointer transition-colors"
               >
-                Open Transport Desk
+                Open Desk →
               </button>
             </div>
           </div>
-
-          {/* Topmost emergency case card in banner */}
-          {(() => {
-            const topCase = emergencyCases[0];
-            return (
-              <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-4 border border-white/20 space-y-3">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-                  <div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-[10px] font-mono font-bold bg-white/20 px-2 py-0.5 rounded text-white">
-                        {topCase.refId || 'SOS-01'}
-                      </span>
-                      <span className="text-sm font-black text-white">
-                        {topCase.patient_name || 'Emergency Caller'}
-                      </span>
-                      <span className="text-xs font-bold text-red-100">
-                        · {topCase.nature}
-                      </span>
-                      <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-red-950 text-red-200 border border-red-400/50">
-                        {topCase.cadCategory} · Target &lt; 8m
-                      </span>
-                    </div>
-                    <div className="text-xs text-red-100 font-medium mt-1 flex items-center gap-2 flex-wrap">
-                      <span>📍 {topCase.village}</span>
-                      {topCase.mapsLink && (
-                        <a
-                          href={topCase.mapsLink}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="underline text-white font-bold flex items-center gap-1 hover:text-amber-200"
-                        >
-                          <MapPin className="w-3 h-3" />
-                          <span>View GPS Pin ({topCase.gps})</span>
-                        </a>
-                      )}
-                      <span>·</span>
-                      <span className="font-bold bg-white/20 px-1.5 py-0.5 rounded text-[11px]">
-                        Breathing: {topCase.breathing}
-                      </span>
-                      <span className="font-bold bg-white/20 px-1.5 py-0.5 rounded text-[11px]">
-                        Consciousness: {topCase.consciousness}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Quick Dispatch Action Buttons */}
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <a
-                      href={`tel:${topCase.phone}`}
-                      onClick={() => handleLogCall(topCase)}
-                      className="px-3 py-2 bg-white hover:bg-red-50 text-red-700 font-black text-xs rounded-xl shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <Phone className="w-3.5 h-3.5" />
-                      <span>Call {topCase.phone || 'Caller'}</span>
-                    </a>
-
-                    <button
-                      type="button"
-                      onClick={() => setDispatchModalSOS(topCase)}
-                      className={`px-3 py-2 text-xs font-black rounded-xl transition-all shadow-md flex items-center gap-1.5 cursor-pointer ${
-                        topCase.ambulanceStatus === 'DISPATCHED'
-                          ? 'bg-emerald-500 text-white'
-                          : 'bg-amber-400 hover:bg-amber-300 text-slate-900'
-                      }`}
-                    >
-                      <Siren className="w-3.5 h-3.5" />
-                      <span>{topCase.ambulanceStatus === 'DISPATCHED' ? `Ambulance Recorded (${topCase.ambulanceEta})` : 'Record Ambulance Dispatch'}</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleAlertASHA(topCase)}
-                      className={`px-3 py-2 text-xs font-black rounded-xl transition-all shadow-md flex items-center gap-1.5 cursor-pointer ${
-                        topCase.ashaStatus === 'ALERTED'
-                          ? 'bg-teal-700 text-white'
-                          : 'bg-white/20 hover:bg-white/30 text-white'
-                      }`}
-                    >
-                      <UserCheck className="w-3.5 h-3.5" />
-                      <span>{topCase.ashaStatus === 'ALERTED' ? 'ASHA Alerted (WhatsApp)' : 'Alert ASHA (WhatsApp)'}</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleEscalateDoctor(topCase)}
-                      className={`px-3 py-2 text-xs font-black rounded-xl transition-all shadow-md flex items-center gap-1.5 cursor-pointer ${
-                        topCase.doctorStatus === 'NOTIFIED'
-                          ? 'bg-purple-800 text-white'
-                          : 'bg-white/20 hover:bg-white/30 text-white'
-                      }`}
-                    >
-                      <Stethoscope className="w-3.5 h-3.5" />
-                      <span>{topCase.doctorStatus === 'NOTIFIED' ? 'Doctor Alerted' : 'Route to Doctor'}</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      disabled={actionLoadingId === topCase.id}
-                      onClick={() => handleResolveSOS(topCase)}
-                      className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs rounded-xl shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>Resolve</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            );
-          })()}
         </div>
       )}
 
       {/* ── Sub Navigation Tabs ── */}
-      <div className="flex items-center gap-2 border-b border-slate-200 pb-1 text-xs overflow-x-auto scrollbar-hide">
+      <div className="flex items-center gap-1 border-b border-slate-200 pb-1 text-xs overflow-x-auto scrollbar-hide">
         {[
+          {
+            key: 'queue',
+            label: 'Patient Queue',
+            badge: counts.actionNeeded > 0 ? counts.actionNeeded : null,
+            badgeColor: 'bg-amber-500 text-white'
+          },
           { key: 'home', label: 'Desk Overview' },
-          { key: 'queue', label: 'Patient Desk & Queue' },
-          { key: 'referrals', label: 'Referral Search & Records' },
           {
             key: 'emergency',
-            label: `🚨 Emergency Transport${emergencyCases.length > 0 ? ` (${emergencyCases.length})` : ''}`,
+            label: '🚨 Emergency',
+            badge: emergencyCases.length > 0 ? emergencyCases.length : null,
+            badgeColor: 'bg-red-600 text-white',
             isEmergency: true
           }
         ].map(tab => (
@@ -1444,13 +1461,18 @@ export default function HospitalStaffWorkspace({
               setActiveTab(tab.key);
               setSearchQuery('');
             }}
-            className={`px-4 py-2 font-black border-b-2 transition-colors cursor-pointer shrink-0 ${
+            className={`px-4 py-2 font-black border-b-2 transition-colors cursor-pointer shrink-0 flex items-center gap-1.5 ${
               activeTab === tab.key
                 ? tab.isEmergency ? 'border-red-600 text-red-600' : 'border-[#008080] text-[#008080]'
                 : tab.isEmergency ? 'border-transparent text-red-600 hover:text-red-700' : 'border-transparent text-slate-500 hover:text-slate-900'
             }`}
           >
             {tab.label}
+            {tab.badge && (
+              <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${tab.badgeColor} leading-none`}>
+                {tab.badge}
+              </span>
+            )}
           </button>
         ))}
       </div>
@@ -1462,13 +1484,19 @@ export default function HospitalStaffWorkspace({
           {/* Quick Stats Grid: 4 Truthful Handoff Funnels */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div
-              onClick={() => { setActiveTab('queue'); setQueueFilter('Pending'); }}
-              className="p-4 bg-white border border-slate-200 hover:border-amber-400 rounded-2xl cursor-pointer transition-colors space-y-1 shadow-2xs"
+              onClick={() => { setActiveTab('queue'); setQueueFilter('ACTION_NEEDED'); }}
+              className={`p-4 bg-white border rounded-2xl cursor-pointer transition-colors space-y-1 shadow-2xs ${
+                counts.actionNeeded > 0 ? 'border-amber-400 bg-amber-50/20' : 'border-slate-200 hover:border-amber-400'
+              }`}
             >
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">1. Incoming</span>
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">⚡ Staff Action Needed</span>
               <div className="flex items-baseline gap-1.5">
-                <span className="text-2xl font-black text-slate-900">{counts.pending}</span>
-                <span className="text-[11px] text-amber-700 font-bold">Pending Intake</span>
+                <span className={`text-2xl font-black ${counts.actionNeeded > 0 ? 'text-amber-800' : 'text-slate-900'}`}>
+                  {counts.actionNeeded}
+                </span>
+                <span className="text-[11px] text-amber-700 font-bold">
+                  {counts.pending} intake · {counts.arrived} arrive
+                </span>
               </div>
             </div>
 
@@ -1476,7 +1504,7 @@ export default function HospitalStaffWorkspace({
               onClick={() => { setActiveTab('queue'); setQueueFilter('Accepted_Arrived'); }}
               className="p-4 bg-white border border-slate-200 hover:border-[#008080] rounded-2xl cursor-pointer transition-colors space-y-1 shadow-2xs"
             >
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">2. Waiting Room</span>
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Waiting Room</span>
               <div className="flex items-baseline gap-1.5">
                 <span className="text-2xl font-black text-slate-900">{counts.waiting}</span>
                 <span className="text-[11px] text-[#008080] font-bold">Arrived / Assigned</span>
@@ -1487,7 +1515,7 @@ export default function HospitalStaffWorkspace({
               onClick={() => { setActiveTab('queue'); setQueueFilter('In_Consultation'); }}
               className="p-4 bg-white border border-slate-200 hover:border-purple-400 rounded-2xl cursor-pointer transition-colors space-y-1 shadow-2xs"
             >
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">3. With Doctor</span>
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">With Doctor</span>
               <div className="flex items-baseline gap-1.5">
                 <span className="text-2xl font-black text-slate-900">{counts.inConsultation}</span>
                 <span className="text-[11px] text-purple-700 font-bold">In Consultation</span>
@@ -1498,7 +1526,7 @@ export default function HospitalStaffWorkspace({
               onClick={() => { setActiveTab('queue'); setQueueFilter('Completed'); }}
               className="p-4 bg-white border border-slate-200 hover:border-emerald-500 rounded-2xl cursor-pointer transition-colors space-y-1 shadow-2xs"
             >
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">4. Completed Today</span>
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Completed Today</span>
               <div className="flex items-baseline gap-1.5">
                 <span className="text-2xl font-black text-slate-900">{counts.completed}</span>
                 <span className="text-[11px] text-emerald-600 font-bold">Signed Closed</span>
@@ -1512,20 +1540,37 @@ export default function HospitalStaffWorkspace({
             className="w-full py-4 bg-[#008080] hover:bg-[#006666] text-white font-black text-sm rounded-2xl shadow-sm flex items-center justify-center gap-2 cursor-pointer transition-transform active:scale-99"
           >
             <Inbox className="w-5 h-5" />
-            <span>Open Patient Desk & Queue</span>
+            <span>Open Patient Desk & Queue ({referrals.length} Total)</span>
           </button>
 
-          {/* Next Patients Requiring Action */}
-          <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-2xs space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xs font-black uppercase text-slate-400 tracking-wider">Next Patients Requiring Intake Action</h2>
-              <span className="text-xs font-bold text-slate-400">One Dominant Action per Patient</span>
-            </div>
+          {/* 1. URGENT / ACTION REQUIRED SECTION */}
+          {counts.actionNeeded > 0 ? (
+            <div className="bg-white border-2 border-teal-600/40 rounded-3xl p-5 sm:p-6 shadow-xs space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-teal-50 border border-teal-200 flex items-center justify-center text-teal-800 text-sm font-black">
+                    ⚡
+                  </div>
+                  <div>
+                    <h2 className="text-sm font-black text-slate-900 tracking-tight">
+                      Patients Requiring Staff Action ({counts.actionNeeded})
+                    </h2>
+                    <p className="text-xs text-slate-500 font-medium mt-0.5">
+                      {counts.pending} pending referral acceptance · {counts.arrived} arrived awaiting clinician assignment
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => { setActiveTab('queue'); setQueueFilter('ACTION_NEEDED'); }}
+                  className="text-xs font-black text-[#008080] hover:underline cursor-pointer self-start sm:self-auto"
+                >
+                  View Actionable Queue →
+                </button>
+              </div>
 
-            {referrals.filter(r => r.status !== 'Completed').length > 0 ? (
               <div className="space-y-3">
                 {referrals
-                  .filter(r => r.status !== 'Completed')
+                  .filter(r => r.status === 'Pending' || r.status === 'Arrived')
                   .sort((a, b) => {
                     if (a.priority === b.priority) return 0;
                     if (a.priority === 'HIGH' || a.priority === 'RED') return -1;
@@ -1534,6 +1579,57 @@ export default function HospitalStaffWorkspace({
                     if (b.priority === 'ORANGE') return 1;
                     return 0;
                   })
+                  .slice(0, 4)
+                  .map(ref => (
+                    <ReferralActionCard
+                      key={ref.id}
+                      refItem={ref}
+                      onSelect={setSelectedReferral}
+                      onAccept={handleAcceptReferral}
+                      onMarkArrived={handleMarkArrived}
+                      onRouteDoctor={setShowDoctorRouteModal}
+                      onOpenToken={handleOpenTokenModal}
+                      actionLoadingId={actionLoadingId}
+                      getReferralOrigin={getReferralOrigin}
+                    />
+                  ))}
+              </div>
+            </div>
+          ) : (
+            <div className="bg-white border border-slate-200 rounded-3xl p-6 text-center shadow-2xs space-y-2">
+              <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-700 mx-auto flex items-center justify-center font-bold text-lg">
+                ✓
+              </div>
+              <h3 className="text-sm font-black text-slate-900">All Arrived Patients Have Been Assigned</h3>
+              <p className="text-xs text-slate-500 max-w-md mx-auto">
+                No immediate staff action required. New incoming referrals from ASHA workers or outpatient desks will appear here automatically.
+              </p>
+            </div>
+          )}
+
+          {/* 2. IN-PROGRESS & MONITORING SECTION */}
+          {referrals.filter(r => r.status === 'Accepted' || r.status === 'Assigned' || r.status === 'In Consultation').length > 0 && (
+            <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-2xs space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-xs font-black uppercase text-slate-600 tracking-wider">
+                    In-Progress Referrals Underway ({counts.waiting - counts.arrived + counts.inConsultation})
+                  </h2>
+                  <p className="text-[11px] text-slate-400 font-medium mt-0.5">
+                    Patients awaiting physical arrival or currently in queue / consultation with clinicians
+                  </p>
+                </div>
+                <button
+                  onClick={() => { setActiveTab('queue'); setQueueFilter('Accepted_Arrived'); }}
+                  className="text-xs font-black text-slate-600 hover:text-slate-900 hover:underline cursor-pointer"
+                >
+                  View Waiting Room →
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                {referrals
+                  .filter(r => r.status === 'Accepted' || r.status === 'Assigned' || r.status === 'In Consultation')
                   .slice(0, 3)
                   .map(ref => (
                     <ReferralActionCard
@@ -1544,81 +1640,84 @@ export default function HospitalStaffWorkspace({
                       onMarkArrived={handleMarkArrived}
                       onRouteDoctor={setShowDoctorRouteModal}
                       onOpenToken={handleOpenTokenModal}
+                      actionLoadingId={actionLoadingId}
                       getReferralOrigin={getReferralOrigin}
                     />
                   ))}
               </div>
-            ) : (
-              <div className="text-center py-6 text-xs text-slate-400 font-medium">
-                ✓ No referrals require operational check-in.
-              </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       )}
 
-      {/* ── TAB 2: PATIENT DESK & QUEUE (THE PRIMARY OPERATIONAL VIEW) ── */}
+      {/* ── TAB 2: PATIENT QUEUE (PRIMARY OPERATIONAL VIEW) ── */}
       {activeTab === 'queue' && (
-        <div className="space-y-4 animate-in fade-in duration-150">
+        <div className="space-y-3 animate-in fade-in duration-150">
 
-          {/* Source Segregation Filter (ASHA vs Direct Patient vs Teleconsult) */}
-          <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-2.5 flex items-center gap-1.5 overflow-x-auto text-xs shadow-2xs">
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider shrink-0 px-2">Origin:</span>
-            {[
-              { key: 'ALL', label: `All Sources (${sourceCounts.total})` },
-              { key: 'ASHA', label: `🚨 ASHA Referrals (${sourceCounts.asha})` },
-              { key: 'PATIENT_DIRECT', label: `👤 Direct Patient (${sourceCounts.direct})` },
-              { key: 'TELECONSULT', label: `📹 Teleconsults (${sourceCounts.tele})` }
-            ].map(sBtn => (
-              <button
-                key={sBtn.key}
-                type="button"
-                onClick={() => setSourceFilter(sBtn.key)}
-                className={`px-3 py-1.5 rounded-xl font-black text-[11px] shrink-0 transition-all cursor-pointer ${
-                  sourceFilter === sBtn.key
-                    ? 'bg-[#16324F] text-white shadow-xs'
-                    : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
-                }`}
-              >
-                {sBtn.label}
-              </button>
-            ))}
+          {/* Single combined filter + search row */}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+            {/* Status filter pills — primary operational filters */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 text-xs scrollbar-hide flex-1">
+              {[
+                { key: 'ALL', label: `All (${referrals.length})` },
+                { key: 'ACTION_NEEDED', label: `⚡ Action (${counts.actionNeeded})`, isAction: true },
+                { key: 'Pending', label: `Incoming (${counts.pending})` },
+                { key: 'Accepted_Arrived', label: `Waiting (${counts.waiting})` },
+                { key: 'In_Consultation', label: `With Dr. (${counts.inConsultation})` },
+                { key: 'Completed', label: `Done (${counts.completed})` }
+              ].map(filterBtn => (
+                <button
+                  key={filterBtn.key}
+                  onClick={() => setQueueFilter(filterBtn.key)}
+                  className={`px-3 py-1.5 rounded-xl font-extrabold text-[11px] shrink-0 transition-colors cursor-pointer ${
+                    queueFilter === filterBtn.key
+                      ? filterBtn.isAction ? 'bg-amber-600 text-white shadow-xs' : 'bg-[#008080] text-white shadow-xs'
+                      : filterBtn.isAction && counts.actionNeeded > 0
+                      ? 'bg-amber-50 border border-amber-200 text-amber-800 hover:bg-amber-100'
+                      : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  {filterBtn.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Source filter — compact segment, secondary */}
+            <div className="flex items-center gap-1 bg-slate-100 rounded-xl p-0.5 text-[10px] font-black shrink-0">
+              {[
+                { key: 'ALL', label: 'All' },
+                { key: 'ASHA', label: '🚨 ASHA' },
+                { key: 'PATIENT_DIRECT', label: '👤 Direct' },
+                { key: 'TELECONSULT', label: '📹 Tele' }
+              ].map(sBtn => (
+                <button
+                  key={sBtn.key}
+                  type="button"
+                  onClick={() => setSourceFilter(sBtn.key)}
+                  className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                    sourceFilter === sBtn.key
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  {sBtn.label}
+                </button>
+              ))}
+            </div>
           </div>
 
-          {/* 4 Truthful Handoff Funnel Filters */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs scrollbar-hide">
-            {[
-              { key: 'ALL', label: `All Queue (${referrals.length})` },
-              { key: 'Pending', label: `Incoming (${counts.pending})` },
-              { key: 'Accepted_Arrived', label: `Waiting Room (${counts.waiting})` },
-              { key: 'In_Consultation', label: `With Doctor (${counts.inConsultation})` },
-              { key: 'Completed', label: `Completed Today (${counts.completed})` }
-            ].map(filterBtn => (
-              <button
-                key={filterBtn.key}
-                onClick={() => setQueueFilter(filterBtn.key)}
-                className={`px-3.5 py-1.5 rounded-xl font-extrabold text-[11px] shrink-0 transition-colors cursor-pointer ${
-                  queueFilter === filterBtn.key
-                    ? 'bg-[#008080] text-white shadow-xs'
-                    : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
-                }`}
-              >
-                {filterBtn.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Instant Search Bar */}
+          {/* Search bar */}
           <div className="relative">
             <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search queue by patient name, ID, symptoms, or department..."
+              placeholder="Search by patient name, ID, symptoms, or department..."
               className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 focus:border-[#008080] rounded-xl text-xs font-semibold text-slate-900 outline-none transition-colors shadow-2xs"
             />
             {searchQuery && (
+
               <button
                 onClick={() => setSearchQuery('')}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold"
@@ -1630,92 +1729,139 @@ export default function HospitalStaffWorkspace({
 
           {/* Referral Queue Stream */}
           {filteredReferrals.length > 0 ? (
-            <div className="space-y-3">
-              {filteredReferrals.map(ref => (
-                <ReferralActionCard
-                  key={ref.id}
-                  refItem={ref}
-                  onSelect={setSelectedReferral}
-                  onAccept={handleAcceptReferral}
-                  onMarkArrived={handleMarkArrived}
-                  onRouteDoctor={setShowDoctorRouteModal}
-                  onOpenToken={handleOpenTokenModal}
-                  getReferralOrigin={getReferralOrigin}
-                />
-              ))}
-            </div>
+            queueFilter === 'ALL' && !searchQuery ? (
+              <div className="space-y-6">
+                {/* 1. Needs Your Action */}
+                {(() => {
+                  const needsAction = filteredReferrals.filter(r => r.status === 'Pending' || r.status === 'Arrived');
+                  if (needsAction.length === 0) return null;
+                  return (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-xs font-black uppercase text-slate-800 tracking-wider flex items-center gap-1.5">
+                          <span>⚡ Needs Your Action</span>
+                          <span className="text-[10px] font-bold text-amber-900 bg-amber-100 px-2 py-0.5 rounded-full">
+                            {needsAction.length}
+                          </span>
+                        </h3>
+                        <span className="text-[11px] text-slate-400 font-medium">Review referrals &amp; route arrived patients</span>
+                      </div>
+                      <div className="space-y-3">
+                        {needsAction.map(ref => (
+                          <ReferralActionCard
+                            key={ref.id}
+                            refItem={ref}
+                            onSelect={setSelectedReferral}
+                            onAccept={handleAcceptReferral}
+                            onMarkArrived={handleMarkArrived}
+                            onRouteDoctor={setShowDoctorRouteModal}
+                            onOpenToken={handleOpenTokenModal}
+                            actionLoadingId={actionLoadingId}
+                            getReferralOrigin={getReferralOrigin}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* 2. In Progress & Monitoring */}
+                {(() => {
+                  const inProgress = filteredReferrals.filter(r => r.status === 'Accepted' || r.status === 'Assigned' || r.status === 'In Consultation');
+                  if (inProgress.length === 0) return null;
+                  return (
+                    <div className="space-y-3 pt-2">
+                      <div className="flex items-center justify-between pt-3 border-t border-slate-200/80">
+                        <h3 className="text-xs font-bold uppercase text-slate-600 tracking-wider flex items-center gap-1.5">
+                          <span>In Progress</span>
+                          <span className="text-[10px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full">
+                            {inProgress.length}
+                          </span>
+                        </h3>
+                        <span className="text-[11px] text-slate-400 font-medium">En route or waiting in clinician queue</span>
+                      </div>
+                      <div className="space-y-3">
+                        {inProgress.map(ref => (
+                          <ReferralActionCard
+                            key={ref.id}
+                            refItem={ref}
+                            onSelect={setSelectedReferral}
+                            onAccept={handleAcceptReferral}
+                            onMarkArrived={handleMarkArrived}
+                            onRouteDoctor={setShowDoctorRouteModal}
+                            onOpenToken={handleOpenTokenModal}
+                            actionLoadingId={actionLoadingId}
+                            getReferralOrigin={getReferralOrigin}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* 3. Completed Today */}
+                {(() => {
+                  const completed = filteredReferrals.filter(r => r.status === 'Completed');
+                  if (completed.length === 0) return null;
+                  return (
+                    <div className="space-y-3 pt-2">
+                      <div className="flex items-center justify-between pt-3 border-t border-slate-200/80">
+                        <h3 className="text-xs font-semibold uppercase text-slate-400 tracking-wider flex items-center gap-1.5">
+                          <span>Completed Today</span>
+                          <span className="text-[10px] font-medium text-slate-400 bg-slate-50 px-2 py-0.5 rounded-full">
+                            {completed.length}
+                          </span>
+                        </h3>
+                      </div>
+                      <div className="space-y-3">
+                        {completed.map(ref => (
+                          <ReferralActionCard
+                            key={ref.id}
+                            refItem={ref}
+                            onSelect={setSelectedReferral}
+                            onAccept={handleAcceptReferral}
+                            onMarkArrived={handleMarkArrived}
+                            onRouteDoctor={setShowDoctorRouteModal}
+                            onOpenToken={handleOpenTokenModal}
+                            actionLoadingId={actionLoadingId}
+                            getReferralOrigin={getReferralOrigin}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {filteredReferrals.map(ref => (
+                  <ReferralActionCard
+                    key={ref.id}
+                    refItem={ref}
+                    onSelect={setSelectedReferral}
+                    onAccept={handleAcceptReferral}
+                    onMarkArrived={handleMarkArrived}
+                    onRouteDoctor={setShowDoctorRouteModal}
+                    onOpenToken={handleOpenTokenModal}
+                    actionLoadingId={actionLoadingId}
+                    getReferralOrigin={getReferralOrigin}
+                  />
+                ))}
+              </div>
+            )
           ) : (
-            <div className="text-center py-12 bg-white rounded-3xl border border-slate-200 shadow-2xs space-y-2">
-              <Inbox className="w-8 h-8 text-slate-300 mx-auto mb-1" />
-              <p className="text-sm font-black text-slate-800">No referrals currently in this queue.</p>
-              <p className="text-xs text-slate-400 font-medium">
+            <div className="py-14 bg-white rounded-3xl border border-slate-200 shadow-2xs flex flex-col items-center justify-center text-center space-y-2.5 px-4">
+              <div className="w-14 h-14 rounded-2xl bg-teal-50/80 border border-teal-100/80 text-[#008F83] flex items-center justify-center mb-1">
+                <Inbox className="w-7 h-7 text-[#008F83]/80" />
+              </div>
+              <h4 className="text-base font-black text-[#16324F]">No referrals currently require attention</h4>
+              <p className="text-xs text-slate-500 font-medium max-w-sm">
                 {searchQuery
-                  ? 'No referrals matched your search keywords.'
+                  ? 'No referrals matched your search keywords. Try searching by another name, ID, or department.'
                   : 'Incoming referrals from frontline workers and outpatient desks will appear here automatically.'}
               </p>
             </div>
           )}
-        </div>
-      )}
-
-      {/* ── TAB 3: REFERRAL SEARCH & RECORDS ── */}
-      {activeTab === 'referrals' && (
-        <div className="space-y-6 animate-in fade-in duration-150">
-
-          {/* Search Input */}
-          <div className="relative">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search historical & active records by patient name, ID, department, or symptoms..."
-              className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 focus:border-[#008080] rounded-xl text-xs font-semibold text-slate-900 outline-none transition-colors shadow-2xs"
-            />
-          </div>
-
-          {/* Historical Search Results Table */}
-          <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
-            <div className="px-4 py-3 border-b border-slate-100 text-xs font-bold text-slate-500 bg-slate-50/50 flex items-center justify-between">
-              <span>{filteredReferrals.length} Referral Records Found</span>
-              {searchQuery && (
-                <button onClick={() => setSearchQuery('')} className="text-[#008080] hover:underline font-bold">Clear Search</button>
-              )}
-            </div>
-
-            {filteredReferrals.length > 0 ? (
-              <div className="divide-y divide-slate-100">
-                {filteredReferrals.map(ref => (
-                  <div
-                    key={ref.id}
-                    onClick={() => setSelectedReferral(ref)}
-                    className="p-4 hover:bg-slate-50/60 cursor-pointer transition-colors flex items-center justify-between gap-4"
-                  >
-                    <div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-extrabold text-xs text-slate-900">{ref.patient_name}</span>
-                        <span className="font-mono text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded font-bold">
-                          {ref.patient_unified_id ? `ID: ${ref.patient_unified_id}` : (ref.patient_id ? `ID: ${ref.patient_id.slice(0, 8)}` : 'ID: Pending')}
-                        </span>
-                        <span className="text-[10px] font-black px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
-                          {ref.status}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-slate-500 mt-0.5">
-                        {ref.destination_department} · Intake {new Date(ref.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                      </p>
-                    </div>
-
-                    <ChevronRight className="w-4 h-4 text-slate-400" />
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="p-8 text-center text-xs text-slate-400 font-medium">
-                No matching referral history records found.
-              </div>
-            )}
-          </div>
         </div>
       )}
 
@@ -1843,7 +1989,7 @@ export default function HospitalStaffWorkspace({
                           ? 'bg-amber-100 text-amber-900 border-amber-300 animate-pulse'
                           : 'bg-red-100 text-red-800 border-red-300 animate-pulse'
                       }`}>
-                        {isResolved ? '✓ Case Resolved / Stabilized' : sos.ambulanceStatus === 'DISPATCHED' ? `Ambulance Dispatched (ETA ${sos.ambulanceEta})` : 'Pending Dispatch Action'}
+                        {isResolved ? '✓ Case Resolved / Stabilized' : sos.ambulanceStatus === 'DISPATCHED' ? `Ambulance Request Recorded (ETA ${sos.ambulanceEta})` : 'Pending Action'}
                       </span>
                     </div>
 
@@ -1880,10 +2026,10 @@ export default function HospitalStaffWorkspace({
                         </div>
                       </div>
 
-                      {/* Column 2: Clinical CAD Assessment */}
+                      {/* Column 2: Frontline Assessment */}
                       <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-100 space-y-2">
                         <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider block">
-                          CAD Clinical Assessment
+                          Frontline Triage Assessment
                         </span>
                         <div className="space-y-1 text-slate-700">
                           <p>
@@ -1903,12 +2049,12 @@ export default function HospitalStaffWorkspace({
                       {/* Column 3: Dispatch & Escort Status */}
                       <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-100 space-y-2">
                         <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider block">
-                          Dispatch Status
+                          Response Status
                         </span>
                         <div className="space-y-1 text-slate-700">
                           <p className="flex items-center gap-1.5">
                             <Siren className="w-3.5 h-3.5 text-slate-500" />
-                            <span>108: <strong>{sos.ambulanceStatus === 'DISPATCHED' ? `Dispatched (${sos.ambulanceVehicle})` : 'Not Dispatched'}</strong></span>
+                            <span>Ambulance: <strong>{sos.ambulanceStatus === 'DISPATCHED' ? `Request Recorded (${sos.ambulanceVehicle})` : 'Not Recorded'}</strong></span>
                           </p>
                           <p className="flex items-center gap-1.5">
                             <UserCheck className="w-3.5 h-3.5 text-slate-500" />
@@ -1946,7 +2092,7 @@ export default function HospitalStaffWorkspace({
                             }`}
                           >
                             <Siren className="w-3.5 h-3.5" />
-                            <span>{sos.ambulanceStatus === 'DISPATCHED' ? `Update Ambulance (${sos.ambulanceEta})` : 'Dispatch 108 Ambulance'}</span>
+                            <span>{sos.ambulanceStatus === 'DISPATCHED' ? `Update Ambulance (${sos.ambulanceEta})` : 'Record Ambulance Request'}</span>
                           </button>
 
                           <button
@@ -1996,8 +2142,8 @@ export default function HospitalStaffWorkspace({
             ) : (
               <div className="text-center py-12 bg-white rounded-3xl border border-slate-200 shadow-2xs space-y-2">
                 <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-1" />
-                <p className="text-sm font-black text-slate-800">No active CAD emergency dispatch alerts</p>
-                <p className="text-xs text-slate-400">All helpline and 108 calls are monitored in real-time.</p>
+                <p className="text-sm font-black text-slate-800">No active emergency transport calls</p>
+                <p className="text-xs text-slate-400">Emergency transport requests are logged and monitored in real-time.</p>
               </div>
             )}
           </div>
@@ -2107,23 +2253,8 @@ export default function HospitalStaffWorkspace({
         </div>
       )}
 
-      {/* ─── MODAL 1: CLINICAL CASE DOSSIER & PROGRESSIVE DISCLOSURE ─── */}
+      {/* ─── MODAL 1: REFERRAL HANDOFF RECORD (CLEAN, FOCUSED PATIENT CASE) ─── */}
       {selectedReferral && (() => {
-        const isHighRisk = selectedReferral.priority === 'HIGH' || selectedReferral.priority === 'RED';
-        const isUrgent = selectedReferral.priority === 'ORANGE';
-        const priorityBadgeStyle = isHighRisk
-          ? 'bg-rose-100 text-rose-800 border-rose-200'
-          : isUrgent
-          ? 'bg-amber-100 text-amber-900 border-amber-200'
-          : 'bg-emerald-100 text-emerald-900 border-emerald-200';
-
-        let statusBadgeStyle = 'bg-slate-100 text-slate-700 border-slate-200';
-        if (selectedReferral.status === 'Accepted') statusBadgeStyle = 'bg-sky-100 text-sky-800 border-sky-200';
-        if (selectedReferral.status === 'Arrived') statusBadgeStyle = 'bg-teal-100 text-teal-800 border-teal-200';
-        if (selectedReferral.status === 'Assigned') statusBadgeStyle = 'bg-indigo-100 text-indigo-800 border-indigo-200';
-        if (selectedReferral.status === 'In Consultation') statusBadgeStyle = 'bg-purple-100 text-purple-800 border-purple-200';
-        if (selectedReferral.status === 'Completed') statusBadgeStyle = 'bg-emerald-100 text-emerald-800 border-emerald-200';
-
         const dangerSigns = Array.isArray(selectedReferral.danger_signs)
           ? selectedReferral.danger_signs
           : (typeof selectedReferral.danger_signs === 'string' && selectedReferral.danger_signs.trim())
@@ -2131,311 +2262,168 @@ export default function HospitalStaffWorkspace({
           : [];
 
         const vitals = selectedReferral.vitals || {};
-        const modalOrigin = getReferralOrigin(selectedReferral);
+        const docName = selectedReferral.doctor_assigned
+          ? (selectedReferral.doctor_assigned.startsWith('Dr.') ? selectedReferral.doctor_assigned : 'Dr. ' + selectedReferral.doctor_assigned)
+          : null;
+
+        // Current state label
+        let stateLabel = 'PENDING — NEEDS HOSPITAL ACCEPTANCE';
+        if (selectedReferral.status === 'Accepted') stateLabel = 'ACCEPTED — WAITING FOR PATIENT ARRIVAL';
+        if (selectedReferral.status === 'Arrived') stateLabel = 'ARRIVED — NEEDS DOCTOR ASSIGNMENT';
+        if (selectedReferral.status === 'Assigned') stateLabel = `ASSIGNED — IN QUEUE (${docName || 'Doctor'})`;
+        if (selectedReferral.status === 'In Consultation') stateLabel = `IN CONSULTATION — WITH ${docName || 'Doctor'}`;
+        if (selectedReferral.status === 'Completed') stateLabel = 'COMPLETED — ENCOUNTER SIGNED';
+
+        // 6-step referral journey timeline
+        const statusOrder = ['Pending', 'Accepted', 'Arrived', 'Assigned', 'In Consultation', 'Completed'];
+        const currentIdx = statusOrder.indexOf(selectedReferral.status);
+
+        const timelineSteps = [
+          {
+            title: 'Referral created by frontline worker',
+            subtitle: `${selectedReferral.created_by || 'ASHA Worker'}${selectedReferral.created_at ? ` · ${new Date(selectedReferral.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}` : ''}`,
+            status: 'done'
+          },
+          {
+            title: currentIdx >= 1 ? 'Referral accepted by hospital staff' : 'Review and accept referral',
+            subtitle: currentIdx >= 1 ? 'Facility capacity acknowledged' : (currentIdx === 0 ? 'CURRENT STEP: Hospital Staff' : ''),
+            status: currentIdx > 0 ? 'done' : (currentIdx === 0 ? 'current' : 'upcoming')
+          },
+          {
+            title: currentIdx >= 2 ? 'Patient arrived at facility' : 'Patient arrival at facility',
+            subtitle: currentIdx >= 2 ? 'Patient present at reception desk' : (currentIdx === 1 ? 'CURRENT STEP: Patient traveling' : ''),
+            status: currentIdx > 1 ? 'done' : (currentIdx === 1 ? 'current' : 'upcoming')
+          },
+          {
+            title: currentIdx >= 3 ? `Assigned to ${docName || 'Doctor'}` : 'Assign doctor desk',
+            subtitle: currentIdx >= 3 ? 'Consultation queue assigned' : (currentIdx === 2 ? 'CURRENT STEP: Hospital Staff' : ''),
+            status: currentIdx > 2 ? 'done' : (currentIdx === 2 ? 'current' : 'upcoming')
+          },
+          {
+            title: currentIdx >= 4 ? `Consultation with ${docName || 'Doctor'}` : 'Doctor consultation',
+            subtitle: currentIdx === 4 ? 'CURRENT STEP: Consultation in progress' : (currentIdx === 3 ? 'Patient waiting in OPD queue' : ''),
+            status: currentIdx > 4 ? 'done' : (currentIdx === 3 || currentIdx === 4 ? 'current' : 'upcoming')
+          },
+          {
+            title: currentIdx === 5 ? 'Consultation completed & signed' : 'Encounter sign-off',
+            subtitle: currentIdx === 5 ? 'Encounter completed & signed' : '',
+            status: currentIdx === 5 ? 'done' : 'upcoming'
+          }
+        ];
+
+        // Responsibility details
+        let respParty = 'Hospital Staff';
+        let nextStepText = 'Review and accept incoming referral';
+        if (selectedReferral.status === 'Accepted') {
+          respParty = 'Patient';
+          nextStepText = 'Patient traveling to facility; mark arrived when present at reception';
+        } else if (selectedReferral.status === 'Arrived') {
+          respParty = 'Hospital Staff';
+          nextStepText = 'Assign on-duty doctor desk to route patient';
+        } else if (selectedReferral.status === 'Assigned') {
+          respParty = docName || 'Assigned Clinician';
+          nextStepText = 'Patient is waiting in doctor consultation queue';
+        } else if (selectedReferral.status === 'In Consultation') {
+          respParty = docName || 'Assigned Clinician';
+          nextStepText = 'Consultation in progress with clinician';
+        } else if (selectedReferral.status === 'Completed') {
+          respParty = 'Completed';
+          nextStepText = 'Clinical consultation finalized and signed';
+        }
+
+        const tokenDisplay = selectedReferral.slot_preference || (selectedReferral.ai_note?.match(/TOKEN:\s*([^|]+)/i)?.[1]?.trim() ? `Token #${selectedReferral.ai_note.match(/TOKEN:\s*([^|]+)/i)[1].trim()}` : null);
+
+        // State label colors
+        const stateColor =
+          selectedReferral.status === 'Pending' ? { bg: 'bg-amber-50', border: 'border-amber-300', text: 'text-amber-900', dot: 'bg-amber-500' } :
+          selectedReferral.status === 'Accepted' ? { bg: 'bg-slate-50', border: 'border-slate-300', text: 'text-slate-800', dot: 'bg-slate-500' } :
+          selectedReferral.status === 'Arrived' ? { bg: 'bg-teal-50', border: 'border-teal-300', text: 'text-teal-900', dot: 'bg-teal-600 animate-pulse' } :
+          selectedReferral.status === 'Assigned' ? { bg: 'bg-blue-50', border: 'border-blue-300', text: 'text-blue-900', dot: 'bg-blue-500' } :
+          selectedReferral.status === 'In Consultation' ? { bg: 'bg-purple-50', border: 'border-purple-300', text: 'text-purple-900', dot: 'bg-purple-500 animate-pulse' } :
+          selectedReferral.status === 'Completed' ? { bg: 'bg-emerald-50', border: 'border-emerald-300', text: 'text-emerald-900', dot: 'bg-emerald-500' } :
+          { bg: 'bg-slate-50', border: 'border-slate-200', text: 'text-slate-700', dot: 'bg-slate-400' };
 
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/50 backdrop-blur-xs animate-in fade-in duration-150">
-            <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[92vh] flex flex-col border border-slate-200 shadow-2xl overflow-hidden">
+            <div
+              data-action="open-case"
+              data-referral-id={selectedReferral.id}
+              className="bg-white rounded-3xl max-w-lg w-full max-h-[90vh] flex flex-col border border-slate-200 shadow-2xl overflow-hidden"
+            >
 
-              {/* Modal Top Header */}
-              <div className="p-5 border-b border-slate-100 bg-slate-50/60 flex items-start justify-between gap-3 shrink-0">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-[#008080]/10 text-[#008080] border border-[#008080]/20">
-                      <FileText className="w-3 h-3" />
-                      Care Handoff Case File
-                    </span>
-                    {modalOrigin.key === 'ASHA' && (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 border border-emerald-200">
-                        🚨 ASHA Field Referral
+              {/* Modal Header: Patient identity + state callout + primary action */}
+              <div className="p-5 border-b border-slate-100 bg-white flex flex-col gap-3 shrink-0">
+
+                {/* Patient identity row */}
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-xl bg-teal-50 text-[#008F83] border border-teal-100 flex items-center justify-center font-black text-sm shrink-0 mt-0.5">
+                      {(selectedReferral.patient_name || 'P').trim()[0].toUpperCase()}
+                    </div>
+                    <div className="space-y-0.5 min-w-0">
+                      <span className="text-[10px] font-black uppercase text-[#008F83] tracking-wider block">
+                        Patient Case Record
                       </span>
-                    )}
-                    {modalOrigin.key === 'PATIENT_DIRECT' && (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 border border-blue-200">
-                        👤 Direct Patient Booking
-                      </span>
-                    )}
-                    {modalOrigin.key === 'TELECONSULT' && (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-md bg-purple-100 text-purple-800 border border-purple-200">
-                        📹 Virtual Teleconsult
-                      </span>
-                    )}
-                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-md border ${priorityBadgeStyle}`}>
-                      {selectedReferral.priority_label || selectedReferral.priority || 'Routine Priority'}
-                    </span>
-                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-md border ${statusBadgeStyle}`}>
-                      Status: {selectedReferral.status}
-                    </span>
+                      <h2 className="text-lg font-black text-[#16324F] tracking-tight truncate">
+                        {selectedReferral.patient_name}
+                      </h2>
+                      <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium flex-wrap">
+                        <span className="font-mono font-bold text-slate-700">
+                          {selectedReferral.patient_unified_id ? selectedReferral.patient_unified_id : (selectedReferral.patient_id ? `ID: ${selectedReferral.patient_id.slice(0, 8)}` : 'ID: Pending')}
+                        </span>
+                        <span>·</span>
+                        <span>
+                          {[
+                            selectedReferral.patient_age ? `${selectedReferral.patient_age} yrs` : null,
+                            selectedReferral.patient_gender,
+                            selectedReferral.patient_blood_group ? `Blood ${selectedReferral.patient_blood_group}` : null
+                          ].filter(Boolean).join(' · ')}
+                        </span>
+                      </div>
+                    </div>
                   </div>
 
-                  <h2 className="text-xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-                    {selectedReferral.patient_name}
-                  </h2>
-
-                  <div className="flex items-center gap-3 text-xs text-slate-600 font-medium flex-wrap">
-                    <span className="font-mono text-[11px] font-bold bg-slate-200/80 px-2 py-0.5 rounded text-slate-800">
-                      {selectedReferral.patient_unified_id ? `Unified ID: ${selectedReferral.patient_unified_id}` : (selectedReferral.patient_id ? `ID: ${selectedReferral.patient_id.slice(0, 8)}` : 'ID: Not assigned')}
-                    </span>
-                    {(selectedReferral.patient_gender || selectedReferral.patient_age) && (
-                      <span className="text-slate-600">
-                        {[selectedReferral.patient_gender, selectedReferral.patient_age ? `${selectedReferral.patient_age} yrs` : null].filter(Boolean).join(' · ')}
-                      </span>
-                    )}
-                    {selectedReferral.patient_blood_group && (
-                      <span className="font-extrabold text-rose-700 bg-rose-50 border border-rose-200 px-1.5 py-0.2 rounded text-[10px]">
-                        Blood: {selectedReferral.patient_blood_group}
-                      </span>
-                    )}
-                  </div>
+                  <button
+                    onClick={() => setSelectedReferral(null)}
+                    className="p-1.5 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                    aria-label="Close case file"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
                 </div>
 
-                <button
-                  onClick={() => setSelectedReferral(null)}
-                  className="p-2 rounded-full bg-white hover:bg-slate-100 text-slate-500 border border-slate-200 shadow-2xs transition-colors cursor-pointer"
-                  aria-label="Close case file"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              {/* Scrollable Case Body */}
-              <div className="p-5 overflow-y-auto space-y-4 text-xs font-semibold text-slate-700 divide-y divide-slate-100">
-
-                {/* 1. Contact & Destination Overview */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                  <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100 space-y-1">
-                    <span className="text-[10px] text-slate-400 font-black uppercase tracking-wider block">Patient Phone & Direct Call</span>
-                    {selectedReferral.patient_phone ? (
-                      <a
-                        href={`tel:${selectedReferral.patient_phone}`}
-                        className="inline-flex items-center gap-1.5 text-sm font-black text-[#008080] hover:underline"
-                      >
-                        <Phone className="w-3.5 h-3.5" />
-                        <span>{selectedReferral.patient_phone}</span>
-                        <span className="text-[10px] bg-teal-100 text-teal-800 px-1.5 py-0.2 rounded ml-1 font-bold">Call</span>
-                      </a>
-                    ) : (
-                      <span className="text-slate-400 italic text-xs">Not recorded</span>
-                    )}
-                  </div>
-
-                  <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100 space-y-1">
-                    <span className="text-[10px] text-slate-400 font-black uppercase tracking-wider block">Destination Facility & Unit</span>
-                    <div className="text-xs font-black text-slate-900 flex items-center gap-1.5">
-                      <Building2 className="w-3.5 h-3.5 text-slate-500" />
-                      <span>{selectedReferral.destination_hospital || facility?.name || 'Primary Health Centre'}</span>
-                    </div>
-                    <div className="text-[11px] text-slate-500">
-                      Target Dept: <span className="font-bold text-slate-700">{selectedReferral.destination_department || 'General Medicine'}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 2. Clinician & Handoff Responsibility */}
-                <div className="pt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <div>
-                    <span className="text-[10px] text-slate-400 font-black uppercase tracking-wider block">Assigned Doctor Desk</span>
-                    <div className="text-sm font-extrabold text-slate-900 flex items-center gap-1.5 mt-0.5">
-                      <Stethoscope className="w-4 h-4 text-[#008080]" />
-                      {selectedReferral.doctor_assigned ? (
-                        <span className="text-slate-900">{selectedReferral.doctor_assigned}</span>
-                      ) : (
-                        <span className="text-amber-700 italic">Not Assigned (Awaiting Reception Desk)</span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="text-right sm:text-right">
-                    <span className="text-[10px] text-slate-400 font-black uppercase tracking-wider block">
-                      Referred By
+                {/* State callout — the visual centerpiece */}
+                <div className={`rounded-2xl border px-4 py-3 ${stateColor.bg} ${stateColor.border} space-y-2`}>
+                  <div className="flex items-center gap-2">
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${stateColor.dot}`} />
+                    <span className={`text-sm font-black tracking-tight ${stateColor.text}`}>
+                      {stateLabel}
                     </span>
-                    <span className="text-xs font-bold text-slate-800">
-                      {selectedReferral.created_by || 'Frontline Community Worker'}
-                    </span>
-                    <div className="text-[10px] text-slate-400">
-                      {new Date(selectedReferral.created_at).toLocaleString('en-IN', {
-                        day: 'numeric',
-                        month: 'short',
-                        year: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit'
-                      })} · Intake elapsed: {getWaitDuration(selectedReferral.created_at)}
-                    </div>
                   </div>
-                </div>
-
-                {/* 3. Flagged Danger Signs */}
-                {dangerSigns.length > 0 && (
-                  <div className="pt-4">
-                    <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl space-y-1.5">
-                      <div className="flex items-center gap-1.5 text-rose-800 font-black text-xs uppercase tracking-wide">
-                        <ShieldAlert className="w-4 h-4 text-rose-600" />
-                        <span>Critical Danger Signs Flagged by Frontline Triage</span>
-                      </div>
-                      <ul className="list-disc list-inside space-y-1 text-xs text-rose-900 font-bold pl-1">
-                        {dangerSigns.map((sign, idx) => (
-                          <li key={idx}>{sign}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  </div>
-                )}
-
-                {/* 4. Pregnancy / Escort Flag */}
-                {(selectedReferral.is_pregnant || selectedReferral.symptoms?.includes('ASHA ACCOMPANYING') || selectedReferral.clinical_summary?.includes('ASHA ACCOMPANYING')) && (
-                  <div className="pt-3">
-                    <div className="p-2.5 bg-purple-50 border border-purple-200 rounded-xl flex items-center gap-2 text-xs font-bold text-purple-900">
-                      <span className="text-base">🤰</span>
-                      <span>High-Priority Antenatal / Escorted Case — ASHA worker accompanying for priority intake.</span>
-                    </div>
-                  </div>
-                )}
-
-                {/* 5. Frontline Recorded Vitals (Raw measurements with units only) */}
-                <div className="pt-4 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] text-slate-400 font-black uppercase tracking-wider flex items-center gap-1">
-                      <Activity className="w-3.5 h-3.5 text-[#008080]" />
-                      Recorded Frontline Vitals
-                    </span>
-                    <span className="text-[10px] text-slate-400 font-bold">Standard Clinical Units</span>
+                  <div className={`text-[11px] font-semibold ${stateColor.text} opacity-80`}>
+                    Next: {nextStepText} — <strong>{respParty}</strong>
                   </div>
 
-                  {Object.keys(vitals).length > 0 ? (
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                      <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
-                        <span className="text-[10px] text-slate-400 block font-bold">Blood Pressure</span>
-                        <span className="text-sm font-black text-slate-900">{vitals.bp || 'Not recorded'}</span>
-                        <span className="text-[9px] text-slate-400 block font-medium">mmHg</span>
-                      </div>
-
-                      <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
-                        <span className="text-[10px] text-slate-400 block font-bold">Pulse Rate</span>
-                        <span className="text-sm font-black text-slate-900">{vitals.pulse ? `${vitals.pulse} bpm` : 'Not recorded'}</span>
-                        <span className="text-[9px] text-slate-400 block font-medium">Beats / min</span>
-                      </div>
-
-                      <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
-                        <span className="text-[10px] text-slate-400 block font-bold">Oxygen (SpO₂)</span>
-                        <span className="text-sm font-black text-slate-900">{vitals.spo2 ? `${vitals.spo2}%` : 'Not recorded'}</span>
-                        <span className="text-[9px] text-slate-400 block font-medium">Saturation</span>
-                      </div>
-
-                      <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
-                        <span className="text-[10px] text-slate-400 block font-bold">Temperature</span>
-                        <span className="text-sm font-black text-slate-900">{vitals.temp ? `${vitals.temp}°F` : 'Not recorded'}</span>
-                        <span className="text-[9px] text-slate-400 block font-medium">Fahrenheit</span>
-                      </div>
-
-                      {vitals.respRate && (
-                        <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
-                          <span className="text-[10px] text-slate-400 block font-bold">Respiration</span>
-                          <span className="text-sm font-black text-slate-900">{vitals.respRate} /min</span>
-                          <span className="text-[9px] text-slate-400 block font-medium">Breaths / min</span>
-                        </div>
-                      )}
-
-                      {vitals.weight && (
-                        <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
-                          <span className="text-[10px] text-slate-400 block font-bold">Weight</span>
-                          <span className="text-sm font-black text-slate-900">{vitals.weight} kg</span>
-                          <span className="text-[9px] text-slate-400 block font-medium">Body weight</span>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="p-3 bg-slate-50 rounded-xl text-center text-slate-400 italic text-xs border border-slate-100">
-                      No numeric vitals were submitted for this referral encounter.
-                    </div>
-                  )}
-                </div>
-
-                {/* 6. Chief Complaint */}
-                <div className="pt-4 space-y-1.5">
-                  <span className="text-[10px] text-slate-400 font-black uppercase tracking-wider block">Intake Symptoms & Clinical Complaint</span>
-                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs text-slate-800 leading-relaxed font-medium">
-                    {selectedReferral.symptoms || 'No detailed symptoms specified.'}
-                  </div>
-                </div>
-
-                {/* 7. AI-Assisted Triage Note (Clearly Labeled) */}
-                {(selectedReferral.ai_note || selectedReferral.clinical_summary) && (
-                  <div className="pt-4 space-y-1.5">
-                    <div className="flex items-center justify-between gap-2 flex-wrap">
-                      <span className="text-[10px] text-purple-700 font-black uppercase tracking-wider flex items-center gap-1">
-                        <Sparkles className="w-3.5 h-3.5 text-purple-600" />
-                        AI-Assisted Triage Recommendation
-                      </span>
-                      <span className="text-[9px] text-slate-400 font-medium italic">
-                        Frontline clinical prioritization · Not a physician diagnosis
-                      </span>
-                    </div>
-                    <div className="p-3.5 bg-purple-50/70 border border-purple-200 rounded-2xl text-xs text-purple-950 font-semibold leading-relaxed">
-                      {selectedReferral.ai_note || selectedReferral.clinical_summary}
-                    </div>
-                  </div>
-                )}
-
-                {/* 8. Attached Medical Records / Scans */}
-                {selectedReferral.attached_file_url && (
-                  <div className="pt-4 space-y-1.5">
-                    <span className="text-[10px] text-slate-400 font-black uppercase tracking-wider block">Attached Medical Record / Scan</span>
-                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2">
-                        <FileText className="w-4 h-4 text-[#008080]" />
-                        <span className="text-xs font-bold text-slate-800 truncate">Attached Patient Document / Diagnostic Scan</span>
-                      </div>
-                      <a
-                        href={selectedReferral.attached_file_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="px-3 py-1.5 bg-[#008080] hover:bg-[#006666] text-white text-[11px] font-bold rounded-lg flex items-center gap-1 transition-colors"
-                      >
-                        <span>View Document</span>
-                        <ExternalLink className="w-3 h-3" />
-                      </a>
-                    </div>
-                  </div>
-                )}
-
-              </div>
-
-              {/* Modal Action Footer: One Dominant Next Action */}
-              <div className="p-4 border-t border-slate-200 bg-slate-50 flex flex-wrap items-center justify-between gap-3 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setSelectedReferral(null)}
-                  className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-bold rounded-xl cursor-pointer transition-colors shadow-2xs"
-                >
-                  Close Case File
-                </button>
-
-                <div className="flex items-center gap-2">
-                  {/* Secondary Token button */}
-                  {(selectedReferral.status === 'Accepted' || selectedReferral.status === 'Pending') && (
-                    <button
-                      type="button"
-                      data-referral-id={selectedReferral.id}
-                      data-action="assign-token"
-                      onClick={() => handleOpenTokenModal(selectedReferral)}
-                      className="px-4 py-2 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-xs rounded-xl shadow-2xs transition-colors cursor-pointer flex items-center gap-1.5"
-                    >
-                      <Ticket className="w-4 h-4 text-amber-700" />
-                      <span>{selectedReferral.slot_preference?.includes('Token') || selectedReferral.ai_note?.includes('TOKEN:') ? 'Edit Token' : 'Assign Token'}</span>
-                    </button>
-                  )}
-
-                  {/* Dominant Action in Modal */}
+                  {/* Full-width primary action inside the state callout */}
                   {selectedReferral.status === 'Pending' && (
                     <button
                       type="button"
                       data-referral-id={selectedReferral.id}
                       data-action="accept-referral"
+                      disabled={actionLoadingId === selectedReferral.id}
                       onClick={() => handleAcceptReferral(selectedReferral.id)}
-                      className="px-5 py-2 bg-[#008080] hover:bg-[#006666] text-white font-black text-xs rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
+                      className={`w-full mt-1 py-2 bg-[#008080] hover:bg-[#006666] text-white font-black text-xs rounded-xl shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
+                        actionLoadingId === selectedReferral.id ? 'opacity-60 cursor-not-allowed' : ''
+                      }`}
                     >
-                      <CheckCircle2 className="w-4 h-4" />
-                      <span>Accept Referral</span>
+                      {actionLoadingId === selectedReferral.id ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>Accepting...</span>
+                        </>
+                      ) : (
+                        'Accept Referral →'
+                      )}
                     </button>
                   )}
 
@@ -2444,11 +2432,20 @@ export default function HospitalStaffWorkspace({
                       type="button"
                       data-referral-id={selectedReferral.id}
                       data-action="mark-arrived"
+                      disabled={actionLoadingId === selectedReferral.id}
                       onClick={() => handleMarkArrived(selectedReferral.id)}
-                      className="px-5 py-2 bg-[#008080] hover:bg-[#006666] text-white font-black text-xs rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
+                      className={`w-full mt-1 py-2 bg-slate-800 hover:bg-slate-700 text-white font-black text-xs rounded-xl shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
+                        actionLoadingId === selectedReferral.id ? 'opacity-60 cursor-not-allowed' : ''
+                      }`}
                     >
-                      <UserCheck className="w-4 h-4" />
-                      <span>Mark Patient Arrived</span>
+                      {actionLoadingId === selectedReferral.id ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>Marking Arrived...</span>
+                        </>
+                      ) : (
+                        'Mark Patient Arrived →'
+                      )}
                     </button>
                   )}
 
@@ -2457,11 +2454,13 @@ export default function HospitalStaffWorkspace({
                       type="button"
                       data-referral-id={selectedReferral.id}
                       data-action="send-to-doctor"
+                      disabled={actionLoadingId === selectedReferral.id}
                       onClick={() => setShowDoctorRouteModal(selectedReferral)}
-                      className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-black text-xs rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
+                      className={`w-full mt-1 py-2 bg-teal-700 hover:bg-teal-800 text-white font-black text-xs rounded-xl shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
+                        actionLoadingId === selectedReferral.id ? 'opacity-60 cursor-not-allowed' : ''
+                      }`}
                     >
-                      <Stethoscope className="w-4 h-4" />
-                      <span>Assign Doctor Desk</span>
+                      Assign Doctor →
                     </button>
                   )}
 
@@ -2470,14 +2469,188 @@ export default function HospitalStaffWorkspace({
                       type="button"
                       data-referral-id={selectedReferral.id}
                       data-action="reassign-doctor"
+                      disabled={actionLoadingId === selectedReferral.id}
                       onClick={() => setShowDoctorRouteModal(selectedReferral)}
-                      className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold text-xs rounded-xl transition-colors cursor-pointer flex items-center gap-1.5"
+                      className={`w-full mt-1 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 border border-slate-300 font-semibold text-xs rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
+                        actionLoadingId === selectedReferral.id ? 'opacity-60 cursor-not-allowed' : ''
+                      }`}
                     >
-                      <Stethoscope className="w-4 h-4 text-indigo-600" />
-                      <span>Reassign Doctor Desk</span>
+                      Reassign Doctor
                     </button>
                   )}
                 </div>
+              </div>
+
+              {/* Scrollable Case Body: 3 Clean Focused Sections */}
+              <div className="p-4 sm:p-5 overflow-y-auto space-y-4 text-xs text-slate-700">
+
+                {/* ── SECTION 1: WHY THEY ARE HERE ── */}
+                <div className="space-y-1.5">
+                  <h3 className="text-[10px] font-black uppercase text-slate-400 tracking-wider">
+                    Why They Are Here
+                  </h3>
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs font-medium text-slate-900 leading-relaxed">
+                    {selectedReferral.symptoms || 'Referral intake encounter'}
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] pt-0.5">
+                    <div>
+                      <span className="text-slate-400 block text-[10px] uppercase font-bold">Referred By</span>
+                      <span className="font-semibold text-slate-800">{selectedReferral.created_by || 'Frontline ASHA Worker'}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block text-[10px] uppercase font-bold">Destination Facility</span>
+                      <span className="font-semibold text-slate-800">
+                        {selectedReferral.destination_hospital || facility?.name || 'Primary Health Centre'}
+                        {selectedReferral.destination_department ? ` · ${selectedReferral.destination_department}` : ''}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ── SECTION 2: FRONTLINE ASSESSMENT ── */}
+                <div className="space-y-2.5 pt-3 border-t border-slate-100">
+                  <h3 className="text-[10px] font-black uppercase text-slate-400 tracking-wider">
+                    Frontline Assessment
+                  </h3>
+
+                  {/* Flagged Danger Signs if recorded */}
+                  {dangerSigns.length > 0 && (
+                    <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-900 text-xs">
+                      <span className="font-black text-rose-800 block mb-0.5">⚠️ Flagged Danger Signs by Frontline Triage:</span>
+                      <span className="font-semibold">{dangerSigns.join(', ')}</span>
+                    </div>
+                  )}
+
+                  {/* Pregnancy / Escort Indicator if recorded */}
+                  {(selectedReferral.is_pregnant || selectedReferral.symptoms?.includes('ASHA ACCOMPANYING') || selectedReferral.clinical_summary?.includes('ASHA ACCOMPANYING')) && (
+                    <div className="p-2 bg-purple-50 border border-purple-200 rounded-xl text-purple-900 text-xs font-semibold">
+                      🤰 ASHA worker accompanying patient for intake support.
+                    </div>
+                  )}
+
+                  {/* Clean Vitals Table */}
+                  <div className="bg-slate-50 rounded-xl border border-slate-200 overflow-hidden">
+                    <div className="px-3 py-1.5 border-b border-slate-200 bg-slate-100/60 flex items-center justify-between text-[10px] font-bold text-slate-600">
+                      <span>Frontline Recorded Vitals</span>
+                      <span className="text-[10px] text-slate-400 font-medium">Standard units</span>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0 divide-slate-200 text-xs">
+                      <div className="p-2">
+                        <span className="text-[10px] text-slate-400 block font-medium">Blood Pressure</span>
+                        <span className="font-bold text-slate-900">{vitals.bp ? `${vitals.bp} mmHg` : 'Not recorded'}</span>
+                      </div>
+                      <div className="p-2">
+                        <span className="text-[10px] text-slate-400 block font-medium">Pulse Rate</span>
+                        <span className="font-bold text-slate-900">{vitals.pulse ? `${vitals.pulse} bpm` : 'Not recorded'}</span>
+                      </div>
+                      <div className="p-2">
+                        <span className="text-[10px] text-slate-400 block font-medium">Oxygen (SpO₂)</span>
+                        <span className="font-bold text-slate-900">{vitals.spo2 ? `${vitals.spo2} %` : 'Not recorded'}</span>
+                      </div>
+                      <div className="p-2">
+                        <span className="text-[10px] text-slate-400 block font-medium">Temperature</span>
+                        <span className="font-bold text-slate-900">{vitals.temp ? `${vitals.temp} °F` : 'Not recorded'}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* AI-Assisted Frontline Triage Recommendation if present */}
+                  {(selectedReferral.ai_note || selectedReferral.clinical_summary) && (
+                    <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-0.5">
+                      <span className="text-[10px] font-black uppercase text-slate-400 block tracking-wider">
+                        AI-Assisted Frontline Triage Recommendation (Operational prioritization · Not a physician diagnosis)
+                      </span>
+                      <p className="text-slate-800 font-medium leading-relaxed">
+                        {selectedReferral.ai_note || selectedReferral.clinical_summary}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Attached Document / Scan if present */}
+                  {selectedReferral.attached_file_url && (
+                    <div className="flex items-center justify-between p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                      <span className="font-semibold text-slate-700">Attached Patient Document / Diagnostic Scan</span>
+                      <a
+                        href={selectedReferral.attached_file_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[#008080] font-bold hover:underline"
+                      >
+                        View Document ↗
+                      </a>
+                    </div>
+                  )}
+                </div>
+
+                {/* ── SECTION 3: REFERRAL JOURNEY ── */}
+                <div className="space-y-2 pt-3 border-t border-slate-100">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-[10px] font-black uppercase text-slate-400 tracking-wider">
+                      Referral Journey
+                    </h3>
+                    {tokenDisplay && (
+                      <span className="text-[11px] font-mono font-bold text-teal-800">
+                        {tokenDisplay}
+                      </span>
+                    )}
+                  </div>
+                  <div className="pl-2 border-l-2 border-slate-200 space-y-3 py-1 text-xs">
+                    {timelineSteps.map((step, sIdx) => (
+                      <div key={sIdx} className="relative pl-4">
+                        <div className={`absolute -left-[13px] top-0.5 w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                          step.status === 'done'
+                            ? 'bg-emerald-600 text-white'
+                            : step.status === 'current'
+                            ? 'bg-[#008080] text-white ring-2 ring-[#008080]/30'
+                            : 'bg-slate-200 text-slate-400'
+                        }`}>
+                          {step.status === 'done' ? '✓' : step.status === 'current' ? '→' : '○'}
+                        </div>
+                        <div>
+                          <div className={`font-bold ${
+                            step.status === 'current'
+                              ? 'text-[#008080] font-black'
+                              : step.status === 'done'
+                              ? 'text-slate-900'
+                              : 'text-slate-400'
+                          }`}>
+                            {step.title}
+                          </div>
+                          {step.subtitle && (
+                            <div className="text-[11px] text-slate-500 font-normal mt-0.5">
+                              {step.subtitle}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Clean Modal Action Footer */}
+              <div className="p-3.5 border-t border-slate-200 bg-slate-50/90 flex items-center justify-between gap-3 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setSelectedReferral(null)}
+                  className="px-3.5 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 rounded-xl transition-colors cursor-pointer"
+                >
+                  Close Record
+                </button>
+
+                {/* Secondary Token button */}
+                {(selectedReferral.status === 'Accepted' || selectedReferral.status === 'Pending') && (
+                  <button
+                    type="button"
+                    data-referral-id={selectedReferral.id}
+                    data-action="assign-token"
+                    onClick={() => handleOpenTokenModal(selectedReferral)}
+                    className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-xs rounded-xl shadow-2xs transition-colors cursor-pointer"
+                  >
+                    <span>{selectedReferral.slot_preference?.includes('Token') || selectedReferral.ai_note?.includes('TOKEN:') ? 'Edit Token' : 'Assign Token'}</span>
+                  </button>
+                )}
               </div>
 
             </div>
@@ -2508,17 +2681,22 @@ export default function HospitalStaffWorkspace({
                 doctors.map(doc => (
                   <button
                     key={doc.id}
+                    disabled={actionLoadingId === showDoctorRouteModal.id}
                     onClick={() => handleRouteToDoctor(showDoctorRouteModal.id, doc.name, doc.id)}
                     data-action="route-to-doctor"
                     data-doctor-id={doc.id}
                     data-doctor-name={doc.name}
-                    className="w-full p-3.5 text-left bg-slate-50 hover:bg-[#E6F2F2]/50 hover:border-[#008080] border border-slate-200 rounded-2xl flex items-center justify-between transition-all group cursor-pointer"
+                    className="w-full p-3.5 text-left bg-slate-50 hover:bg-[#E6F2F2]/50 hover:border-[#008080] border border-slate-200 rounded-2xl flex items-center justify-between transition-all group cursor-pointer disabled:opacity-50"
                   >
                     <div>
                       <div className="font-extrabold text-xs text-slate-900 group-hover:text-[#008080] transition-colors">{doc.name}</div>
                       <div className="text-[10px] text-slate-400 font-semibold">{doc.specialty || 'Specialist'}</div>
                     </div>
-                    <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-[#008080] group-hover:translate-x-0.5 transition-all" />
+                    {actionLoadingId === showDoctorRouteModal.id ? (
+                      <Loader2 className="w-4 h-4 animate-spin text-[#008080]" />
+                    ) : (
+                      <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-[#008080] group-hover:translate-x-0.5 transition-all" />
+                    )}
                   </button>
                 ))
               ) : (
@@ -2670,13 +2848,29 @@ export default function HospitalStaffWorkspace({
                     Assigned Clinician
                   </label>
                   <select
-                    value={assignDoctor}
-                    onChange={e => setAssignDoctor(e.target.value)}
+                    value={assignDoctorId || assignDoctor}
+                    onChange={e => {
+                      const selectedVal = e.target.value;
+                      const selectedDoc = doctors.find(d => d.id === selectedVal || d.name === selectedVal);
+                      if (selectedDoc) {
+                        setAssignDoctor(selectedDoc.name);
+                        setAssignDoctorId(selectedDoc.id);
+                      } else {
+                        setAssignDoctor(selectedVal);
+                        setAssignDoctorId(null);
+                      }
+                    }}
                     className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs focus:outline-none focus:border-[#008F83]"
                   >
-                    <option value="Dr. Arvind Kulkarni (Medical Officer)">Dr. Arvind Kulkarni (Medical Officer)</option>
-                    <option value="Dr. Priya Sharma (MBBS, DGO)">Dr. Priya Sharma (MBBS, DGO)</option>
-                    <option value="Dr. Sneha Shinde (Pediatrician)">Dr. Sneha Shinde (Pediatrician)</option>
+                    {doctors && doctors.length > 0 ? (
+                      doctors.map(doc => (
+                        <option key={doc.id} value={doc.id}>
+                          {doc.name} {doc.specialty || doc.department ? `(${doc.specialty || doc.department})` : ''}
+                        </option>
+                      ))
+                    ) : (
+                      <option value="">No specialists configured for this facility</option>
+                    )}
                   </select>
                 </div>
               </div>
@@ -2724,6 +2918,7 @@ export default function HospitalStaffWorkspace({
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }
