@@ -48,6 +48,50 @@ const REFERRAL_STATUS = {
   CANCELLED: 'Cancelled'
 };
 
+// ─── DATE / SHIFT UTILITIES ───
+const getTodayDateStr = () => {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const toLocalDateStr = (isoString) => {
+  if (!isoString) return '';
+  const d = new Date(isoString);
+  if (isNaN(d.getTime())) return '';
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const formatHumanDate = (dateStr) => {
+  if (!dateStr) return '';
+  const parts = dateStr.split('-').map(Number);
+  if (parts.length !== 3) return dateStr;
+  const dateObj = new Date(parts[0], parts[1] - 1, parts[2]);
+  return dateObj.toLocaleDateString('en-IN', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric'
+  });
+};
+
+const shiftDateStr = (dateStr, deltaDays) => {
+  if (!dateStr) return getTodayDateStr();
+  const parts = dateStr.split('-').map(Number);
+  if (parts.length !== 3) return getTodayDateStr();
+  const dateObj = new Date(parts[0], parts[1] - 1, parts[2]);
+  dateObj.setDate(dateObj.getDate() + deltaDays);
+  const year = dateObj.getFullYear();
+  const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const day = String(dateObj.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 // Initial Demo/Mock Data for standalone testing in Demo Mode
 const DEMO_DOCTORS = [
   { id: 'd-1', name: 'Dr. Arvind Kulkarni', specialty: 'Cardiology' },
@@ -450,7 +494,8 @@ function ReferralActionCard({
   const elapsedLabel = elapsedMins === null ? null
     : elapsedMins < 60 ? `${elapsedMins}m ago`
     : `${Math.floor(elapsedMins / 60)}h ${elapsedMins % 60}m ago`;
-  const isDelayed = elapsedMins !== null && elapsedMins > 120; // >2 hours delayed
+  const isDelayed = elapsedMins !== null && elapsedMins > 120 && status !== 'Completed'; // >2 hours delayed
+  const isLapsed24h = elapsedMins !== null && elapsedMins > 1440 && status !== 'Completed'; // >24 hours
 
   // Status badge color
   const statusBadge =
@@ -535,8 +580,10 @@ function ReferralActionCard({
             {statusText}
           </span>
           {elapsedLabel && (
-            <span className={`text-[10px] font-bold block ${isDelayed ? 'text-rose-600 font-black' : 'text-slate-400'}`}>
-              {elapsedLabel} {isDelayed ? '⚠️ Overdue' : ''}
+            <span className={`text-[10px] font-bold block ${
+              isLapsed24h ? 'text-amber-800 font-black' : (isDelayed ? 'text-rose-600 font-black' : 'text-slate-400')
+            }`}>
+              {elapsedLabel} {isLapsed24h ? '⚠️ Lapsed (24h+ Archive)' : (isDelayed ? '⚠️ Overdue' : '')}
             </span>
           )}
         </div>
@@ -839,7 +886,9 @@ export default function HospitalStaffWorkspace({
   const [showDoctorRouteModal, setShowDoctorRouteModal] = useState(null); // holds referral object
 
   // ─── Shift & Date Scope Filter ───
-  const [dateShiftFilter, setDateShiftFilter] = useState('TODAY'); // 'TODAY' | 'ACTIVE_OPEN' | 'ALL_ARCHIVE'
+  const todayStr = useMemo(() => getTodayDateStr(), []);
+  const [selectedDate, setSelectedDate] = useState(todayStr);
+  const [dateViewMode, setDateViewMode] = useState('TODAY_SHIFT'); // 'TODAY_SHIFT' | 'CALENDAR_DATE' | 'ALL_ARCHIVE'
   const [printSlipModal, setPrintSlipModal] = useState(null); // referral object to print OPD slip for
 
   // ─── Token & Arrival Slot Allocation Modal State ───
@@ -1615,82 +1664,100 @@ export default function HospitalStaffWorkspace({
     }
   };
 
-  // Memos for metrics across truthful care-handoff stages
+  // 1. Scoped referrals based on Selected Date or 24-Hour Active Shift
+  const dateScopedReferrals = useMemo(() => {
+    if (dateViewMode === 'ALL_ARCHIVE') {
+      return referrals;
+    }
+
+    if (dateViewMode === 'TODAY_SHIFT') {
+      const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+      const now = Date.now();
+      return referrals.filter(r => {
+        const created = r.created_at ? new Date(r.created_at).getTime() : now;
+        // Strictly within 24 hours of current time
+        return (now - created) <= ONE_DAY_MS;
+      });
+    }
+
+    // CALENDAR_DATE mode: strictly matches selectedDate (YYYY-MM-DD)
+    return referrals.filter(r => toLocalDateStr(r.created_at) === selectedDate);
+  }, [referrals, dateViewMode, selectedDate]);
+
+  // 2. Dynamic metrics computed strictly from dateScopedReferrals
   const counts = useMemo(() => {
-    const pending = referrals.filter(r => r.status === 'Pending').length;
-    const arrived = referrals.filter(r => r.status === 'Arrived').length;
+    const base = dateScopedReferrals;
+    const pending = base.filter(r => r.status === 'Pending').length;
+    const arrived = base.filter(r => r.status === 'Arrived').length;
     const actionNeeded = pending + arrived;
     // Physical waiting room: ONLY patients physically at hospital waiting for doctor (Arrived + Assigned)
-    const waitingRoom = referrals.filter(r => r.status === 'Arrived' || r.status === 'Assigned').length;
-    const enRoute = referrals.filter(r => r.status === 'Accepted').length;
-    const inConsultation = referrals.filter(r => r.status === 'In Consultation').length;
-    const completed = referrals.filter(r => r.status === 'Completed').length;
+    const waitingRoom = base.filter(r => r.status === 'Arrived' || r.status === 'Assigned').length;
+    const enRoute = base.filter(r => r.status === 'Accepted').length;
+    const inConsultation = base.filter(r => r.status === 'In Consultation').length;
+    const completed = base.filter(r => r.status === 'Completed').length;
     const emergencyActive = emergencyCases.filter(c => c.status !== 'RESOLVED' && c.status !== 'COMPLETED').length;
-    return { pending, arrived, actionNeeded, waitingRoom, enRoute, inConsultation, completed, emergencyActive, total: referrals.length };
-  }, [referrals, emergencyCases]);
+    return {
+      pending,
+      arrived,
+      actionNeeded,
+      waiting: waitingRoom,
+      waitingRoom,
+      enRoute,
+      inConsultation,
+      completed,
+      emergencyActive,
+      total: base.length
+    };
+  }, [dateScopedReferrals, emergencyCases]);
 
-  // Duplicate / repeat patient tracking
+  // Duplicate / repeat patient tracking (scoped to active date / shift)
   const patientActiveCounts = useMemo(() => {
     const countsMap = {};
-    referrals.forEach(r => {
+    dateScopedReferrals.forEach(r => {
       const key = r.patient_unified_id || r.patient_id || r.patient_name;
       if (key && r.status !== 'Completed' && r.status !== 'Cancelled') {
         countsMap[key] = (countsMap[key] || 0) + 1;
       }
     });
     return countsMap;
-  }, [referrals]);
+  }, [dateScopedReferrals]);
 
-  // Live Doctor Queue load stats
+  // Live Doctor Queue load stats (scoped to active shift)
   const doctorQueueStats = useMemo(() => {
     const stats = {};
     doctors.forEach(doc => {
       const docNameClean = (doc.name || '').toLowerCase();
-      const waiting = referrals.filter(r =>
+      const waiting = dateScopedReferrals.filter(r =>
         (r.doctor_id === doc.id || (r.doctor_assigned && r.doctor_assigned.toLowerCase().includes(docNameClean))) &&
         (r.status === 'Assigned' || r.status === 'Arrived')
       ).length;
-      const inConsult = referrals.filter(r =>
+      const inConsult = dateScopedReferrals.filter(r =>
         (r.doctor_id === doc.id || (r.doctor_assigned && r.doctor_assigned.toLowerCase().includes(docNameClean))) &&
         r.status === 'In Consultation'
       ).length;
       stats[doc.id] = { waiting, inConsult, total: waiting + inConsult };
     });
     return stats;
-  }, [doctors, referrals]);
+  }, [doctors, dateScopedReferrals]);
 
   // Memos for intake source segregation (ASHA vs Direct Patient vs Teleconsult)
   const _sourceCounts = useMemo(() => {
-    const asha = referrals.filter(r => getReferralOrigin(r).key === 'ASHA').length;
-    const direct = referrals.filter(r => getReferralOrigin(r).key === 'PATIENT_DIRECT').length;
-    const tele = referrals.filter(r => getReferralOrigin(r).key === 'TELECONSULT').length;
-    return { asha, direct, tele, total: referrals.length };
-  }, [referrals, getReferralOrigin]);
+    const asha = dateScopedReferrals.filter(r => getReferralOrigin(r).key === 'ASHA').length;
+    const direct = dateScopedReferrals.filter(r => getReferralOrigin(r).key === 'PATIENT_DIRECT').length;
+    const tele = dateScopedReferrals.filter(r => getReferralOrigin(r).key === 'TELECONSULT').length;
+    return { asha, direct, tele, total: dateScopedReferrals.length };
+  }, [dateScopedReferrals, getReferralOrigin]);
 
-  // Scoped referrals based on active tab, shift scope, and filters
+  // 3. Queue stream filters & search on top of dateScopedReferrals
   const filteredReferrals = useMemo(() => {
-    let list = [...referrals];
+    let list = [...dateScopedReferrals];
 
-    // 1. Shift & Date Scope Filter
-    if (dateShiftFilter === 'TODAY') {
-      const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-      const now = Date.now();
-      list = list.filter(r => {
-        const created = r.created_at ? new Date(r.created_at).getTime() : now;
-        const isWithin24h = (now - created) <= ONE_DAY_MS;
-        // Keep active cases if arrived or in consultation today
-        return isWithin24h || r.status === 'Arrived' || r.status === 'In Consultation';
-      });
-    } else if (dateShiftFilter === 'ACTIVE_OPEN') {
-      list = list.filter(r => r.status !== 'Completed' && r.status !== 'Cancelled');
-    }
-
-    // 2. Applying source segregation filter (ASHA vs Direct Patient vs Teleconsult)
+    // Source segregation filter (ASHA vs Direct Patient vs Teleconsult)
     if (sourceFilter !== 'ALL') {
       list = list.filter(r => getReferralOrigin(r).key === sourceFilter);
     }
 
-    // 3. Applying status queue filters
+    // Status queue filters
     if (activeTab === 'queue') {
       if (queueFilter === 'ACTION_NEEDED') {
         list = list.filter(r => r.status === 'Pending' || r.status === 'Arrived');
@@ -1708,7 +1775,7 @@ export default function HospitalStaffWorkspace({
       }
     }
 
-    // 4. Applying comprehensive search (Name, Unified ID, UUID, Phone, Token, Room, Department, Symptoms)
+    // Comprehensive search (Name, Unified ID, UUID, Phone, Token, Room, Department, Symptoms)
     const q = searchQuery.toLowerCase().trim();
     if (q) {
       list = list.filter(r =>
@@ -1727,7 +1794,7 @@ export default function HospitalStaffWorkspace({
     }
 
     return list;
-  }, [referrals, dateShiftFilter, sourceFilter, activeTab, queueFilter, searchQuery, getReferralOrigin]);
+  }, [dateScopedReferrals, sourceFilter, activeTab, queueFilter, searchQuery, getReferralOrigin]);
 
   // Scoped emergency cases for CAD Console
   const filteredEmergencyList = useMemo(() => {
@@ -1800,42 +1867,100 @@ export default function HospitalStaffWorkspace({
           {/* Right Toolbar: Shift Scope Selector + Actions */}
           <div className="flex items-center gap-2.5 flex-wrap justify-between lg:justify-end">
             
-            {/* Shift / Date Selector */}
-            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-2xl text-[11px] font-black">
+            {/* Shift / Date / Calendar Navigator */}
+            <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-2xl text-xs font-black flex-wrap">
+              
+              {/* Quick Jump: Today's Shift */}
               <button
                 type="button"
-                onClick={() => setDateShiftFilter('TODAY')}
+                onClick={() => {
+                  setDateViewMode('TODAY_SHIFT');
+                  setSelectedDate(todayStr);
+                }}
                 className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 ${
-                  dateShiftFilter === 'TODAY'
+                  dateViewMode === 'TODAY_SHIFT'
                     ? 'bg-white text-teal-900 shadow-xs ring-1 ring-slate-200'
                     : 'text-slate-500 hover:text-slate-800'
                 }`}
+                title="Active 24-hour shift queue for today"
               >
-                <Calendar className="w-3.5 h-3.5 text-[#008F83]" />
+                <Zap className="w-3.5 h-3.5 text-amber-500" />
                 <span>Today's Shift</span>
               </button>
+
+              {/* Day-by-Day Calendar Stepper */}
+              <div className="flex items-center bg-white rounded-xl border border-slate-200 shadow-2xs px-1 py-0.5">
+                {/* Prev Day Button */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const prev = shiftDateStr(selectedDate, -1);
+                    setSelectedDate(prev);
+                    setDateViewMode('CALENDAR_DATE');
+                  }}
+                  title="Previous Day"
+                  className="p-1 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg cursor-pointer"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+
+                {/* Calendar Date Input & Label */}
+                <label className="relative flex items-center gap-1.5 px-2 py-0.5 cursor-pointer text-[11px] font-black text-slate-800 hover:text-[#008F83] select-none">
+                  <Calendar className="w-3.5 h-3.5 text-[#008F83]" />
+                  <span>{formatHumanDate(selectedDate)}</span>
+                  {selectedDate === todayStr && (
+                    <span className="text-[9px] bg-teal-50 text-[#008F83] border border-teal-200 px-1 rounded-sm ml-0.5">
+                      Today
+                    </span>
+                  )}
+                  {/* Native date input overlay for instant calendar popup on click */}
+                  <input
+                    type="date"
+                    value={selectedDate}
+                    max={todayStr}
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        setSelectedDate(e.target.value);
+                        setDateViewMode(e.target.value === todayStr ? 'TODAY_SHIFT' : 'CALENDAR_DATE');
+                      }
+                    }}
+                    className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                    title="Click to pick specific date"
+                  />
+                </label>
+
+                {/* Next Day Button */}
+                <button
+                  type="button"
+                  disabled={selectedDate >= todayStr}
+                  onClick={() => {
+                    if (selectedDate < todayStr) {
+                      const next = shiftDateStr(selectedDate, 1);
+                      setSelectedDate(next);
+                      setDateViewMode(next === todayStr ? 'TODAY_SHIFT' : 'CALENDAR_DATE');
+                    }
+                  }}
+                  title={selectedDate >= todayStr ? "Today is the latest date" : "Next Day"}
+                  className="p-1 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* All Archive Toggle */}
               <button
                 type="button"
-                onClick={() => setDateShiftFilter('ACTIVE_OPEN')}
-                className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
-                  dateShiftFilter === 'ACTIVE_OPEN'
+                onClick={() => setDateViewMode('ALL_ARCHIVE')}
+                className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1 ${
+                  dateViewMode === 'ALL_ARCHIVE'
                     ? 'bg-white text-slate-900 shadow-xs ring-1 ring-slate-200'
                     : 'text-slate-500 hover:text-slate-800'
                 }`}
-              >
-                <span>Active Unresolved</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setDateShiftFilter('ALL_ARCHIVE')}
-                className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
-                  dateShiftFilter === 'ALL_ARCHIVE'
-                    ? 'bg-white text-slate-900 shadow-xs ring-1 ring-slate-200'
-                    : 'text-slate-500 hover:text-slate-800'
-                }`}
+                title="Search all historical referrals"
               >
                 <span>All Archive ({referrals.length})</span>
               </button>
+
             </div>
 
             {/* Actions: Back & Refresh buttons */}
@@ -1860,6 +1985,30 @@ export default function HospitalStaffWorkspace({
               </button>
             </div>
 
+          </div>
+        </div>
+
+        {/* Scope Contextual Subtitle */}
+        <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-100">
+          <div className="flex items-center gap-1.5 font-medium">
+            {dateViewMode === 'TODAY_SHIFT' ? (
+              <>
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="text-slate-700 font-bold">Live Shift Desk</span>
+                <span className="text-slate-400">· Active referrals from last 24 hours ({dateScopedReferrals.length} active)</span>
+              </>
+            ) : dateViewMode === 'CALENDAR_DATE' ? (
+              <>
+                <Calendar className="w-3.5 h-3.5 text-teal-600" />
+                <span className="text-slate-700 font-bold">Historical Record for {formatHumanDate(selectedDate)}</span>
+                <span className="text-slate-400">· {dateScopedReferrals.length} patients registered on this date</span>
+              </>
+            ) : (
+              <>
+                <span className="text-slate-700 font-bold">Comprehensive Archive</span>
+                <span className="text-slate-400">· All {referrals.length} referrals across facility history</span>
+              </>
+            )}
           </div>
         </div>
 
@@ -2128,7 +2277,7 @@ export default function HospitalStaffWorkspace({
             >
               <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Waiting Room</span>
               <div className="flex items-baseline gap-1.5">
-                <span className="text-2xl font-black text-slate-900">{counts.waiting}</span>
+                <span className="text-2xl font-black text-slate-900">{counts.waitingRoom}</span>
                 <span className="text-[11px] text-[#008080] font-bold">Arrived / Assigned</span>
               </div>
             </div>
@@ -2162,7 +2311,7 @@ export default function HospitalStaffWorkspace({
             className="w-full py-4 bg-[#008080] hover:bg-[#006666] text-white font-black text-sm rounded-2xl shadow-sm flex items-center justify-center gap-2 cursor-pointer transition-transform active:scale-99"
           >
             <Inbox className="w-5 h-5" />
-            <span>Open Patient Desk & Queue ({referrals.length} Total)</span>
+            <span>Open Patient Desk & Queue ({dateScopedReferrals.length} Total)</span>
           </button>
 
           {/* 1. URGENT / ACTION REQUIRED SECTION */}
@@ -2191,7 +2340,7 @@ export default function HospitalStaffWorkspace({
               </div>
 
               <div className="space-y-3">
-                {referrals
+                {dateScopedReferrals
                   .filter(r => r.status === 'Pending' || r.status === 'Arrived')
                   .sort((a, b) => {
                     if (a.priority === b.priority) return 0;
@@ -2234,12 +2383,12 @@ export default function HospitalStaffWorkspace({
           )}
 
           {/* 2. IN-PROGRESS & MONITORING SECTION */}
-          {referrals.filter(r => r.status === 'Accepted' || r.status === 'Assigned' || r.status === 'In Consultation').length > 0 && (
+          {dateScopedReferrals.filter(r => r.status === 'Accepted' || r.status === 'Assigned' || r.status === 'In Consultation').length > 0 && (
             <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-2xs space-y-4">
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="text-xs font-black uppercase text-slate-600 tracking-wider">
-                    In-Progress Referrals Underway ({counts.waiting - counts.arrived + counts.inConsultation})
+                    In-Progress Referrals Underway ({counts.enRoute + counts.assigned + counts.inConsultation})
                   </h2>
                   <p className="text-[11px] text-slate-400 font-medium mt-0.5">
                     Patients awaiting physical arrival or currently in queue / consultation with clinicians
@@ -2254,7 +2403,7 @@ export default function HospitalStaffWorkspace({
               </div>
 
               <div className="space-y-3">
-                {referrals
+                {dateScopedReferrals
                   .filter(r => r.status === 'Accepted' || r.status === 'Assigned' || r.status === 'In Consultation')
                   .slice(0, 3)
                   .map(ref => (
