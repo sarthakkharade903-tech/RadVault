@@ -171,33 +171,25 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
   const isSubmittingRef = useRef(false);
   const [routeError, setRouteError] = useState('');
 
-  // Hospital Tabs & Live Geolocation State
-  const [hospitalTab, setHospitalTab] = useState('connected'); // 'connected' | 'radar'
+  // Hospital State & Live Geolocation
   const [hospSearch, setHospSearch] = useState('');
+  const [showMoreFacilities, setShowMoreFacilities] = useState(false);
   const [nearbyGovHospitals, setNearbyGovHospitals] = useState([]);
   const [loadingHospitals, setLoadingHospitals] = useState(false);
   const [userCoords, setUserCoords] = useState(null);
-  const [gpsStatus, setGpsStatus] = useState('📍 Authentic Govt Facilities');
 
   // Real-Time Government Hospital Fetching & Live Geolocation
   const loadNearbyHospitals = async () => {
     try {
       setLoadingHospitals(true);
-      setGpsStatus('📍 Querying browser geolocation...');
       const coords = await getCurrentLocation();
       setUserCoords(coords);
       const hospitals = await fetchGovHospitals(coords.lat, coords.lon);
       if (hospitals && hospitals.length > 0) {
         setNearbyGovHospitals(hospitals);
       }
-      setGpsStatus(
-        coords.isFallback
-          ? `📍 Simulated GPS: Shirwal Sector 4 (${coords.lat.toFixed(3)}° N, ${coords.lon.toFixed(3)}° E)`
-          : `📍 Live GPS Fixed (${coords.lat.toFixed(3)}° N, ${coords.lon.toFixed(3)}° E)`
-      );
     } catch (err) {
       console.warn("Could not fetch nearby government hospitals:", err);
-      setGpsStatus('📍 Authentic Govt Hospitals (Maharashtra)');
     } finally {
       setLoadingHospitals(false);
     }
@@ -248,6 +240,40 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
     loadFacilities();
     return () => { isMounted = false; };
   }, []);
+
+  // Compute facilities sorted by proximity (connected first, expandable regional health centres)
+  const baseFacilities = useMemo(() => {
+    const userLat = userCoords?.lat ?? 18.1340;
+    const userLon = userCoords?.lon ?? 73.9820;
+
+    const list = facilitiesList.length > 0 ? facilitiesList : CONNECTED_FACILITIES;
+    const connected = list.map(f => {
+      const d = calculateHaversineDistance(userLat, userLon, f.lat, f.lon) ?? 0;
+      return {
+        id: f.id,
+        name: f.name,
+        type: f.type || 'PHC',
+        dist: String(d),
+        rawDist: d,
+        typeLabel: f.district ? `${f.district} District · ${f.typeLabel || 'Facility'}` : (f.typeLabel || 'Government Facility'),
+        isIntegrated: true
+      };
+    }).sort((a, b) => a.rawDist - b.rawDist);
+
+    if (!showMoreFacilities && !hospSearch) {
+      return connected;
+    }
+
+    const existingNames = new Set(connected.map(c => c.name.toLowerCase()));
+    const extra = (nearbyGovHospitals || [])
+      .filter(h => !existingNames.has(h.name.toLowerCase()))
+      .map(h => ({
+        ...h,
+        isIntegrated: false
+      }));
+
+    return [...connected, ...extra].sort((a, b) => (a.rawDist || 0) - (b.rawDist || 0));
+  }, [facilitiesList, userCoords, showMoreFacilities, hospSearch, nearbyGovHospitals]);
 
   // ── Real Audio Recording State ──
   const [isRecording, setIsRecording] = useState(false);
@@ -678,60 +704,26 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
               </div>
             </div>
 
-            {/* Destination Government Hospital Routing (Real-Time GPS within 50 km) */}
+            {/* Destination Government Hospital Routing */}
             <div className="space-y-2.5">
-              <div className="flex items-center justify-between flex-wrap gap-1">
-                <label className="block text-xs font-black text-slate-800">
-                  {t.hospitalSelect} <span className="text-red-500">*</span>
-                </label>
+              <label className="block text-xs font-black text-slate-800">
+                {t.hospitalSelect} <span className="text-red-500">*</span>
+              </label>
+
+              {/* Status Header: Clean location status */}
+              <div className="flex items-center justify-between bg-teal-50/60 border border-teal-100 rounded-xl px-3.5 py-2 text-xs">
+                <span className="text-teal-900 font-bold text-xs flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-[#008F83] shrink-0 animate-pulse" />
+                  <span>Showing government referral hospitals (Closest first)</span>
+                </span>
                 <button
                   type="button"
                   onClick={loadNearbyHospitals}
-                  className="text-[11px] font-bold text-[#008F83] hover:underline flex items-center gap-1 cursor-pointer bg-teal-50 px-2.5 py-1 rounded-lg border border-teal-200/60"
-                  title="Recalculate real-time GPS coordinates and distance"
+                  className="text-[11px] font-bold text-teal-700 hover:text-teal-900 flex items-center gap-1 cursor-pointer bg-white px-2.5 py-1 rounded-lg border border-teal-200 hover:border-teal-300 transition-colors"
+                  title="Update location and distances"
                 >
                   <RefreshCw className={`w-3 h-3 ${loadingHospitals ? 'animate-spin' : ''}`} />
-                  <span>{loadingHospitals ? 'Locating...' : 'Refresh GPS Distance'}</span>
-                </button>
-              </div>
-
-              {/* Status Banner */}
-              <div className="bg-[#E8F7F3] border border-[#008F83]/30 rounded-xl px-3 py-2 flex items-center justify-between text-xs flex-wrap gap-2">
-                <span className="font-bold text-[#008F83] text-[11px] flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-[#008F83] animate-pulse shrink-0" />
-                  <span className="truncate">{gpsStatus || '📍 Real-Time Government Facilities'}</span>
-                </span>
-                <span className="text-[10px] font-black bg-white text-[#008F83] px-2 py-0.5 rounded-full border border-[#008F83]/20 shrink-0">
-                  Haversine GPS Formula
-                </span>
-              </div>
-
-              {/* Two-Tab Navigation: Connected Demo Network vs Nearby Govt Facilities Radar */}
-              <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-100 rounded-xl text-xs font-black">
-                <button
-                  type="button"
-                  onClick={() => setHospitalTab('connected')}
-                  className={`py-2 px-2.5 rounded-lg text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                    hospitalTab === 'connected'
-                      ? 'bg-white text-slate-900 shadow-xs border border-slate-200/80'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  <ShieldCheck className={`w-3.5 h-3.5 ${hospitalTab === 'connected' ? 'text-[#008F83]' : 'text-slate-400'}`} />
-                  <span className="truncate">Connected Hospitals (4)</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setHospitalTab('radar')}
-                  className={`py-2 px-2.5 rounded-lg text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                    hospitalTab === 'radar'
-                      ? 'bg-white text-slate-900 shadow-xs border border-slate-200/80'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  <Navigation className={`w-3.5 h-3.5 ${hospitalTab === 'radar' ? 'text-amber-600' : 'text-slate-400'}`} />
-                  <span className="truncate">Nearby Radar (≤50km)</span>
+                  <span>{loadingHospitals ? 'Locating...' : 'Refresh'}</span>
                 </button>
               </div>
 
@@ -740,49 +732,25 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
                 <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
-                  placeholder={
-                    hospitalTab === 'connected'
-                      ? "Filter connected hospitals (Sassoon, Shrirampur, Aundh, Shirwal)..."
-                      : "Search all nearby government PHCs or civil hospitals..."
-                  }
+                  placeholder="Search hospital by name or district..."
                   value={hospSearch}
                   onChange={e => setHospSearch(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 text-xs font-semibold border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:outline-none focus:border-[#008F83]"
+                  className="w-full pl-9 pr-8 py-2.5 text-xs font-semibold border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:outline-none focus:border-[#008F83] transition-colors"
                 />
+                {hospSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setHospSearch('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                )}
               </div>
 
               {/* Hospital Selection Cards */}
-              <div className="max-h-64 overflow-y-auto space-y-1.5 pr-1 divide-y divide-slate-100">
+              <div className="max-h-64 overflow-y-auto space-y-2 pr-1">
                 {(() => {
-                  const userLat = userCoords?.lat ?? 18.1340;
-                  const userLon = userCoords?.lon ?? 73.9820;
-
-                  let baseFacilities = [];
-
-                  if (hospitalTab === 'connected') {
-                    const list = facilitiesList.length > 0 ? facilitiesList : CONNECTED_FACILITIES;
-                    baseFacilities = list.map(f => {
-                      const d = calculateHaversineDistance(userLat, userLon, f.lat, f.lon) ?? 0;
-                      return {
-                        id: f.id,
-                        name: f.name,
-                        type: f.type || 'PHC',
-                        dist: String(d),
-                        rawDist: d,
-                        typeLabel: f.district ? `${f.district} District · ${f.typeLabel || 'Facility'}` : (f.typeLabel || 'Registered Govt Facility'),
-                        isGovernment: true,
-                        isIntegrated: true
-                      };
-                    }).sort((a, b) => a.rawDist - b.rawDist);
-                  } else {
-                    baseFacilities = (nearbyGovHospitals && nearbyGovHospitals.length > 0)
-                      ? nearbyGovHospitals.map(h => ({
-                          ...h,
-                          isIntegrated: false
-                        }))
-                      : [];
-                  }
-
                   const filtered = baseFacilities.filter(h =>
                     !hospSearch ||
                     h.name.toLowerCase().includes(hospSearch.toLowerCase()) ||
@@ -792,18 +760,14 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
                   if (filtered.length === 0) {
                     return (
                       <div className="p-4 text-center text-slate-500 bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                        <p className="text-xs font-bold">
-                          {hospitalTab === 'connected' ? 'No connected facilities matched.' : 'No nearby facilities found within 50 km radius.'}
-                        </p>
-                        {hospSearch && (
-                          <button
-                            type="button"
-                            onClick={() => setHospSearch('')}
-                            className="text-xs font-black text-[#008F83] underline mt-1 cursor-pointer"
-                          >
-                            Clear Search
-                          </button>
-                        )}
+                        <p className="text-xs font-bold">No hospitals found matching "{hospSearch}".</p>
+                        <button
+                          type="button"
+                          onClick={() => setHospSearch('')}
+                          className="text-xs font-black text-[#008F83] underline mt-1 cursor-pointer"
+                        >
+                          Clear Search
+                        </button>
                       </div>
                     );
                   }
@@ -825,41 +789,42 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
                         }}
                         className={`p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
                           isSelected
-                            ? 'bg-[#E8F7F3] border-[#008F83] ring-1 ring-[#008F83]'
-                            : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                            ? 'bg-teal-50/70 border-[#008F83] ring-1 ring-[#008F83] shadow-xs'
+                            : 'bg-white border-slate-200 hover:border-teal-200 hover:bg-slate-50/60'
                         }`}
                       >
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <p className="font-extrabold text-xs text-slate-900 leading-tight">
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+                            isSelected ? 'bg-[#008F83] text-white' : 'bg-slate-100 text-slate-600'
+                          }`}>
+                            <Building2 className="w-4 h-4" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="font-extrabold text-xs sm:text-sm text-slate-900 leading-tight">
                               {h.name}
                             </p>
-                            <span className="text-[9px] font-black uppercase tracking-wider bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded">
-                              {h.typeLabel || 'Registered Facility'}
-                            </span>
-                            {h.isIntegrated ? (
-                              <span className="text-[9px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded flex items-center gap-1">
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
-                                Live Reception Linked
+                            <div className="flex items-center gap-1.5 text-[11px] text-slate-500 mt-0.5 flex-wrap font-medium">
+                              <span>{h.typeLabel || 'Government Healthcare Facility'}</span>
+                              <span>•</span>
+                              <span className="text-slate-700 font-bold">
+                                📍 {h.dist} km
                               </span>
-                            ) : (
-                              <span className="text-[9px] font-bold uppercase tracking-wider bg-amber-50 text-amber-800 border border-amber-200 px-1.5 py-0.5 rounded">
-                                Physical Slip Mode
-                              </span>
-                            )}
+                              {h.isIntegrated && (
+                                <>
+                                  <span>•</span>
+                                  <span className="text-[#008F83] font-bold flex items-center gap-1">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-[#008F83]" />
+                                    Live Reception
+                                  </span>
+                                </>
+                              )}
+                            </div>
                           </div>
-                          <p className="text-[11px] font-medium text-slate-500 mt-1 flex items-center gap-1.5 flex-wrap">
-                            <span className="font-bold text-slate-700">📍 {h.dist} km from user location</span>
-                            <span>•</span>
-                            <span className={h.isIntegrated ? "text-[#008F83] font-bold" : "text-amber-700 font-medium"}>
-                              {h.isIntegrated ? "Instant Token & Intake Desk Available" : "External Facility (Non-Integrated Demo PHC)"}
-                            </span>
-                          </p>
                         </div>
-                        <div className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 ${
+                        <div className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 transition-colors ${
                           isSelected ? 'border-[#008F83] bg-[#008F83] text-white' : 'border-slate-300 bg-white'
                         }`}>
-                          {isSelected && <div className="w-2 h-2 rounded-full bg-white" />}
+                          {isSelected && <Check className="w-3 h-3 text-white stroke-[3]" />}
                         </div>
                       </div>
                     );
@@ -867,19 +832,34 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
                 })()}
               </div>
 
+              {/* Expandable regional centres toggle if not searching */}
+              {!hospSearch && nearbyGovHospitals.length > 0 && (
+                <div className="pt-1 text-center">
+                  <button
+                    type="button"
+                    onClick={() => setShowMoreFacilities(!showMoreFacilities)}
+                    className="text-[11px] font-extrabold text-[#008F83] hover:underline cursor-pointer"
+                  >
+                    {showMoreFacilities
+                      ? '▲ Show only primary referral hospitals'
+                      : `▼ View ${nearbyGovHospitals.length} more regional government centres`}
+                  </button>
+                </div>
+              )}
+
               {/* Selected Hospital Confirmation Preview */}
               {hospital && (
-                <div className="p-3 bg-[#E8F7F3] border border-[#008F83]/30 rounded-xl flex items-center justify-between gap-2 mt-2">
+                <div className="p-3 bg-teal-50/60 border border-teal-200/80 rounded-xl flex items-center justify-between gap-2 mt-1">
                   <div className="min-w-0">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
-                      Destination Facility:
+                    <span className="text-[10px] font-bold text-teal-800 uppercase tracking-wider block">
+                      Selected Hospital:
                     </span>
-                    <p className="text-xs font-black text-[#008F83] truncate">
+                    <p className="text-xs font-black text-teal-950 truncate">
                       {hospital}
                     </p>
                   </div>
-                  <span className="text-[10px] font-black bg-[#008F83] text-white px-2.5 py-1 rounded-full shrink-0">
-                    ✓ Selected
+                  <span className="text-[10px] font-black bg-[#008F83] text-white px-2.5 py-1 rounded-full shrink-0 flex items-center gap-1">
+                    <Check className="w-3 h-3 stroke-[3]" /> Confirmed
                   </span>
                 </div>
               )}
