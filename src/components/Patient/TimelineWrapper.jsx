@@ -259,13 +259,26 @@ export default function TimelineWrapper({ member }) {
       try {
         const eventsList = [];
 
-        // 1. Fetch Vitals History
-        const { data: vitalsData } = await supabase
-          .from("vitals_history")
-          .select("*")
-          .eq("patient_id", member.id)
-          .order("recorded_at", { ascending: false });
+        // Parallelize independent queries for vitals, care_requests, and documents
+        const [
+          { data: vitalsData },
+          { data: refData },
+          { data: docsData }
+        ] = await Promise.all([
+          supabase
+            .from("vitals_history")
+            .select("*")
+            .eq("patient_id", member.id)
+            .order("recorded_at", { ascending: false }),
+          supabase
+            .from("care_requests")
+            .select("*")
+            .eq("patient_id", member.id)
+            .order("created_at", { ascending: false }),
+          getDocuments(member.id)
+        ]);
 
+        // 1. Process Vitals History
         if (vitalsData && vitalsData.length > 0) {
           vitalsData.forEach(v => {
             const bpStr = v.bp_systolic && v.bp_diastolic ? `${v.bp_systolic}/${v.bp_diastolic}` : null;
@@ -289,13 +302,7 @@ export default function TimelineWrapper({ member }) {
           });
         }
 
-        // 2. Fetch Care Requests / Referrals
-        const { data: refData } = await supabase
-          .from("care_requests")
-          .select("*")
-          .eq("patient_id", member.id)
-          .order("created_at", { ascending: false });
-
+        // 2. Process Care Requests / Referrals
         if (refData && refData.length > 0) {
           refData.forEach(r => {
             eventsList.push({
@@ -311,8 +318,7 @@ export default function TimelineWrapper({ member }) {
           });
         }
 
-        // 3. Fetch Uploaded Medical Documents & Prescriptions
-        const { data: docsData } = await getDocuments(member.id);
+        // 3. Process Uploaded Medical Documents & Prescriptions
         if (docsData && docsData.length > 0) {
           setVaultDocs(docsData);
           docsData.forEach(d => {

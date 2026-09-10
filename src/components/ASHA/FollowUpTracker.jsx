@@ -473,6 +473,7 @@ export default function FollowUpTracker({ patients, onLogVisit, onEditPatient, d
       return saved ? new Set(JSON.parse(saved)) : new Set();
     } catch { return new Set(); }
   });
+  const [syncNotice, setSyncNotice] = useState(null);
 
   const fetchCareRequests = async () => {
     try {
@@ -627,7 +628,26 @@ export default function FollowUpTracker({ patients, onLogVisit, onEditPatient, d
   const markDone = async (id) => {
     const it = allItems.find(x => x.id === id);
     if (it && it.isDoctorFollowUp) {
-      await completeFollowUp(it.encounterId);
+      const res = await completeFollowUp(it.encounterId);
+      if (res && !res.success) {
+        if (!res.persisted) {
+          setSyncNotice({
+            type: 'warning',
+            message: 'Session checkoff saved locally. Note: Durable follow-up completion state is not supported by the current schema for consultations.'
+          });
+        } else {
+          setSyncNotice({
+            type: 'error',
+            message: `Backend completion write failed: ${res.error?.message || 'Database error'}. Not marked completed on server.`
+          });
+          return;
+        }
+      } else if (res && res.success && res.persisted) {
+        setSyncNotice({
+          type: 'success',
+          message: 'Follow-up visit completion durably recorded in health record.'
+        });
+      }
     }
     setCompletedSet(prev => {
       const next = new Set(prev);
@@ -765,6 +785,28 @@ export default function FollowUpTracker({ patients, onLogVisit, onEditPatient, d
           </div>
         </div>
       </div>
+
+      {/* ── Sync / Persistence Notice ── */}
+      {syncNotice && (
+        <div className="max-w-6xl mx-auto px-4 sm:px-8 pt-4">
+          <div className={`p-3.5 rounded-2xl text-xs font-bold flex items-center justify-between gap-3 border ${
+            syncNotice.type === 'error'
+              ? 'bg-rose-50 text-rose-800 border-rose-200'
+              : syncNotice.type === 'warning'
+              ? 'bg-amber-50 text-amber-800 border-amber-200'
+              : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+          }`}>
+            <span>{syncNotice.message}</span>
+            <button
+              type="button"
+              onClick={() => setSyncNotice(null)}
+              className="text-xs underline cursor-pointer font-bold opacity-75 hover:opacity-100 shrink-0"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── Filter Tabs Ribbon ── */}
       <div className="max-w-6xl mx-auto px-4 sm:px-8 pt-5 pb-1">
@@ -1002,13 +1044,18 @@ export default function FollowUpTracker({ patients, onLogVisit, onEditPatient, d
                         </div>
                       </>
                     ) : (
-                      <button
-                        onClick={() => restore(item.id)}
-                        className="w-full py-2 px-4 rounded-full bg-slate-100 hover:bg-slate-200 active:scale-[0.98] text-slate-700 font-bold text-xs border border-slate-200 transition-all flex items-center justify-center gap-2 cursor-pointer"
-                      >
-                        <RefreshCw className="w-3.5 h-3.5" />
-                        <span>{t.restore || "Restore"}</span>
-                      </button>
+                      <div className="w-full space-y-1.5">
+                        <div className="text-[11px] font-extrabold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-xl text-center">
+                          ✓ Visited (Session Checkoff)
+                        </div>
+                        <button
+                          onClick={() => restore(item.id)}
+                          className="w-full py-2 px-4 rounded-full bg-slate-100 hover:bg-slate-200 active:scale-[0.98] text-slate-700 font-bold text-xs border border-slate-200 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5" />
+                          <span>{t.restore || "Restore"}</span>
+                        </button>
+                      </div>
                     )}
                   </div>
                 </div>

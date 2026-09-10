@@ -6,18 +6,18 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export const ROLE_CREDS = {
   asha: {
-    email: import.meta.env.VITE_ASHA_EMAIL || '',
-    password: import.meta.env.VITE_ASHA_PASSWORD || '',
+    email: import.meta.env.VITE_ASHA_EMAIL || 'somu5243d@gmail.com',
+    password: import.meta.env.VITE_ASHA_PASSWORD || 'Samir@7498',
     role: 'ASHA Worker'
   },
   reception: {
-    email: import.meta.env.VITE_RECEPTION_EMAIL || '',
-    password: import.meta.env.VITE_RECEPTION_PASSWORD || '',
+    email: import.meta.env.VITE_RECEPTION_EMAIL || 'myanawar5243d@gmail.com',
+    password: import.meta.env.VITE_RECEPTION_PASSWORD || 'Samir@135',
     role: 'Hospital Reception Staff'
   },
   doctor: {
-    email: import.meta.env.VITE_DOCTOR_EMAIL || '',
-    password: import.meta.env.VITE_DOCTOR_PASSWORD || '',
+    email: import.meta.env.VITE_DOCTOR_EMAIL || 'samir5243d@gmail.com',
+    password: import.meta.env.VITE_DOCTOR_PASSWORD || 'Samir@8806',
     role: 'Doctor Specialist'
   }
 };

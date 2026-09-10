@@ -1393,10 +1393,10 @@ export default function CareHub({ member, onOpenEmergency }) {
       )
       .subscribe();
 
-    // 2. Guaranteed polling fallback (every 3 seconds) for instant token updates
+    // 2. Polling fallback (every 15 seconds) for network resilience
     const pollInterval = setInterval(() => {
       load(true);
-    }, 3000);
+    }, 15000);
 
     return () => {
       supabase.removeChannel(channel);
