@@ -280,12 +280,13 @@ export default function DoctorWorkspace({
       console.log(`[DOCTOR_PORTAL_PERFORMANCE] Usable queue rendered in ${(performance.now() - tStart).toFixed(1)}ms (${combinedRefs.length} referrals, ${resTele?.data?.length || 0} teleconsults)`);
 
       // Non-blocking background enrichment of patient details
-      const patientIds = Array.from(new Set(combinedRefs.map(r => r.patient_id).filter(Boolean)));
-      if (patientIds.length > 0) {
+      const isUuid = (val) => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+      const patientUuids = Array.from(new Set(combinedRefs.map(r => r.patient_id).filter(isUuid)));
+      if (patientUuids.length > 0) {
         supabase
           .from('patients')
           .select('id, unified_id, full_name, age, gender, phone_number, blood_group')
-          .in('id', patientIds)
+          .in('id', patientUuids)
           .then(({ data: pts, error: pErr }) => {
             if (pErr) {
               console.warn('[RadVault Doctor] Could not join patient profiles:', pErr.message);
@@ -296,7 +297,18 @@ export default function DoctorWorkspace({
               pts.forEach(p => { patientsMap[p.id] = p; });
               setReferrals(prev => prev.map(r => {
                 const linkedPatient = patientsMap[r.patient_id];
-                if (!linkedPatient) return r;
+                const hasValidPatientUuid = isUuid(r.patient_id);
+                const isLegacyId = r.patient_id && !hasValidPatientUuid;
+                if (!linkedPatient) {
+                  if (isLegacyId) {
+                    return {
+                      ...r,
+                      patient_unified_id: r.patient_id.startsWith('MH-') ? r.patient_id : `Legacy ID: ${r.patient_id}`,
+                      is_legacy_patient: true
+                    };
+                  }
+                  return r;
+                }
                 return {
                   ...r,
                   patient_unified_id: linkedPatient.unified_id || (r.patient_id && !r.patient_id.includes('-') ? r.patient_id : null),
