@@ -2438,6 +2438,7 @@ export default function HospitalStaffWorkspace({
             district: 'District Referral Network'
           }
         : defaultFacility);
+      const resolvedFacilityName = activeFacilityObj.name;
 
       setStaffProfile({
         name: resolvedStaffName,
