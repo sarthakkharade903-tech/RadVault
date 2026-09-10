@@ -153,7 +153,7 @@ export async function ensureClinicalPatient(patient) {
 }
 
 export async function addPatient(payload) {
-  // Auto-generate ABHA ID if not provided, normalize mobile vs phone
+  // Normalize mobile vs phone, preserve optional manual abha_id
   const cleanPayload = { ...payload };
   if (cleanPayload.phone && !cleanPayload.mobile) {
     cleanPayload.mobile = cleanPayload.phone;
@@ -162,7 +162,7 @@ export async function addPatient(payload) {
 
   const finalPayload = {
     ...cleanPayload,
-    abha_id: cleanPayload.abha_id || generateMockABHA(),
+    abha_id: cleanPayload.abha_id ? cleanPayload.abha_id.trim() : null,
     asha_verified_at: new Date().toISOString(),
     asha_worker_name: cleanPayload.asha_worker_name || 'Priya Deshmukh',
   };

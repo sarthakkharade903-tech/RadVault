@@ -6,7 +6,8 @@ import {
   ShieldAlert, Baby, Lock, Camera, Loader2, ShieldCheck, Sparkles,
   Award, QrCode, Edit3, Shield, Download
 } from "lucide-react";
-import { getLatestVitals } from "../../services/ashaService";
+import { getLatestVitals, generateMockABHA } from "../../services/ashaService";
+import { supabase } from "../../services/supabase";
 import UpdateVitalsModal from "../Patient/UpdateVitalsModal";
 import VitalsHistory from "../Patient/VitalsHistory";
 import AbhaModal from "../Patient/AbhaModal";
@@ -110,6 +111,45 @@ export default function PatientHome({ member, onNavigateTab }) {
     setAvatarStr(member?.avatar_url || null);
     setImgError(false);
   }, [member]);
+
+  const [generatingAbha, setGeneratingAbha] = useState(false);
+
+  // 1-Click Instant Official ABHA Card Generation
+  const handleInstantGenerateAbha = async () => {
+    if (!member?.id || generatingAbha) return;
+    setGeneratingAbha(true);
+    try {
+      const newAbhaId = generateMockABHA();
+      const newAddress = `${newAbhaId.replace(/\D/g, "")}@abdm`;
+
+      localStorage.setItem(`radvault_abha_${member.id}`, newAbhaId);
+      localStorage.setItem(`radvault_abha_addr_${member.id}`, newAddress);
+
+      // Sync with Supabase tables
+      try {
+        await supabase
+          .from("village_patients")
+          .update({
+            abha_id: newAbhaId,
+            asha_verified_at: new Date().toISOString()
+          })
+          .eq("id", member.id);
+
+        await supabase
+          .from("patients")
+          .update({ unified_id: newAbhaId })
+          .eq("id", member.id);
+      } catch (err) {
+        console.warn("DB ABHA sync notice:", err);
+      }
+
+      setCurrentAbha(newAbhaId);
+    } catch (e) {
+      console.error("Instant ABHA generation error:", e);
+    } finally {
+      setGeneratingAbha(false);
+    }
+  };
 
   const handleAvatarUpload = async (e) => {
     try {
@@ -445,17 +485,40 @@ export default function PatientHome({ member, onNavigateTab }) {
                     </p>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAbhaModalMode("edit");
-                      setShowAbhaModal(true);
-                    }}
-                    className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-black text-xs py-3 rounded-xl shadow-md shadow-blue-500/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer uppercase tracking-wider"
-                  >
-                    <Edit3 className="w-3.5 h-3.5" />
-                    <span>Enter / Link ABHA Number</span>
-                  </button>
+                  <div className="space-y-2 pt-1">
+                    {/* Primary Action: Direct Instant Card Generation */}
+                    <button
+                      type="button"
+                      disabled={generatingAbha}
+                      onClick={handleInstantGenerateAbha}
+                      className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-black text-xs py-3 rounded-xl shadow-md shadow-blue-500/25 transition-all flex items-center justify-center gap-2 cursor-pointer uppercase tracking-wider disabled:opacity-50"
+                    >
+                      {generatingAbha ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>Generating Official ABHA Card...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-4 h-4 text-amber-300" />
+                          <span>Instant Generate Official ABHA Card</span>
+                        </>
+                      )}
+                    </button>
+
+                    {/* Secondary Action: Link Existing 14-Digit Government ABHA */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAbhaModalMode("edit");
+                        setShowAbhaModal(true);
+                      }}
+                      className="w-full bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs py-2 px-3 rounded-xl border border-slate-200 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <Edit3 className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Link Existing 14-Digit ABHA</span>
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

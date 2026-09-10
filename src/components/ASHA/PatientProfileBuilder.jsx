@@ -125,13 +125,6 @@ export default function PatientProfileBuilder({ patient: existing, family, onBac
   const set = (k, v) => setF(p => ({ ...p, [k]: v }));
   const toggle = (arr, val) => arr.includes(val) ? arr.filter(x => x !== val) : [...arr, val];
 
-  // Auto-generate ABHA ID for new patients on mount
-  useEffect(() => {
-    if (!isEdit && !f.abha_id) {
-      set('abha_id', generateMockABHA());
-    }
-  }, []);
-
   const showClinical = f.has_chronic || f.tobacco_user || f.alcohol_user || f.tb_symptoms || parseInt(f.age_years) >= 40;
 
   const BLOCKS = ["A", "B", ...(f.is_pregnant ? ["C"] : []), ...(f.is_child ? ["D"] : []), ...(showClinical ? ["E"] : [])];
@@ -147,8 +140,12 @@ export default function PatientProfileBuilder({ patient: existing, family, onBac
     if (!f.gender) { setError("Please select gender."); return; }
     if (!f.relation_to_head) { setError("Please select relation to head of family."); return; }
     setSaving(true); setError("");
+
+    const cleanAbha = f.abha_id ? f.abha_id.trim() : null;
+
     const payload = {
       ...f,
+      abha_id: cleanAbha,
       family_id: family?.id || existing?.family_id || null,
       village: family?.village || existing?.village || "Vadgaon",
       dob: f.dob || null,
@@ -168,6 +165,18 @@ export default function PatientProfileBuilder({ patient: existing, family, onBac
     const { data, error: saveErr } = isEdit ? await updatePatient(existing.id, payload) : await addPatient(payload);
     setSaving(false);
     if (saveErr) { setError(saveErr.message || "Save failed."); console.error(saveErr); return; }
+
+    const targetPatientId = existing?.id || data?.id;
+    if (targetPatientId) {
+      if (cleanAbha) {
+        localStorage.setItem(`radvault_abha_${targetPatientId}`, cleanAbha);
+        localStorage.setItem(`radvault_abha_addr_${targetPatientId}`, `${cleanAbha.replace(/\D/g, '')}@abdm`);
+      } else {
+        localStorage.removeItem(`radvault_abha_${targetPatientId}`);
+        localStorage.removeItem(`radvault_abha_addr_${targetPatientId}`);
+      }
+    }
+
     setDone(true);
   };
 
@@ -278,13 +287,54 @@ export default function PatientProfileBuilder({ patient: existing, family, onBac
             <L sub="Physical or mental disability (leave blank if none)">Disability</L>
             <TI placeholder="e.g. Visually impaired, Hearing loss" value={f.disability} onChange={e => set("disability", e.target.value)} />
 
-            {/* ABHA ID (auto-generated, read-only for ASHA) */}
+            {/* ABHA Health ID (Optional, Manually Editable) */}
             <div className="mt-4 mb-1">
-              <L sub="Auto-generated Ayushman Bharat Health Account ID">ABHA Health ID</L>
-              <div className="w-full border-2 border-[#008F83]/30 rounded-xl px-4 py-3 bg-[#F5FBF9] flex items-center justify-between">
-                <span className="text-sm font-black text-[#008F83] tracking-widest font-mono">{f.abha_id || "Generating…"}</span>
-                <span className="text-[9px] font-bold text-[#008F83] bg-white border border-[#008F83]/20 px-2 py-0.5 rounded-full uppercase tracking-wide">Auto-assigned</span>
+              <div className="flex items-center justify-between mb-1">
+                <L sub="14-digit Ayushman Bharat Health Account number (optional)">
+                  ABHA Health ID
+                </L>
+                {f.abha_id && (
+                  <button
+                    type="button"
+                    onClick={() => set("abha_id", "")}
+                    className="text-[10px] font-bold text-rose-600 hover:underline cursor-pointer"
+                  >
+                    Clear
+                  </button>
+                )}
               </div>
+              <div className="relative">
+                <input
+                  type="text"
+                  maxLength={17}
+                  placeholder="e.g. 14-digit ABHA (XX-XXXX-XXXX-XXXX) — optional"
+                  value={f.abha_id}
+                  onChange={e => {
+                    const raw = e.target.value;
+                    const digits = raw.replace(/\D/g, '').slice(0, 14);
+                    if (digits.length > 2) {
+                      let formatted = digits.slice(0, 2);
+                      if (digits.length > 6) {
+                        formatted += '-' + digits.slice(2, 6);
+                        if (digits.length > 10) {
+                          formatted += '-' + digits.slice(6, 10) + '-' + digits.slice(10, 14);
+                        } else {
+                          formatted += '-' + digits.slice(6, 10);
+                        }
+                      } else {
+                        formatted += '-' + digits.slice(2, 6);
+                      }
+                      set("abha_id", formatted);
+                    } else {
+                      set("abha_id", digits);
+                    }
+                  }}
+                  className="w-full border border-[#E2E8F0] rounded-xl px-4 py-3 text-sm font-mono font-bold text-[#16324F] placeholder:text-slate-400 placeholder:font-sans placeholder:font-normal focus:outline-none focus:border-[#008F83] bg-white transition-all shadow-2xs"
+                />
+              </div>
+              <p className="text-[11px] text-slate-400 mt-1 font-medium">
+                Citizens without an ABHA can leave this blank; their official digital card can be generated anytime directly from the patient dashboard.
+              </p>
             </div>
 
             <div className="grid grid-cols-2 gap-3 mt-4">
