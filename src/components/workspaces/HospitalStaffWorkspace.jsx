@@ -615,8 +615,8 @@ function ReferralActionCard({
                 </span>
               )}
               {isAshaEscorted && (
-                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-purple-50 text-purple-800 border border-purple-200">
-                  👩‍⚕️ ASHA Escort
+                <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-purple-50 text-purple-800 border border-purple-200 flex items-center gap-1">
+                  👩‍⚕️ ASHA Escorted (JSY Priority)
                 </span>
               )}
             </div>

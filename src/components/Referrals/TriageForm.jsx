@@ -3,7 +3,7 @@ import {
   ChevronLeft, Sparkles, Loader2, CheckCircle2, AlertTriangle,
   Building2, UserCircle2, Stethoscope, Ambulance, Mic, Square,
   Volume2, Trash2, Check, ArrowRight, ArrowLeft, Search, Plus, RefreshCw,
-  Radio, Navigation, ShieldCheck
+  Radio, Navigation, ShieldCheck, HeartPulse, ShieldAlert
 } from 'lucide-react';
 import PatientSelectScreen from './screens/PatientSelectScreen';
 import PatientTypeScreen from './screens/PatientTypeScreen';
@@ -13,7 +13,7 @@ import ElderlyScreen from './screens/ElderlyScreen';
 import AdultScreen from './screens/AdultScreen';
 import EmergencyScreen from './screens/EmergencyScreen';
 import { DEPARTMENTS, HOSPITALS } from '../../data/mockReferrals';
-import { createPhysicalReferral } from '../../services/ashaService';
+import { createPhysicalReferral, generateKimiClinicalRoadmap } from '../../services/ashaService';
 import { fetchGovHospitals, getCurrentLocation, calculateHaversineDistance, CONNECTED_FACILITIES } from '../../services/locationService';
 import { supabase } from '../../services/supabase';
 
@@ -160,6 +160,8 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
 
   // AI & Triage State
   const [aiResult, setAiResult] = useState(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiRoadmap, setAiRoadmap] = useState(null);
 
   // Routing State — dynamically populated from CONNECTED_FACILITIES & Supabase
   const [hospital, setHospital] = useState(CONNECTED_FACILITIES[0].name);
@@ -390,10 +392,50 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
 
   const handleIntakeSubmit = (answers) => {
     setIntakeAnswers(answers);
+    if (answers?.voiceNotes) setVoiceNotes(answers.voiceNotes);
+    if (answers?.audioBlobUrl) setAudioBlobUrl(answers.audioBlobUrl);
     const triage = localTriage(patientType, answers);
     setAiResult(triage);
     setDepartment(triage.department || DEPARTMENTS[0]);
+    setAiRoadmap(null); // Reset roadmap for new intake
     setStep(2);
+  };
+
+  const handleGenerateAiRoadmap = async () => {
+    if (aiLoading) return;
+    setAiLoading(true);
+    try {
+      const roadmap = await generateKimiClinicalRoadmap({
+        patient,
+        patientType,
+        answers: intakeAnswers,
+        voiceNotes,
+        lang
+      });
+      if (roadmap) {
+        setAiRoadmap(roadmap);
+        setAiResult(prev => ({
+          ...prev,
+          priority: roadmap.priority || prev?.priority,
+          note: roadmap.note || prev?.note,
+          department: roadmap.department || prev?.department,
+          clinicalSummary: roadmap.hospitalRoadmap,
+          keyRisks: roadmap.keyRisks,
+          firstAidSteps: roadmap.firstAidSteps,
+          aiModel: roadmap.model
+        }));
+        if (roadmap.department) {
+          const matchedDept = DEPARTMENTS.find(d => d.toLowerCase() === roadmap.department.toLowerCase());
+          if (matchedDept) {
+            setDepartment(matchedDept);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[TriageForm] AI Roadmap generation error:', err);
+    } finally {
+      setAiLoading(false);
+    }
   };
 
   const handleFinalSubmit = async () => {
@@ -486,6 +528,7 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
         priority: finalPriority,
         reason: ashaNotes,
         asha_notes: ashaNotes,
+        clinical_summary: aiResult?.clinicalSummary || aiResult?.note || ashaNotes,
         vitals: patientVitals
       };
 
@@ -559,133 +602,223 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
           </div>
         )}
 
-        {/* STEP 1: Clinical Intake Assessment Screen + Voice Scribe */}
+        {/* STEP 1: Clinical Intake Assessment Screen (Voice Scribe Integrated Internally) */}
         {step === 1 && (
+          <div className="bg-white border border-[#E2E8F0] rounded-2xl p-5 sm:p-6 shadow-xs">
+            {patientType === 'pregnant' && (
+              <PregnantScreen
+                onComplete={handleIntakeSubmit}
+                initialVoiceNotes={voiceNotes}
+                initialAudioBlobUrl={audioBlobUrl}
+              />
+            )}
+            {patientType === 'child' && (
+              <ChildScreen
+                onComplete={handleIntakeSubmit}
+                initialVoiceNotes={voiceNotes}
+                initialAudioBlobUrl={audioBlobUrl}
+              />
+            )}
+            {patientType === 'elderly' && (
+              <ElderlyScreen
+                onComplete={handleIntakeSubmit}
+                initialVoiceNotes={voiceNotes}
+                initialAudioBlobUrl={audioBlobUrl}
+              />
+            )}
+            {patientType === 'adult' && (
+              <AdultScreen
+                onComplete={handleIntakeSubmit}
+                initialVoiceNotes={voiceNotes}
+                initialAudioBlobUrl={audioBlobUrl}
+              />
+            )}
+            {patientType === 'emergency' && (
+              <EmergencyScreen
+                onComplete={handleIntakeSubmit}
+                initialVoiceNotes={voiceNotes}
+                initialAudioBlobUrl={audioBlobUrl}
+              />
+            )}
+          </div>
+        )}
+
+        {/* STEP 2: Triage Review Screen & On-Demand Kimi AI Clinical Roadmap */}
+        {step === 2 && (
           <div className="space-y-4">
-            
-            {/* Condition Specific Screen */}
-            <div className="bg-white border border-[#E2E8F0] rounded-2xl p-5 shadow-xs">
-              {patientType === 'pregnant' && <PregnantScreen onComplete={handleIntakeSubmit} />}
-              {patientType === 'child'    && <ChildScreen onComplete={handleIntakeSubmit} />}
-              {patientType === 'elderly'  && <ElderlyScreen onComplete={handleIntakeSubmit} />}
-              {patientType === 'adult'    && <AdultScreen onComplete={handleIntakeSubmit} />}
-              {patientType === 'emergency'&& <EmergencyScreen onComplete={handleIntakeSubmit} />}
-            </div>
-
-            {/* ── AUDIO VOICE NOTE SECTION IN REFERRAL ── */}
-            <div className="bg-white border-2 border-purple-200 rounded-2xl p-4 sm:p-5 shadow-xs space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center">
-                    <Mic className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h3 className="font-extrabold text-slate-900 text-xs sm:text-sm">{t.voiceNoteTitle}</h3>
-                    <p className="text-[11px] text-slate-400">{t.voiceNoteSub}</p>
-                  </div>
-                </div>
-
-                <select
-                  value={audioLang}
-                  onChange={e => setAudioLang(e.target.value)}
-                  className="text-[11px] font-bold bg-purple-50 text-purple-900 border border-purple-200 rounded-lg px-2 py-1 cursor-pointer focus:outline-none"
-                >
-                  <option value="mr-IN">मराठी</option>
-                  <option value="hi-IN">हिंदी</option>
-                  <option value="en-IN">English</option>
-                </select>
-              </div>
-
-              <div className="bg-purple-50/60 rounded-xl p-3.5 border border-purple-100 flex flex-col items-center justify-center gap-2.5">
-                {!isRecording ? (
-                  <button
-                    type="button"
-                    onClick={startRecording}
-                    className="px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center gap-2 transition-all cursor-pointer"
-                  >
-                    <Mic className="w-4 h-4" />
-                    <span>{t.startRec}</span>
-                  </button>
+            {/* 1. Baseline Clinical Assessment Header Card */}
+            <div className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs text-center space-y-4">
+              <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mx-auto ${
+                aiResult?.priority === 'RED' ? 'bg-red-100 text-red-600' :
+                aiResult?.priority === 'ORANGE' ? 'bg-amber-100 text-amber-600' : 'bg-teal-100 text-teal-600'
+              }`}>
+                {aiResult?.priority === 'RED' ? (
+                  <AlertTriangle className="w-8 h-8" />
                 ) : (
-                  <div className="flex flex-col items-center gap-2">
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full bg-red-600 animate-ping" />
-                      <span className="font-mono font-black text-red-700 text-sm">
-                        {t.recActive}{recordingSeconds < 10 ? `0${recordingSeconds}` : recordingSeconds}
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={stopRecording}
-                      className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
-                    >
-                      <Square className="w-3.5 h-3.5" />
-                      <span>{t.stopRec}</span>
-                    </button>
-                  </div>
-                )}
-
-                {audioBlobUrl && (
-                  <div className="w-full space-y-1 bg-white p-2.5 rounded-xl border border-purple-200">
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="font-bold text-purple-900 flex items-center gap-1">
-                        <Volume2 className="w-3.5 h-3.5 text-purple-600" /> {t.memoPlayer}
-                      </span>
-                      <button type="button" onClick={() => setAudioBlobUrl(null)} className="text-red-500 hover:text-red-700 text-[11px] font-bold cursor-pointer">
-                        {t.removeAudio}
-                      </button>
-                    </div>
-                    <audio controls src={audioBlobUrl} className="w-full h-8" />
-                  </div>
+                  <CheckCircle2 className="w-8 h-8" />
                 )}
               </div>
 
               <div>
-                <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">
-                  {t.notesLabel}
-                </label>
-                <textarea
-                  rows={2}
-                  value={voiceNotes}
-                  onChange={e => setVoiceNotes(e.target.value)}
-                  placeholder={t.notesPlaceholder}
-                  className="w-full border border-purple-200 rounded-xl p-3 text-xs text-slate-800 bg-white font-medium focus:outline-none focus:border-purple-500"
-                />
+                <span className={`text-xs font-black px-3.5 py-1.5 rounded-full uppercase border shadow-2xs inline-flex items-center gap-1.5 ${
+                  aiResult?.priority === 'RED' ? 'bg-red-50 text-red-800 border-red-300' :
+                  aiResult?.priority === 'ORANGE' ? 'bg-amber-50 text-amber-800 border-amber-300' : 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                }`}>
+                  <span className={`w-2 h-2 rounded-full ${
+                    aiResult?.priority === 'RED' ? 'bg-red-600' : aiResult?.priority === 'ORANGE' ? 'bg-amber-500' : 'bg-[#008F83]'
+                  }`} />
+                  <span>{aiResult?.priority === 'RED' ? t.priorityRed : aiResult?.priority === 'ORANGE' ? t.priorityOrange : t.priorityGreen}</span>
+                </span>
+
+                <div className="mt-3 flex items-center justify-center gap-2 flex-wrap text-xs text-slate-500 font-bold">
+                  <span>Patient: <strong className="text-slate-900">{patient?.name}</strong></span>
+                  <span>•</span>
+                  <span>Category: <strong className="text-slate-900 capitalize">{patientType}</strong></span>
+                  <span>•</span>
+                  <span>Recommended: <strong className="text-teal-800">{department}</strong></span>
+                </div>
+
+                <p className="text-sm font-semibold text-slate-800 mt-3 max-w-lg mx-auto leading-relaxed bg-slate-50 p-3.5 rounded-2xl border border-slate-200 text-left sm:text-center">
+                  "{aiResult?.note}"
+                </p>
               </div>
             </div>
 
-          </div>
-        )}
+            {/* 2. On-Demand Kimi AI Care Roadmap Card (Saves Tokens) */}
+            {!aiRoadmap && !aiLoading && (
+              <div className="bg-gradient-to-br from-purple-50/80 via-indigo-50/60 to-teal-50/70 border-2 border-purple-200/80 rounded-2xl p-5 shadow-2xs text-left space-y-3">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center shadow-xs shrink-0">
+                    <Sparkles className="w-5 h-5" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h4 className="text-xs font-black uppercase text-purple-950 tracking-wider">
+                        Advanced AI Clinical Care Roadmap
+                      </h4>
+                      <span className="text-[10px] font-extrabold bg-purple-100 text-purple-800 px-2 py-0.5 rounded-full">
+                        Powered by Kimi AI
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                      Generate verified diagnostic risk assessment, immediate frontline first-aid steps, and a step-by-step hospital intake roadmap.
+                    </p>
+                  </div>
+                </div>
 
-        {/* STEP 2: Triage Review Screen */}
-        {step === 2 && (
-          <div className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs text-center space-y-4">
-            <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mx-auto ${
-              aiResult?.priority === 'RED' ? 'bg-red-100 text-red-600' :
-              aiResult?.priority === 'ORANGE' ? 'bg-amber-100 text-amber-600' : 'bg-teal-100 text-teal-600'
-            }`}>
-              <CheckCircle2 className="w-8 h-8" />
-            </div>
+                <button
+                  type="button"
+                  onClick={handleGenerateAiRoadmap}
+                  className="w-full py-3.5 bg-purple-600 hover:bg-purple-700 text-white font-black text-xs sm:text-sm rounded-xl shadow-xs flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-[0.99]"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  <span>✨ Generate AI Clinical Summary & Care Roadmap</span>
+                </button>
+                <p className="text-[10px] text-center font-bold text-slate-400">
+                  Zero tokens used by default · Only calls Kimi AI on explicit button tap
+                </p>
+              </div>
+            )}
 
-            <div>
-              <span className={`text-xs font-black px-3 py-1 rounded-full uppercase border ${
-                aiResult?.priority === 'RED' ? 'bg-red-100 text-red-800 border-red-300' :
-                aiResult?.priority === 'ORANGE' ? 'bg-amber-100 text-amber-800 border-amber-300' : 'bg-emerald-100 text-emerald-800 border-emerald-300'
-              }`}>
-                {aiResult?.priority === 'RED' ? t.priorityRed : aiResult?.priority === 'ORANGE' ? t.priorityOrange : t.priorityGreen}
-              </span>
+            {/* AI Loading State */}
+            {aiLoading && (
+              <div className="bg-purple-50/70 border-2 border-dashed border-purple-300 rounded-2xl p-8 text-center space-y-3 shadow-2xs">
+                <Loader2 className="w-8 h-8 text-purple-600 animate-spin mx-auto" />
+                <h4 className="text-xs font-black uppercase text-purple-900 tracking-wider">
+                  Consulting Kimi AI Clinical Engine...
+                </h4>
+                <p className="text-xs text-slate-500 font-medium max-w-sm mx-auto">
+                  Synthesizing patient vitals, reported symptoms, and frontline observations into an action roadmap
+                </p>
+              </div>
+            )}
 
-              <p className="text-sm font-bold text-slate-800 mt-3 max-w-md mx-auto leading-relaxed">
-                {aiResult?.note}
-              </p>
-            </div>
+            {/* Generated AI Care Roadmap Card */}
+            {aiRoadmap && (
+              <div className="bg-white border-2 border-purple-200 rounded-2xl p-5 text-left space-y-4 shadow-xs animate-in fade-in">
+                <div className="flex items-center justify-between pb-3 border-b border-purple-100">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-xl bg-purple-600 text-white flex items-center justify-center shadow-xs">
+                      <Sparkles className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-black uppercase text-purple-950 tracking-wider flex items-center gap-1.5">
+                        <span>AI Clinical Care Roadmap</span>
+                        <span className="text-[10px] font-bold bg-purple-100 text-purple-800 px-1.5 py-0.2 rounded">
+                          {aiRoadmap.model || 'Kimi-K3'}
+                        </span>
+                      </h4>
+                      <p className="text-[11px] text-slate-500 font-medium">Frontline briefing attached to hospital referral</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleGenerateAiRoadmap}
+                    disabled={aiLoading}
+                    className="text-xs font-bold text-purple-700 hover:text-purple-900 flex items-center gap-1 cursor-pointer transition-colors"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" /> Re-run
+                  </button>
+                </div>
 
+                {/* 1. Key Diagnostic Risks */}
+                {aiRoadmap.keyRisks && aiRoadmap.keyRisks.length > 0 && (
+                  <div>
+                    <h5 className="text-[11px] font-black uppercase tracking-wider text-rose-700 mb-1.5 flex items-center gap-1">
+                      <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+                      <span>Key Diagnostic Risks & Red Flags</span>
+                    </h5>
+                    <ul className="space-y-1.5 bg-rose-50/70 p-3.5 rounded-xl border border-rose-100 text-xs font-semibold text-rose-950">
+                      {aiRoadmap.keyRisks.map((risk, idx) => (
+                        <li key={idx} className="flex items-start gap-2">
+                          <span className="text-rose-500 font-bold leading-none mt-1">•</span>
+                          <span>{risk}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* 2. Immediate ASHA First-Aid Guidance */}
+                {aiRoadmap.firstAidSteps && aiRoadmap.firstAidSteps.length > 0 && (
+                  <div>
+                    <h5 className="text-[11px] font-black uppercase tracking-wider text-teal-800 mb-1.5 flex items-center gap-1">
+                      <HeartPulse className="w-3.5 h-3.5 text-[#008F83]" />
+                      <span>Immediate ASHA Frontline Actions</span>
+                    </h5>
+                    <ul className="space-y-1.5 bg-teal-50/70 p-3.5 rounded-xl border border-teal-100 text-xs font-semibold text-teal-950">
+                      {aiRoadmap.firstAidSteps.map((stepItem, idx) => (
+                        <li key={idx} className="flex items-start gap-2">
+                          <span className="text-[#008F83] font-bold leading-none mt-0.5">✓</span>
+                          <span>{stepItem}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* 3. Receiving Hospital Protocol */}
+                {aiRoadmap.hospitalRoadmap && (
+                  <div>
+                    <h5 className="text-[11px] font-black uppercase tracking-wider text-indigo-900 mb-1.5 flex items-center gap-1">
+                      <Building2 className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>Receiving Hospital Care Protocol</span>
+                    </h5>
+                    <p className="text-xs text-slate-700 font-medium bg-slate-50 p-3.5 rounded-xl border border-slate-200 leading-relaxed">
+                      {aiRoadmap.hospitalRoadmap}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Primary Continue Button */}
             <div className="pt-2">
               <button
                 onClick={() => setStep(3)}
-                className="w-full py-4 bg-[#008F83] hover:bg-[#007A70] text-white font-extrabold text-sm rounded-xl shadow-xs transition-colors cursor-pointer"
+                className="w-full py-4 bg-[#008F83] hover:bg-[#007A70] text-white font-black text-sm sm:text-base rounded-2xl shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-2"
               >
-                {t.continueRouting}
+                <span>Continue to Hospital Routing →</span>
               </button>
             </div>
           </div>

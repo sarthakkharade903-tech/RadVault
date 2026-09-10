@@ -686,35 +686,75 @@ function FreshThemeHero({
 
 // ─── 2. Needs Attention Card (Priority Route Highlight) ───────
 function NeedsAttentionCard({ referral, t, onOpen, onDelete }) {
+  const isEmergency = referral.priority === 'RED';
+  const isUrgent = referral.priority === 'ORANGE';
+
+  const isAshaEscorted =
+    referral.is_pregnant ||
+    referral.symptoms?.toLowerCase().includes('asha accompanying') ||
+    referral.clinical_summary?.toLowerCase().includes('asha accompanying') ||
+    referral.aiNote?.toLowerCase().includes('asha accompanying');
+
+  // Dynamic Stepper Stage Computation
+  const isReceivedByHospital =
+    ['Accepted', 'Arrived', 'Assigned', 'In Consultation', 'Completed'].includes(referral.status) ||
+    ['WAITING_FOR_DOCTOR', 'IN_CALL', 'IN_PROGRESS', 'COMPLETED'].includes(referral.rawStatus);
+
+  const isDoctorComplete = referral.status === 'Completed' || referral.rawStatus === 'COMPLETED';
+  const isDoctorInProgress =
+    referral.status === 'In Consultation' ||
+    referral.rawStatus === 'IN_CALL' ||
+    referral.rawStatus === 'WAITING_FOR_DOCTOR';
+
+  const cardBorder = isEmergency
+    ? 'border-red-200 border-l-4 border-l-red-600'
+    : isUrgent
+    ? 'border-amber-200 border-l-4 border-l-amber-500'
+    : 'border-slate-200 border-l-4 border-l-[#008F83]';
+
   return (
     <div
       data-referral-id={referral.id}
-      className="bg-white border-2 border-red-200 rounded-2xl p-4 sm:p-5 shadow-2xs hover:shadow-xs transition-all mb-3.5 relative overflow-hidden"
+      className={`bg-white rounded-2xl p-4 sm:p-5 shadow-2xs hover:shadow-xs transition-all mb-3.5 relative overflow-hidden border ${cardBorder}`}
     >
-      
-      {/* Top Ambient Bar */}
-      <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-red-500 to-amber-500" />
-
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2.5">
         {/* Left: Indicator, Patient Name, Route */}
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="w-3 h-3 rounded-full bg-red-600 animate-ping shrink-0" />
+          <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${isEmergency ? 'bg-red-600' : isUrgent ? 'bg-amber-500' : 'bg-[#008F83]'}`} />
           <h4 className="text-base sm:text-lg font-black text-slate-900 leading-tight">
             {referral.patientName}
           </h4>
           <span className="text-[11px] font-mono font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
             {referral.patientId}
           </span>
+          <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${
+            isEmergency ? 'bg-red-50 text-red-800 border-red-200' : isUrgent ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-teal-50 text-teal-800 border-teal-200'
+          }`}>
+            {isEmergency ? '🔴 EMERGENCY' : isUrgent ? '🟡 URGENT' : '🟢 ROUTINE'}
+          </span>
+          {isAshaEscorted && (
+            <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-purple-50 text-purple-800 border border-purple-200 flex items-center gap-1">
+              👩‍⚕️ ASHA Escort
+            </span>
+          )}
           <span className="text-xs font-bold text-[#008F83] bg-teal-50 border border-teal-200 px-2.5 py-0.5 rounded-full">
-            PHC → Specialist
+            {referral.hospital ? `${referral.hospital} · ${referral.department || 'General'}` : 'PHC → Specialist'}
           </span>
         </div>
 
-        {/* Right: Status Tag */}
+        {/* Right: Dynamic Status Tag */}
         <div className="flex items-center gap-2 self-start sm:self-center">
-          <span className="text-[11px] font-black uppercase px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1">
+          <span className={`text-[11px] font-black uppercase px-2.5 py-0.5 rounded-full border flex items-center gap-1 ${
+            isDoctorComplete
+              ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+              : isDoctorInProgress
+              ? 'bg-indigo-50 text-indigo-800 border-indigo-300'
+              : isReceivedByHospital
+              ? 'bg-teal-50 text-teal-800 border-teal-300'
+              : 'bg-amber-50 text-amber-900 border-amber-300'
+          }`}>
             <Clock className="w-3 h-3" />
-            <span>Pending</span>
+            <span>{referral.status || 'Pending'}</span>
           </span>
           <span className="text-[11px] font-bold text-slate-400">{referral.createdAt}</span>
         </div>
@@ -722,29 +762,55 @@ function NeedsAttentionCard({ referral, t, onOpen, onDelete }) {
 
       {/* Clinical Notes snippet */}
       {referral.aiNote && (
-        <p className="text-xs text-slate-700 font-medium mb-3 italic bg-amber-50/50 p-2 rounded-xl border border-amber-100">
+        <p className="text-xs text-slate-700 font-medium mb-3 italic bg-slate-50 p-2.5 rounded-xl border border-slate-200">
           "{referral.aiNote}"
         </p>
       )}
 
       {/* Route Stepper + Action Row */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-slate-100">
-        {/* Stepper */}
-        <div className="flex items-center gap-2 text-xs font-black text-slate-700">
+        {/* Dynamic Stepper */}
+        <div className="flex items-center gap-2 text-xs font-black text-slate-700 flex-wrap">
+          {/* Stage 1: ASHA (Always Complete) */}
           <div className="flex items-center gap-1 text-[#008F83]">
             <span className="w-4 h-4 rounded-full bg-[#008F83] text-white flex items-center justify-center text-[9px] font-black">✓</span>
             <span>ASHA</span>
           </div>
+
           <span className="text-slate-300">→</span>
-          <div className="flex items-center gap-1 text-[#008F83]">
-            <span className="w-4 h-4 rounded-full bg-[#008F83] text-white flex items-center justify-center text-[9px] font-black">✓</span>
-            <span>PHC</span>
-          </div>
+
+          {/* Stage 2: PHC / Hospital Reception */}
+          {isReceivedByHospital ? (
+            <div className="flex items-center gap-1 text-[#008F83]">
+              <span className="w-4 h-4 rounded-full bg-[#008F83] text-white flex items-center justify-center text-[9px] font-black">✓</span>
+              <span>PHC Received</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1 text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+              <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+              <span className="text-[10px] font-bold">PHC (Awaiting Reception)</span>
+            </div>
+          )}
+
           <span className="text-slate-300">→</span>
-          <div className="flex items-center gap-1 text-slate-400">
-            <span className="w-4 h-4 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center text-[9px] font-black">●</span>
-            <span>Specialist</span>
-          </div>
+
+          {/* Stage 3: Specialist / Doctor Consultation */}
+          {isDoctorComplete ? (
+            <div className="flex items-center gap-1 text-[#008F83]">
+              <span className="w-4 h-4 rounded-full bg-[#008F83] text-white flex items-center justify-center text-[9px] font-black">✓</span>
+              <span>Specialist Done</span>
+            </div>
+          ) : isDoctorInProgress ? (
+            <div className="flex items-center gap-1 text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-200">
+              <span className="w-2 h-2 rounded-full bg-indigo-600 animate-pulse" />
+              <span className="text-[10px] font-bold">🩺 In Consultation</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1 text-slate-400">
+              <span className="w-4 h-4 rounded-full bg-slate-200 text-slate-500 flex items-center justify-center text-[9px] font-black">●</span>
+              <span>Specialist</span>
+            </div>
+          )}
         </div>
 
         {/* Action Button */}
@@ -777,6 +843,12 @@ function PipelineReferralCard({ referral, t, onOpen, onDelete }) {
   const isEmergency = referral.priority === 'RED';
   const isUrgent = referral.priority === 'ORANGE';
 
+  const isAshaEscorted =
+    referral.is_pregnant ||
+    referral.symptoms?.toLowerCase().includes('asha accompanying') ||
+    referral.clinical_summary?.toLowerCase().includes('asha accompanying') ||
+    referral.aiNote?.toLowerCase().includes('asha accompanying');
+
   const raw = referral.rawStatus || 'SUBMITTED';
   const isSubmitted = raw === 'SUBMITTED';
   const isWaitingDoctor = raw === 'WAITING_FOR_DOCTOR';
@@ -807,6 +879,11 @@ function PipelineReferralCard({ referral, t, onOpen, onDelete }) {
             }`}>
               {referral.priority}
             </span>
+            {isAshaEscorted && (
+              <span className="text-[10px] font-black px-2 py-0.2 rounded-full bg-purple-50 text-purple-800 border border-purple-200 flex items-center gap-1">
+                👩‍⚕️ ASHA Escort
+              </span>
+            )}
             <span className={`text-[10px] font-black px-2 py-0.2 rounded-full border ${
               isSubmitted ? 'bg-amber-50 text-amber-800 border-amber-200' :
               isInCall ? 'bg-rose-100 text-rose-800 border-rose-300 animate-pulse' :

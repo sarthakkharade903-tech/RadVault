@@ -1690,3 +1690,162 @@ Return ONLY valid JSON with this exact structure (no markdown, no explanation):
     return { error: err.message, summary: null };
   }
 }
+
+// ─── KIMI AI CLINICAL ROADMAP GENERATOR (On-Demand Token Optimized) ───────────
+const KIMI_ENDPOINT = "https://sarthakkharadeagent2--ep-kimi-k3-server.us-west.modal.direct/v1/chat/completions";
+const KIMI_API_KEY = "wk-cxPGHKXrq3fI7LOqGVzl0f.ws-JbafhsWhgpVfWmpS3EdKqG";
+
+/**
+ * Generates an in-depth clinical care roadmap via Kimi K3.
+ * Triggered ONLY on user button click to conserve API tokens.
+ */
+export async function generateKimiClinicalRoadmap({
+  patient,
+  patientType,
+  answers = {},
+  voiceNotes = '',
+  lang = 'en'
+}) {
+  // Format patient profile
+  const patName = patient?.name || 'Patient';
+  const patAge = patient?.age_years || patient?.age || 'Unknown';
+  const patGender = patient?.gender || 'Unknown';
+
+  // Format symptoms & vitals
+  let symptomsList = [];
+  if (Array.isArray(answers?.symptoms)) {
+    symptomsList = answers.symptoms;
+  } else if (Array.isArray(answers?.dangerSigns)) {
+    symptomsList = answers.dangerSigns;
+  } else if (Array.isArray(answers?.conditions)) {
+    symptomsList = answers.conditions;
+  }
+
+  const vitalsText = [
+    answers?.bp ? `BP: ${answers.bp} mmHg` : null,
+    answers?.pulse ? `Pulse: ${answers.pulse} bpm` : null,
+    answers?.spo2 ? `SpO2: ${answers.spo2}%` : null,
+    answers?.temp ? `Temp: ${answers.temp}°F` : null,
+    answers?.weight ? `Weight: ${answers.weight} kg` : null,
+    answers?.bloodSugar ? `Blood Sugar: ${answers.bloodSugar}` : null,
+  ].filter(Boolean).join(', ') || 'None measured';
+
+  const userPrompt = `Patient: ${patName} (${patGender}, ${patAge} yrs). Category: ${patientType || 'General'}.
+Symptoms/Danger signs: ${symptomsList.join(', ') || answers?.otherSymptom || 'General malaise'}.
+Vitals: ${vitalsText}.
+Observations / Voice notes: ${voiceNotes || 'Frontline field intake assessment'}.
+Language: ${lang === 'mr' ? 'Marathi' : lang === 'hi' ? 'Hindi' : 'English'}.`;
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 12000); // 12s timeout
+
+    const res = await fetch(KIMI_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${KIMI_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: 'moonshotai/Kimi-K3',
+        messages: [
+          {
+            role: 'system',
+            content: `You are an expert AI medical triage officer for rural frontline health workers (ASHA).
+Analyze the patient data and return ONLY a valid raw JSON object (no markdown, no backticks, no code block) with these exact keys:
+{
+  "priority": "RED" | "ORANGE" | "GREEN",
+  "department": "Appropriate clinical department name",
+  "note": "2-sentence clinical diagnosis and rationale",
+  "keyRisks": ["Risk 1", "Risk 2", "Risk 3"],
+  "firstAidSteps": ["Immediate action 1", "Immediate action 2"],
+  "hospitalRoadmap": "Brief step-by-step receiving care plan for the hospital OPD/Casualty"
+}`
+          },
+          { role: 'user', content: userPrompt }
+        ],
+        temperature: 0.1,
+        max_tokens: 600,
+      }),
+    });
+
+    clearTimeout(timeoutId);
+
+    if (res.ok) {
+      const data = await res.json();
+      let rawText = data?.choices?.[0]?.message?.content || '';
+      rawText = rawText.trim();
+      // Remove any markdown fence if present
+      if (rawText.startsWith('```json')) {
+        rawText = rawText.replace(/^```json/, '').replace(/```$/, '').trim();
+      } else if (rawText.startsWith('```')) {
+        rawText = rawText.replace(/^```/, '').replace(/```$/, '').trim();
+      }
+
+      const parsed = JSON.parse(rawText);
+      return {
+        success: true,
+        priority: parsed.priority || 'ORANGE',
+        department: parsed.department || 'General Medicine & OPD',
+        note: parsed.note || 'Clinical review completed by Kimi AI.',
+        keyRisks: Array.isArray(parsed.keyRisks) ? parsed.keyRisks : ['Immediate medical observation required'],
+        firstAidSteps: Array.isArray(parsed.firstAidSteps) ? parsed.firstAidSteps : ['Keep patient comfortable and monitor vitals'],
+        hospitalRoadmap: parsed.hospitalRoadmap || 'Triage at receiving hospital counter and physician review.',
+        model: 'Kimi-K3'
+      };
+    }
+  } catch (err) {
+    console.warn('[ashaService] Kimi AI call failed, using clinical fallback:', err.message);
+  }
+
+  // Clinical Rule-Based Fallback (Offline & Token-Safe)
+  const isRed =
+    answers?.bleeding ||
+    answers?.convulsions ||
+    answers?.unconscious ||
+    patientType === 'emergency' ||
+    (answers?.spo2 && Number(answers.spo2) < 90);
+
+  const isOrange =
+    answers?.swelling ||
+    answers?.headacheVision ||
+    answers?.breathingDiff ||
+    answers?.chestPain ||
+    (answers?.bp && (answers.bp.includes('150') || answers.bp.includes('160')));
+
+  const priority = isRed ? 'RED' : isOrange ? 'ORANGE' : 'GREEN';
+  const dept =
+    patientType === 'pregnant' ? 'Maternity & Gynecology (ANC / Delivery)' :
+    patientType === 'child' ? 'Child Health & Pediatrics' :
+    patientType === 'emergency' || isRed ? 'Emergency & Casualty / Trauma' :
+    'General Medicine & OPD';
+
+  return {
+    success: true,
+    isFallback: true,
+    priority,
+    department: dept,
+    note: isRed
+      ? 'CRITICAL ALERT: Life-threatening danger signs detected. Immediate transfer to higher hospital required.'
+      : isOrange
+      ? 'URGENT: High-risk clinical signs present. Requires medical officer evaluation within 24 hours.'
+      : 'STABLE: Vital parameters within manageable limits. Proceed with routine hospital consultation.',
+    keyRisks: isRed
+      ? ['Acute respiratory or circulatory distress', 'Risk of rapid clinical deterioration']
+      : isOrange
+      ? ['Secondary symptom exacerbation', 'Potential hypertensive or metabolic complication']
+      : ['Routine symptom follow-up needed'],
+    firstAidSteps: isRed
+      ? ['Keep airway clear and position patient comfortably', 'Arrange emergency transit (108 Ambulance)']
+      : isOrange
+      ? ['Ensure patient rests in shade/ventilated area', 'Avoid oral medication without prescription']
+      : ['Maintain hydration and record vitals again before leaving'],
+    hospitalRoadmap: isRed
+      ? 'Direct bypass to Emergency Trauma/Obstetrics unit for immediate IV stabilization and specialist review.'
+      : isOrange
+      ? 'Priority OPD token, blood pressure & glucose screening, physician examination.'
+      : 'General OPD counter registration, vitals verification, routine physician prescription.',
+    model: 'Clinical Rule Engine (Offline Guardrail)'
+  };
+}

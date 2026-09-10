@@ -102,17 +102,17 @@ export default function PatientTypeScreen({ patient, onSelect, onSelectType }) {
   });
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {/* Patient Header Card */}
       {patient && (
-        <div className="p-3.5 bg-[#E8F7F3] border border-teal-200 rounded-xl flex items-center justify-between">
+        <div className="p-4 bg-teal-50/70 border border-teal-200/80 rounded-2xl flex items-center justify-between shadow-2xs">
           <div>
-            <p className="text-xs font-black text-teal-950">{patient.name}</p>
-            <p className="text-[11px] font-bold text-teal-700 mt-0.5">
-              {gender} • {age !== null ? `${age} yrs` : 'Age not recorded'}
+            <p className="text-sm font-black text-teal-950">{patient.name}</p>
+            <p className="text-xs font-bold text-teal-700 mt-0.5">
+              {gender || 'Resident'} • {age !== null ? `${age} yrs` : 'Age not recorded'}
             </p>
           </div>
-          <span className="text-[10px] font-bold bg-white text-teal-800 px-2.5 py-1 rounded-md border border-teal-200">
+          <span className="text-xs font-black bg-white text-teal-800 px-3 py-1 rounded-xl border border-teal-200 shadow-2xs">
             {gender === 'Male' ? 'Male Patient' : gender === 'Female' ? 'Female Patient' : 'Resident'}
           </span>
         </div>
@@ -131,7 +131,7 @@ export default function PatientTypeScreen({ patient, onSelect, onSelectType }) {
         </p>
       </div>
 
-      <div className="space-y-2.5">
+      <div className="space-y-3">
         {visibleTypes.map((type) => {
           const label = lang === 'mr' ? type.labelMr : lang === 'hi' ? type.labelHi : type.labelEn;
           const sub = lang === 'mr' ? type.subMr : lang === 'hi' ? type.subHi : type.subEn;
@@ -141,14 +141,16 @@ export default function PatientTypeScreen({ patient, onSelect, onSelectType }) {
               key={type.id}
               type="button"
               onClick={() => handleSelect && handleSelect(type.id)}
-              className={`w-full flex items-center gap-3.5 p-4 rounded-2xl border transition-all text-left group cursor-pointer shadow-xs ${type.card}`}
+              className={`w-full flex items-center gap-4 p-4.5 rounded-2xl border-2 transition-all text-left group cursor-pointer shadow-2xs hover:shadow-xs hover:scale-[1.005] ${type.card}`}
             >
-              <span className="text-3xl shrink-0 leading-none">{type.emoji}</span>
-              <div className="flex-1 min-w-0">
-                <p className={`font-extrabold text-sm leading-tight ${type.labelColor}`}>{label}</p>
-                <p className="text-[11px] font-medium text-slate-600 mt-0.5 leading-snug">{sub}</p>
+              <div className="w-12 h-12 rounded-2xl bg-white/90 border border-black/5 flex items-center justify-center text-3xl shrink-0 shadow-2xs">
+                {type.emoji}
               </div>
-              <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-slate-800 group-hover:translate-x-1 transition-all shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className={`font-black text-sm sm:text-base leading-tight ${type.labelColor}`}>{label}</p>
+                <p className="text-xs font-medium text-slate-600 mt-1 leading-snug">{sub}</p>
+              </div>
+              <ArrowRight className="w-5 h-5 text-slate-400 group-hover:text-slate-800 group-hover:translate-x-1 transition-all shrink-0" />
             </button>
           );
         })}

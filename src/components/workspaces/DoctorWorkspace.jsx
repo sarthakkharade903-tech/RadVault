@@ -1181,6 +1181,22 @@ export default function DoctorWorkspace({
                           }
                           return null;
                         })()}
+                        {(() => {
+                          const isEscort =
+                            attentionCase.ref.is_pregnant ||
+                            attentionCase.ref.symptoms?.toLowerCase().includes('asha accompanying') ||
+                            attentionCase.ref.clinical_summary?.toLowerCase().includes('asha accompanying') ||
+                            attentionCase.ref.reason?.toLowerCase().includes('asha accompanying') ||
+                            attentionCase.ref.asha_notes?.toLowerCase().includes('asha accompanying');
+                          if (isEscort) {
+                            return (
+                              <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-purple-500/30 text-purple-200 border border-purple-400/50 flex items-center gap-1">
+                                👩‍⚕️ ASHA Escorted (JSY Priority)
+                              </span>
+                            );
+                          }
+                          return null;
+                        })()}
                       </div>
 
                       <p className="text-xs text-slate-300 font-medium max-w-xl leading-relaxed">
@@ -1297,6 +1313,22 @@ export default function DoctorWorkspace({
                                       ABHA Pending
                                     </span>
                                   );
+                                })()}
+                                {(() => {
+                                  const isEscort =
+                                    ref.is_pregnant ||
+                                    ref.symptoms?.toLowerCase().includes('asha accompanying') ||
+                                    ref.clinical_summary?.toLowerCase().includes('asha accompanying') ||
+                                    ref.reason?.toLowerCase().includes('asha accompanying') ||
+                                    ref.asha_notes?.toLowerCase().includes('asha accompanying');
+                                  if (isEscort) {
+                                    return (
+                                      <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-purple-50 text-purple-800 border border-purple-200 flex items-center gap-1">
+                                        👩‍⚕️ ASHA Escorted (JSY Priority)
+                                      </span>
+                                    );
+                                  }
+                                  return null;
                                 })()}
                               </div>
                               <p className="text-xs text-slate-500 font-medium truncate mt-0.5">
