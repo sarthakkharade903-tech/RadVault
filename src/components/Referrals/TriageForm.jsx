@@ -387,6 +387,10 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
         return;
       }
 
+      const resolvedAbha = (patient?.abha_id && patient.abha_id !== 'PENDING' && patient.abha_id !== 'Not linked yet')
+        ? patient.abha_id
+        : (patientId ? localStorage.getItem(`radvault_abha_${patientId}`) : null);
+
       const patientVitals = {
         bp: intakeAnswers?.bp || patient?.vitals?.bp || patient?.bp || '',
         pulse: intakeAnswers?.pulse || patient?.vitals?.pulse || patient?.pulse || '',
@@ -394,7 +398,9 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
         temp: intakeAnswers?.temp || patient?.vitals?.temp || patient?.temp || '',
         weight: intakeAnswers?.weight || patient?.vitals?.weight || patient?.weight || '',
         height: intakeAnswers?.height || patient?.vitals?.height || patient?.height || '',
-        blood_sugar: intakeAnswers?.blood_sugar || patient?.vitals?.blood_sugar || patient?.blood_sugar || ''
+        blood_sugar: intakeAnswers?.blood_sugar || patient?.vitals?.blood_sugar || patient?.blood_sugar || '',
+        abha_number: resolvedAbha || '',
+        abha_id: resolvedAbha || ''
       };
 
       let destinationFacilityId = (selectedFacility?.id && isUuid(selectedFacility.id))
@@ -422,6 +428,7 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
         gender: resolvedGender,
         blood_group: patient?.blood_group || null,
         phone: resolvedPhone,
+        abha_id: resolvedAbha || null,
         created_by: 'ASHA Worker (Priya Deshmukh)',
         destination_hospital: chosenHospital,
         destination_facility_id: destinationFacilityId,

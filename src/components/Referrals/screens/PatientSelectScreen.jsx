@@ -173,7 +173,16 @@ export default function PatientSelectScreen({ onSelect, onSelectPatient, demoMod
                 </div>
               </div>
 
-              <div className="flex items-center gap-1.5 flex-shrink-0">
+              <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap">
+                {p.abha_id && p.abha_id !== "PENDING" && p.abha_id !== "Not linked yet" ? (
+                  <span className="text-[9px] font-black text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                    ✓ ABHA
+                  </span>
+                ) : (
+                  <span className="text-[9px] font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                    Pending ABHA
+                  </span>
+                )}
                 {p.is_pregnant && (
                   <span className="text-[9px] font-black text-rose-700 bg-rose-50 px-2 py-0.5 rounded border border-rose-200 flex items-center gap-0.5">
                     <Heart className="w-2.5 h-2.5" /> ANC

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { BPInput, TempInput, SectionLabel } from './SharedComponents';
+import { BPInput, PulseInput, SpO2Input, TempInput, SectionLabel } from './SharedComponents';
 
 const SYMPTOMS = [
   { id: 'fever', label: '🌡️ Fever' },
@@ -20,7 +20,9 @@ export default function AdultScreen({ onComplete }) {
   const [selected, setSelected] = useState([]);
   const [otherSymptom, setOtherSymptom] = useState('');
   const [bp, setBp] = useState('');
-  const [temp, setTemp] = useState(null);
+  const [pulse, setPulse] = useState('');
+  const [spo2, setSpo2] = useState('');
+  const [temp, setTemp] = useState('');
 
   const toggle = (id) => setSelected((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
   const isHighRisk = selected.includes('chest_pain') || selected.includes('breath_difficulty');
@@ -56,13 +58,17 @@ export default function AdultScreen({ onComplete }) {
         className="w-full border-2 border-dashed border-slate-300 focus:border-[#008080] rounded-xl px-4 py-3 text-sm outline-none mb-6" />
 
       <SectionLabel>Vitals (if measured)</SectionLabel>
-      <BPInput value={bp} onChange={setBp} />
-      <TempInput value={temp} onChange={setTemp} />
+      <div className="space-y-3">
+        <BPInput value={bp} onChange={setBp} />
+        <PulseInput value={pulse} onChange={setPulse} />
+        <SpO2Input value={spo2} onChange={setSpo2} />
+        <TempInput value={temp} onChange={setTemp} />
+      </div>
 
       <button type="button"
         disabled={selected.length === 0 && !otherSymptom.trim()}
-        onClick={() => onComplete({ symptoms: selected, otherSymptom, bp, temp })}
-        className="w-full py-4 bg-[#008080] hover:bg-[#006666] disabled:bg-slate-300 text-white font-extrabold rounded-2xl text-base transition-colors mt-2">
+        onClick={() => onComplete({ symptoms: selected, otherSymptom, bp, temp, pulse, spo2 })}
+        className="w-full py-4 bg-[#008080] hover:bg-[#006666] disabled:bg-slate-300 text-white font-extrabold rounded-2xl text-base transition-colors mt-4">
         Continue to AI Triage →
       </button>
     </div>

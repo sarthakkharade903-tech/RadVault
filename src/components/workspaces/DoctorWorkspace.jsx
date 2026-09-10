@@ -1123,7 +1123,7 @@ export default function DoctorWorkspace({
                         </span>
                       </div>
 
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-3 flex-wrap">
                         <h3 className="text-xl font-black text-white">{attentionCase.ref.patient_name}</h3>
                         {(attentionCase.ref.patient_age || attentionCase.ref.patient_gender) && (
                           <span className="text-xs text-slate-400 font-bold">
@@ -1132,6 +1132,18 @@ export default function DoctorWorkspace({
                             {attentionCase.ref.patient_gender || ''})
                           </span>
                         )}
+                        {(() => {
+                          const abha = attentionCase.ref.abha_id || attentionCase.ref.vitals?.abha_number || (attentionCase.ref.patient_id ? localStorage.getItem(`radvault_patient_abha_${attentionCase.ref.patient_id}`) : null);
+                          if (abha && abha !== 'PENDING') {
+                            return (
+                              <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-mono flex items-center gap-1">
+                                <span>✓ ABHA:</span>
+                                <span>{abha}</span>
+                              </span>
+                            );
+                          }
+                          return null;
+                        })()}
                       </div>
 
                       <p className="text-xs text-slate-300 font-medium max-w-xl leading-relaxed">
@@ -1233,6 +1245,22 @@ export default function DoctorWorkspace({
                                 <span className={`text-[9px] font-black px-2 py-0.5 rounded border ${labelClass}`}>
                                   {ref.priority_label || ref.priority}
                                 </span>
+                                {(() => {
+                                  const abhaNum = ref.abha_id || ref.vitals?.abha_number || (ref.patient_id ? localStorage.getItem(`radvault_patient_abha_${ref.patient_id}`) : null);
+                                  if (abhaNum && abhaNum !== 'PENDING') {
+                                    return (
+                                      <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1 font-mono">
+                                        <span>✓ ABHA:</span>
+                                        <span>{abhaNum}</span>
+                                      </span>
+                                    );
+                                  }
+                                  return (
+                                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-400">
+                                      ABHA Pending
+                                    </span>
+                                  );
+                                })()}
                               </div>
                               <p className="text-xs text-slate-500 font-medium truncate mt-0.5">
                                 {ref.destination_department} · Status: <strong>{ref.status}</strong> · Assigned: {doctorProfile?.name || 'Specialist'}
@@ -1342,6 +1370,22 @@ export default function DoctorWorkspace({
                                   🎟️ {ref.slot_preference || `Token #${ref.ai_note?.match(/TOKEN:\s*([^|]+)/i)?.[1]?.trim()}`}
                                 </span>
                               )}
+                              {(() => {
+                                const abhaNum = ref.abha_id || ref.vitals?.abha_number || (ref.patient_id ? localStorage.getItem(`radvault_patient_abha_${ref.patient_id}`) : null);
+                                if (abhaNum && abhaNum !== 'PENDING') {
+                                  return (
+                                    <span className="text-[10px] font-black px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1 font-mono">
+                                      <span>✓ ABHA:</span>
+                                      <span>{abhaNum}</span>
+                                    </span>
+                                  );
+                                }
+                                return (
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-400">
+                                    ABHA Pending
+                                  </span>
+                                );
+                              })()}
                             </div>
 
                             <span className={`text-[10px] font-black px-2.5 py-0.5 rounded border ${
@@ -1507,6 +1551,23 @@ export default function DoctorWorkspace({
                   }`}>
                     ● {activeCase.status}
                   </span>
+                  {(() => {
+                    const abhaNum = activeCase.abha_id || activeCase.vitals?.abha_number || (activeCase.patient_id ? localStorage.getItem(`radvault_patient_abha_${activeCase.patient_id}`) : null) || clinicalDocket?.abhaId;
+                    if (abhaNum && abhaNum !== 'PENDING') {
+                      return (
+                        <span className="text-[10px] font-black px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1 font-mono">
+                          <span>✓ ABHA:</span>
+                          <span>{abhaNum}</span>
+                          <span className="text-[9px] bg-emerald-200/60 text-emerald-800 px-1 py-0.2 rounded font-sans font-extrabold">ABDM Linked</span>
+                        </span>
+                      );
+                    }
+                    return (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-500 border border-slate-200">
+                        ABHA: Unlinked
+                      </span>
+                    );
+                  })()}
                 </div>
                 <h2 className="text-lg font-black text-slate-900 mt-1.5">{activeCase.patient_name}</h2>
                 <p className="text-xs text-[#7C3AED] font-bold mt-0.5">
