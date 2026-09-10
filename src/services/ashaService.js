@@ -295,6 +295,10 @@ export async function familyLogin(email, password) {
  * Returns: Array of vitals_history rows.
  */
 export async function getVitalsHistory(patientId) {
+  const isUuid = (val) => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+  if (!patientId || !isUuid(patientId)) {
+    return { data: [], error: null };
+  }
   const { data, error } = await supabase
     .from('vitals_history')
     .select('*')
