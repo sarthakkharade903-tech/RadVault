@@ -45,6 +45,7 @@ import {
   updateEmergencyDispatch,
   parseEmergencyRecord
 } from '../../services/emergencyService';
+import { CONNECTED_FACILITIES } from '../../services/locationService';
 
 // Canonical Referral Status constants
 const REFERRAL_STATUS = {
@@ -2101,9 +2102,17 @@ export default function HospitalStaffWorkspace({
   const [doctors, setDoctors] = useState([]);
   const [staffProfile, setStaffProfile] = useState(null);
   const [facility, setFacility] = useState(null);
+  const [selectedFacilityId, setSelectedFacilityId] = useState(() => {
+    return localStorage.getItem('radvault_reception_facility_id') || 'ALL';
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+
+  const handleSelectFacility = (newId) => {
+    setSelectedFacilityId(newId);
+    localStorage.setItem('radvault_reception_facility_id', newId);
+  };
 
   // ─── Emergency SOS Dispatch CAD State ───
   const [emergencyCases, setEmergencyCases] = useState([]);
@@ -2373,18 +2382,30 @@ export default function HospitalStaffWorkspace({
     if (!isSilent) setLoading(true);
     setError('');
 
+    const targetFac = CONNECTED_FACILITIES.find(f => f.id === selectedFacilityId);
+
     if (isDemoMode) {
+      const activeFac = targetFac || CONNECTED_FACILITIES[0];
       setStaffProfile({
         name: 'Sagar Deshpande (Operations Desk)',
-        phc_name: 'Shrirampur Primary Health Centre'
+        phc_name: targetFac ? activeFac.name : 'District Referral Network (All Hospitals)'
       });
       setFacility({
-        id: 'f1111111-1111-1111-1111-111111111111',
-        name: 'Shrirampur Primary Health Centre',
-        district: 'Ahmednagar'
+        id: activeFac.id,
+        name: activeFac.name,
+        district: activeFac.district
       });
       setDoctors(DEMO_DOCTORS);
-      setReferrals(demoDataEnabled ? INITIAL_DEMO_REFERRALS : []);
+      const filteredDemo = selectedFacilityId === 'ALL'
+        ? (demoDataEnabled ? INITIAL_DEMO_REFERRALS : [])
+        : (demoDataEnabled
+            ? INITIAL_DEMO_REFERRALS.filter(r =>
+                r.destination_facility_id === selectedFacilityId ||
+                r.destination_hospital?.toLowerCase().includes(activeFac.name.toLowerCase()) ||
+                (activeFac.name.toLowerCase().includes('shrirampur') && !r.destination_hospital?.toLowerCase().includes('sassoon'))
+              )
+            : []);
+      setReferrals(filteredDemo);
       if (!isSilent) setLoading(false);
       return;
     }
@@ -2407,44 +2428,50 @@ export default function HospitalStaffWorkspace({
 
       if (staffErr) throw staffErr;
 
-      if (!staffData || !staffData.facility_id || !staffData.facilities) {
-        throw new Error('Facility information unavailable. Please retry or contact an administrator.');
-      }
+      const resolvedStaffName = staffData?.name || activeUser.email?.split('@')[0] || 'Hospital Staff';
+      const defaultFacility = staffData?.facilities || CONNECTED_FACILITIES[0];
 
-      const resolvedFacilityId = staffData.facility_id;
-      const resolvedFacilityName = staffData.facilities.name;
-      const resolvedFacilityDistrict = staffData.facilities.district || 'District';
-      const resolvedStaffName = staffData.name || activeUser.email?.split('@')[0] || 'Hospital Staff';
+      const activeFacilityObj = targetFac || (selectedFacilityId === 'ALL'
+        ? {
+            id: 'ALL',
+            name: 'All Connected Facilities (District Network)',
+            district: 'District Referral Network'
+          }
+        : defaultFacility);
 
       setStaffProfile({
         name: resolvedStaffName,
-        role: staffData.role || 'Hospital Staff Operations',
-        phc_name: resolvedFacilityName
+        role: staffData?.role || 'Hospital Staff Operations',
+        phc_name: activeFacilityObj.name
       });
 
       setFacility({
-        id: resolvedFacilityId,
-        name: resolvedFacilityName,
-        district: resolvedFacilityDistrict
+        id: targetFac ? targetFac.id : (defaultFacility.id || 'f1111111-1111-1111-1111-111111111111'),
+        name: targetFac ? targetFac.name : defaultFacility.name,
+        district: targetFac ? targetFac.district : defaultFacility.district
       });
 
-      // 3. Fetch Scoped Doctors for this Facility
-      const { data: doctorsData, error: docErr } = await supabase
-        .from('doctors')
-        .select('*')
-        .eq('facility_id', resolvedFacilityId);
-
+      // 3. Fetch Scoped Doctors for this Facility (or all doctors if ALL)
+      let docQuery = supabase.from('doctors').select('*');
+      if (selectedFacilityId !== 'ALL') {
+        docQuery = docQuery.eq('facility_id', targetFac ? targetFac.id : defaultFacility.id);
+      }
+      const { data: doctorsData, error: docErr } = await docQuery;
       if (docErr) console.warn('[HospitalStaff] doctors query warning:', docErr.message);
+      setDoctors(doctorsData && doctorsData.length > 0 ? doctorsData : DEMO_DOCTORS);
 
-      setDoctors(doctorsData || []);
-
-      // 4. Fetch Canonical Referrals for this Facility (Strictly Scoped)
-      const { data: refData, error: refErr } = await supabase
+      // 4. Fetch Canonical Referrals for this Facility (or all facilities if ALL)
+      let refQuery = supabase
         .from('referrals')
         .select('*')
-        .eq('destination_facility_id', resolvedFacilityId)
         .order('created_at', { ascending: false });
 
+      if (selectedFacilityId !== 'ALL' && targetFac) {
+        const prefix = targetFac.name.split(' ')[0];
+        refQuery = refQuery.or(`destination_facility_id.eq.${targetFac.id},destination_hospital.ilike.%${prefix}%`);
+      }
+
+      const { data: refData, error: refErr } = await refQuery;
       if (refErr) throw refErr;
 
       // 5. Separately Fetch Emergency SOS from care_requests (Emergency CAD Console)
@@ -2545,14 +2572,14 @@ export default function HospitalStaffWorkspace({
     } finally {
       if (!isSilent) setLoading(false);
     }
-  }, [isDemoMode, demoDataEnabled]);
+  }, [isDemoMode, demoDataEnabled, selectedFacilityId]);
 
   // Load Initial Data & Real-time subscription
   useEffect(() => {
     loadSupabaseData(false);
 
     if (!isDemoMode) {
-      const channel1 = supabase.channel('staff_referrals_live')
+      const channel1 = supabase.channel(`staff_referrals_live_${selectedFacilityId}`)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'referrals' }, () => {
           loadSupabaseData(true);
         })
@@ -2567,7 +2594,7 @@ export default function HospitalStaffWorkspace({
         clearInterval(interval);
       };
     }
-  }, [isDemoMode, demoDataEnabled, loadSupabaseData]);
+  }, [isDemoMode, demoDataEnabled, selectedFacilityId, loadSupabaseData]);
 
   // Clear toast alert helper
   const showToast = (msg) => {
@@ -3106,11 +3133,40 @@ export default function HospitalStaffWorkspace({
                   </span>
                 )}
               </div>
-              <p className="text-xs text-slate-500 font-semibold mt-1 flex items-center gap-1.5 flex-wrap">
-                <span className="text-slate-700 font-bold">📍 {facility?.name || 'Primary Health Centre'}</span>
-                <span className="text-slate-300">·</span>
-                <span>Staff: {staffProfile?.name || 'Coordination Desk'}</span>
-              </p>
+              <div className="mt-2 flex items-center gap-2 flex-wrap">
+                {/* Active Hospital Facility Switcher */}
+                <div className="flex items-center gap-1.5 bg-teal-50 border border-teal-200/90 px-3 py-1.5 rounded-xl shadow-2xs">
+                  <Building2 className="w-3.5 h-3.5 text-[#008F83] shrink-0" />
+                  <span className="text-[10px] font-black text-[#008F83] uppercase tracking-wider shrink-0">Facility:</span>
+                  <select
+                    value={selectedFacilityId}
+                    onChange={(e) => handleSelectFacility(e.target.value)}
+                    className="bg-transparent text-xs font-black text-slate-800 focus:outline-none cursor-pointer pr-1"
+                    title="Switch active government hospital context"
+                  >
+                    <option value="ALL">🌐 All Connected Facilities (District Network)</option>
+                    {CONNECTED_FACILITIES.map(f => (
+                      <option key={f.id} value={f.id}>
+                        🏥 {f.name} ({f.district})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <span className="text-slate-300 hidden sm:inline">·</span>
+
+                <span className="text-xs text-slate-600 font-semibold flex items-center gap-1">
+                  <UserCheck className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Staff: {staffProfile?.name || 'Coordination Desk'}</span>
+                </span>
+
+                {selectedFacilityId !== 'ALL' && (
+                  <span className="text-[10px] font-extrabold bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
+                    <span>Active Intake</span>
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 

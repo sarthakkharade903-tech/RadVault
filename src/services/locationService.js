@@ -3,28 +3,76 @@
 
 import { govHospitals } from '../data/govHospitals';
 
+export const CONNECTED_FACILITIES = [
+  {
+    id: 'f1111111-1111-1111-1111-111111111111',
+    name: 'Shrirampur Primary Health Centre',
+    district: 'Ahmednagar',
+    lat: 19.6174,
+    lon: 74.6595,
+    type: 'PHC',
+    typeLabel: 'Primary Health Centre (PHC)',
+    isIntegrated: true,
+    isGovernment: true
+  },
+  {
+    id: 'f2222222-2222-2222-2222-222222222222',
+    name: 'Pune Sassoon General Hospital',
+    district: 'Pune',
+    lat: 18.5284,
+    lon: 73.8746,
+    type: 'DH',
+    typeLabel: 'Tertiary Teaching Hospital (DH)',
+    isIntegrated: true,
+    isGovernment: true
+  },
+  {
+    id: 'f3333333-3333-3333-3333-333333333333',
+    name: 'Aundh District Hospital, Pune',
+    district: 'Pune',
+    lat: 18.5714,
+    lon: 73.8056,
+    type: 'DH',
+    typeLabel: 'District Civil Hospital (DH)',
+    isIntegrated: true,
+    isGovernment: true
+  },
+  {
+    id: 'f4444444-4444-4444-4444-444444444444',
+    name: 'Shirwal Primary Health Centre',
+    district: 'Satara',
+    lat: 18.1340,
+    lon: 73.9820,
+    type: 'PHC',
+    typeLabel: 'Primary Health Centre (PHC)',
+    isIntegrated: true,
+    isGovernment: true
+  }
+];
+
+export function calculateHaversineDistance(lat1, lon1, lat2, lon2) {
+  if (lat1 == null || lon1 == null || lat2 == null || lon2 == null) return null;
+  const R = 6371; // Earth radius in km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const d = R * c;
+  return Number(d.toFixed(1));
+}
+
 export async function fetchGovHospitals(lat, lon) {
   try {
     // Default to Shirwal Village (ASHA Sector 4) if coordinates not provided
     let targetLat = lat ?? 18.1340;
     let targetLon = lon ?? 73.9820;
 
-    const R = 6371; // Earth radius in km
-
-    const calculateDistance = (hLat, hLon, uLat, uLon) => {
-      const dLat = (hLat - uLat) * Math.PI / 180;
-      const dLon = (hLon - uLon) * Math.PI / 180;
-      const a =
-        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.cos(uLat * Math.PI / 180) * Math.cos(hLat * Math.PI / 180) *
-        Math.sin(dLon / 2) * Math.sin(dLon / 2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-      return R * c;
-    };
-
     // Calculate with provided coords
     let results = govHospitals.map(h => {
-      const dist = calculateDistance(h.lat, h.lon, targetLat, targetLon);
+      const dist = calculateHaversineDistance(targetLat, targetLon, h.lat, h.lon) ?? 0;
       const typeLabel =
         h.type === 'DH' ? 'District Civil Hospital' :
         h.type === 'CHC' ? 'Rural Hospital / CHC' :
@@ -34,11 +82,12 @@ export async function fetchGovHospitals(lat, lon) {
       return {
         id: h.id,
         name: h.name,
-        dist: dist.toFixed(1),
+        dist: String(dist),
         rawDist: dist,
         type: h.type,
         typeLabel,
-        isGovernment: true
+        isGovernment: true,
+        isIntegrated: false
       };
     })
     .filter(h => h.rawDist <= 50) // Strictly within 50 km radius
@@ -50,7 +99,7 @@ export async function fetchGovHospitals(lat, lon) {
       targetLat = 18.1340;
       targetLon = 73.9820;
       results = govHospitals.map(h => {
-        const dist = calculateDistance(h.lat, h.lon, targetLat, targetLon);
+        const dist = calculateHaversineDistance(targetLat, targetLon, h.lat, h.lon) ?? 0;
         const typeLabel =
           h.type === 'DH' ? 'District Civil Hospital' :
           h.type === 'CHC' ? 'Rural Hospital / CHC' :
@@ -60,11 +109,12 @@ export async function fetchGovHospitals(lat, lon) {
         return {
           id: h.id,
           name: h.name,
-          dist: dist.toFixed(1),
+          dist: String(dist),
           rawDist: dist,
           type: h.type,
           typeLabel,
-          isGovernment: true
+          isGovernment: true,
+          isIntegrated: false
         };
       })
       .filter(h => h.rawDist <= 50)
@@ -79,19 +129,26 @@ export async function fetchGovHospitals(lat, lon) {
 }
 
 export function getCurrentLocation() {
-  return new Promise((resolve, reject) => {
-    if ('geolocation' in navigator) {
+  return new Promise((resolve) => {
+    if (typeof navigator !== 'undefined' && 'geolocation' in navigator) {
       navigator.geolocation.getCurrentPosition(
-        (p) => resolve({ lat: p.coords.latitude, lon: p.coords.longitude }),
+        (p) => {
+          resolve({
+            lat: p.coords.latitude,
+            lon: p.coords.longitude,
+            accuracy: p.coords.accuracy,
+            isFallback: false
+          });
+        },
         (err) => {
-          console.warn("Geolocation permission or timeout, falling back to local sector coords:", err);
-          // Fallback to Sector 4 Shirwal coordinates
+          console.warn("Live GPS unavailable or permission denied, using Maharashtra sector coords:", err.message);
           resolve({ lat: 18.1340, lon: 73.9820, isFallback: true });
         },
-        { timeout: 7000, enableHighAccuracy: true }
+        { timeout: 6000, enableHighAccuracy: true, maximumAge: 30000 }
       );
     } else {
       resolve({ lat: 18.1340, lon: 73.9820, isFallback: true });
     }
   });
 }
+

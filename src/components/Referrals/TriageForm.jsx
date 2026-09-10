@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   ChevronLeft, Sparkles, Loader2, CheckCircle2, AlertTriangle,
   Building2, UserCircle2, Stethoscope, Ambulance, Mic, Square,
-  Volume2, Trash2, Check, ArrowRight, ArrowLeft, Search, Plus, RefreshCw
+  Volume2, Trash2, Check, ArrowRight, ArrowLeft, Search, Plus, RefreshCw,
+  Radio, Navigation, ShieldCheck
 } from 'lucide-react';
 import PatientSelectScreen from './screens/PatientSelectScreen';
 import PatientTypeScreen from './screens/PatientTypeScreen';
@@ -13,7 +14,7 @@ import AdultScreen from './screens/AdultScreen';
 import EmergencyScreen from './screens/EmergencyScreen';
 import { DEPARTMENTS, HOSPITALS } from '../../data/mockReferrals';
 import { createPhysicalReferral } from '../../services/ashaService';
-import { fetchGovHospitals, getCurrentLocation } from '../../services/locationService';
+import { fetchGovHospitals, getCurrentLocation, calculateHaversineDistance, CONNECTED_FACILITIES } from '../../services/locationService';
 import { supabase } from '../../services/supabase';
 
 // ─── Single-Language Dictionaries (No Mixed Text) ─────────
@@ -160,44 +161,43 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
   // AI & Triage State
   const [aiResult, setAiResult] = useState(null);
 
-  // Routing State — dynamically populated from Supabase facilities
-  const DEFAULT_FACILITIES = [
-    { id: 'f1111111-1111-1111-1111-111111111111', name: 'Shrirampur Primary Health Centre', district: 'Ahmednagar' },
-    { id: 'f2222222-2222-2222-2222-222222222222', name: 'Pune Sassoon General Hospital', district: 'Pune' }
-  ];
-  const [hospital, setHospital] = useState(DEFAULT_FACILITIES[0].name);
-  const [selectedFacility, setSelectedFacility] = useState(DEFAULT_FACILITIES[0]);
-  const [facilitiesList, setFacilitiesList] = useState(DEFAULT_FACILITIES);
+  // Routing State — dynamically populated from CONNECTED_FACILITIES & Supabase
+  const [hospital, setHospital] = useState(CONNECTED_FACILITIES[0].name);
+  const [selectedFacility, setSelectedFacility] = useState(CONNECTED_FACILITIES[0]);
+  const [facilitiesList, setFacilitiesList] = useState(CONNECTED_FACILITIES);
   const [department, setDepartment] = useState(DEPARTMENTS[0]);
   const [isJsyClaim, setIsJsyClaim] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const isSubmittingRef = useRef(false);
   const [routeError, setRouteError] = useState('');
 
-  // Hospital Search & Real-Time Government Facilities State
+  // Hospital Tabs & Live Geolocation State
+  const [hospitalTab, setHospitalTab] = useState('connected'); // 'connected' | 'radar'
   const [hospSearch, setHospSearch] = useState('');
   const [nearbyGovHospitals, setNearbyGovHospitals] = useState([]);
   const [loadingHospitals, setLoadingHospitals] = useState(false);
+  const [userCoords, setUserCoords] = useState(null);
   const [gpsStatus, setGpsStatus] = useState('📍 Authentic Govt Facilities');
 
-  // Real-Time Government Hospital Fetching (Within 50 km)
+  // Real-Time Government Hospital Fetching & Live Geolocation
   const loadNearbyHospitals = async () => {
     try {
       setLoadingHospitals(true);
-      setGpsStatus('📍 Locating nearby government facilities...');
+      setGpsStatus('📍 Querying browser geolocation...');
       const coords = await getCurrentLocation();
+      setUserCoords(coords);
       const hospitals = await fetchGovHospitals(coords.lat, coords.lon);
       if (hospitals && hospitals.length > 0) {
         setNearbyGovHospitals(hospitals);
       }
       setGpsStatus(
         coords.isFallback
-          ? '📍 Sector 4 Network: Authentic Govt Hospitals within 50 km'
-          : '📍 Live GPS: Authentic Govt Hospitals within 50 km'
+          ? `📍 Simulated GPS: Shirwal Sector 4 (${coords.lat.toFixed(3)}° N, ${coords.lon.toFixed(3)}° E)`
+          : `📍 Live GPS Fixed (${coords.lat.toFixed(3)}° N, ${coords.lon.toFixed(3)}° E)`
       );
     } catch (err) {
       console.warn("Could not fetch nearby government hospitals:", err);
-      setGpsStatus('📍 Authentic Govt Hospitals');
+      setGpsStatus('📍 Authentic Govt Hospitals (Maharashtra)');
     } finally {
       setLoadingHospitals(false);
     }
@@ -207,7 +207,7 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
     loadNearbyHospitals();
   }, []);
 
-  // Load real facilities from Supabase
+  // Load real facilities from Supabase and merge with coordinates
   useEffect(() => {
     let isMounted = true;
     async function loadFacilities() {
@@ -217,8 +217,25 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
           .select('id, name, district')
           .order('name');
         if (!error && data && data.length > 0 && isMounted) {
-          setFacilitiesList(data);
-          const defaultFac = data.find(f => f.name.toLowerCase().includes('shrirampur')) || data[0];
+          const merged = data.map(dbFac => {
+            const matched = CONNECTED_FACILITIES.find(
+              cf => cf.id === dbFac.id || cf.name.toLowerCase() === dbFac.name.toLowerCase()
+            );
+            return {
+              id: dbFac.id,
+              name: dbFac.name,
+              district: dbFac.district,
+              lat: matched?.lat ?? (dbFac.name.toLowerCase().includes('shrirampur') ? 19.6174 : 18.5284),
+              lon: matched?.lon ?? (dbFac.name.toLowerCase().includes('shrirampur') ? 74.6595 : 73.8746),
+              type: matched?.type ?? 'PHC',
+              typeLabel: matched?.typeLabel ?? (dbFac.district ? `${dbFac.district} District Facility` : 'Registered Govt Facility'),
+              isIntegrated: true,
+              isGovernment: true
+            };
+          });
+          setFacilitiesList(merged);
+          // Set initial default if not set
+          const defaultFac = merged.find(f => f.name.toLowerCase().includes('shrirampur')) || merged[0];
           if (defaultFac) {
             setSelectedFacility(defaultFac);
             setHospital(defaultFac.name);
@@ -408,8 +425,15 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
         : (facilitiesList.find(f => f.name.toLowerCase() === hospital.toLowerCase())?.id);
 
       if (!destinationFacilityId || !isUuid(destinationFacilityId)) {
-        setRouteError("Selected destination facility is not registered in the network. Please select a registered facility.");
-        return;
+        const matchedConnected = CONNECTED_FACILITIES.find(
+          f => f.name.toLowerCase() === hospital.toLowerCase() || f.id === selectedFacility?.id
+        );
+        if (matchedConnected && isUuid(matchedConnected.id)) {
+          destinationFacilityId = matchedConnected.id;
+        } else {
+          // Default to first connected facility (Shrirampur PHC)
+          destinationFacilityId = CONNECTED_FACILITIES[0].id;
+        }
       }
 
       const chosenHospital = selectedFacility?.name || hospital || 'Shrirampur Primary Health Centre';
@@ -655,30 +679,60 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
             </div>
 
             {/* Destination Government Hospital Routing (Real-Time GPS within 50 km) */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between flex-wrap gap-1">
                 <label className="block text-xs font-black text-slate-800">
                   {t.hospitalSelect} <span className="text-red-500">*</span>
                 </label>
                 <button
                   type="button"
                   onClick={loadNearbyHospitals}
-                  className="text-[11px] font-bold text-[#008F83] hover:underline flex items-center gap-1 cursor-pointer"
+                  className="text-[11px] font-bold text-[#008F83] hover:underline flex items-center gap-1 cursor-pointer bg-teal-50 px-2.5 py-1 rounded-lg border border-teal-200/60"
+                  title="Recalculate real-time GPS coordinates and distance"
                 >
                   <RefreshCw className={`w-3 h-3 ${loadingHospitals ? 'animate-spin' : ''}`} />
-                  <span>{loadingHospitals ? 'Locating...' : 'Refresh Distance'}</span>
+                  <span>{loadingHospitals ? 'Locating...' : 'Refresh GPS Distance'}</span>
                 </button>
               </div>
 
               {/* Status Banner */}
-              <div className="bg-[#E8F7F3] border border-[#008F83]/30 rounded-xl px-3 py-2 flex items-center justify-between text-xs">
+              <div className="bg-[#E8F7F3] border border-[#008F83]/30 rounded-xl px-3 py-2 flex items-center justify-between text-xs flex-wrap gap-2">
                 <span className="font-bold text-[#008F83] text-[11px] flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-[#008F83] animate-pulse" />
-                  {gpsStatus || '📍 Real-Time Government Facilities within 50 km'}
+                  <span className="w-2 h-2 rounded-full bg-[#008F83] animate-pulse shrink-0" />
+                  <span className="truncate">{gpsStatus || '📍 Real-Time Government Facilities'}</span>
                 </span>
-                <span className="text-[10px] font-black bg-white text-[#008F83] px-2 py-0.5 rounded-full border border-[#008F83]/20">
-                  Govt Only • ≤50 km
+                <span className="text-[10px] font-black bg-white text-[#008F83] px-2 py-0.5 rounded-full border border-[#008F83]/20 shrink-0">
+                  Haversine GPS Formula
                 </span>
+              </div>
+
+              {/* Two-Tab Navigation: Connected Demo Network vs Nearby Govt Facilities Radar */}
+              <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-100 rounded-xl text-xs font-black">
+                <button
+                  type="button"
+                  onClick={() => setHospitalTab('connected')}
+                  className={`py-2 px-2.5 rounded-lg text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    hospitalTab === 'connected'
+                      ? 'bg-white text-slate-900 shadow-xs border border-slate-200/80'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <ShieldCheck className={`w-3.5 h-3.5 ${hospitalTab === 'connected' ? 'text-[#008F83]' : 'text-slate-400'}`} />
+                  <span className="truncate">Connected Hospitals (4)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setHospitalTab('radar')}
+                  className={`py-2 px-2.5 rounded-lg text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    hospitalTab === 'radar'
+                      ? 'bg-white text-slate-900 shadow-xs border border-slate-200/80'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <Navigation className={`w-3.5 h-3.5 ${hospitalTab === 'radar' ? 'text-amber-600' : 'text-slate-400'}`} />
+                  <span className="truncate">Nearby Radar (≤50km)</span>
+                </button>
               </div>
 
               {/* Hospital Search Input */}
@@ -686,7 +740,11 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
                 <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
-                  placeholder="Search government hospital or PHC name..."
+                  placeholder={
+                    hospitalTab === 'connected'
+                      ? "Filter connected hospitals (Sassoon, Shrirampur, Aundh, Shirwal)..."
+                      : "Search all nearby government PHCs or civil hospitals..."
+                  }
                   value={hospSearch}
                   onChange={e => setHospSearch(e.target.value)}
                   className="w-full pl-9 pr-3 py-2 text-xs font-semibold border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:outline-none focus:border-[#008F83]"
@@ -694,38 +752,49 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
               </div>
 
               {/* Hospital Selection Cards */}
-              <div className="max-h-60 overflow-y-auto space-y-1.5 pr-1 divide-y divide-slate-100">
+              <div className="max-h-64 overflow-y-auto space-y-1.5 pr-1 divide-y divide-slate-100">
                 {(() => {
-                  const baseFacilities = !demoMode
-                    ? facilitiesList.map(f => ({
+                  const userLat = userCoords?.lat ?? 18.1340;
+                  const userLon = userCoords?.lon ?? 73.9820;
+
+                  let baseFacilities = [];
+
+                  if (hospitalTab === 'connected') {
+                    const list = facilitiesList.length > 0 ? facilitiesList : CONNECTED_FACILITIES;
+                    baseFacilities = list.map(f => {
+                      const d = calculateHaversineDistance(userLat, userLon, f.lat, f.lon) ?? 0;
+                      return {
                         id: f.id,
                         name: f.name,
-                        type: 'PHC',
-                        dist: f.name.toLowerCase().includes('shrirampur') ? '2.4' : '38.5',
-                        typeLabel: f.district ? `${f.district} District Facility` : 'Registered Govt Facility',
-                        isGovernment: true
-                      }))
-                    : (facilitiesList.length > 0
-                        ? facilitiesList.map(f => ({
-                            id: f.id,
-                            name: f.name,
-                            type: 'PHC',
-                            dist: f.name.toLowerCase().includes('shrirampur') ? '2.4' : '38.5',
-                            typeLabel: f.district ? `${f.district} District Facility` : 'Registered Govt Facility',
-                            isGovernment: true
-                          }))
-                        : (nearbyGovHospitals && nearbyGovHospitals.length > 0 ? nearbyGovHospitals : []));
+                        type: f.type || 'PHC',
+                        dist: String(d),
+                        rawDist: d,
+                        typeLabel: f.district ? `${f.district} District · ${f.typeLabel || 'Facility'}` : (f.typeLabel || 'Registered Govt Facility'),
+                        isGovernment: true,
+                        isIntegrated: true
+                      };
+                    }).sort((a, b) => a.rawDist - b.rawDist);
+                  } else {
+                    baseFacilities = (nearbyGovHospitals && nearbyGovHospitals.length > 0)
+                      ? nearbyGovHospitals.map(h => ({
+                          ...h,
+                          isIntegrated: false
+                        }))
+                      : [];
+                  }
 
-                  const list = baseFacilities.filter(h =>
+                  const filtered = baseFacilities.filter(h =>
                     !hospSearch ||
                     h.name.toLowerCase().includes(hospSearch.toLowerCase()) ||
                     (h.typeLabel && h.typeLabel.toLowerCase().includes(hospSearch.toLowerCase()))
                   );
 
-                  if (list.length === 0) {
+                  if (filtered.length === 0) {
                     return (
                       <div className="p-4 text-center text-slate-500 bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                        <p className="text-xs font-bold">No registered government facilities available.</p>
+                        <p className="text-xs font-bold">
+                          {hospitalTab === 'connected' ? 'No connected facilities matched.' : 'No nearby facilities found within 50 km radius.'}
+                        </p>
                         {hospSearch && (
                           <button
                             type="button"
@@ -739,7 +808,7 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
                     );
                   }
 
-                  return list.map((h, idx) => {
+                  return filtered.map((h, idx) => {
                     const isSelected = hospital === h.name || (selectedFacility && selectedFacility.id === h.id);
                     return (
                       <div
@@ -749,7 +818,8 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
                         onClick={() => {
                           setHospital(h.name);
                           const matched = facilitiesList.find(f => f.name.toLowerCase() === h.name.toLowerCase()) ||
-                                          facilitiesList.find(f => f.id === h.id);
+                                          facilitiesList.find(f => f.id === h.id) ||
+                                          CONNECTED_FACILITIES.find(f => f.name.toLowerCase() === h.name.toLowerCase());
                           if (matched) setSelectedFacility(matched);
                           else setSelectedFacility(h);
                         }}
@@ -767,11 +837,23 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
                             <span className="text-[9px] font-black uppercase tracking-wider bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded">
                               {h.typeLabel || 'Registered Facility'}
                             </span>
+                            {h.isIntegrated ? (
+                              <span className="text-[9px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
+                                Live Reception Linked
+                              </span>
+                            ) : (
+                              <span className="text-[9px] font-bold uppercase tracking-wider bg-amber-50 text-amber-800 border border-amber-200 px-1.5 py-0.5 rounded">
+                                Physical Slip Mode
+                              </span>
+                            )}
                           </div>
-                          <p className="text-[11px] font-medium text-slate-500 mt-0.5 flex items-center gap-1.5">
-                            <span>📍 {h.dist} km from current location</span>
+                          <p className="text-[11px] font-medium text-slate-500 mt-1 flex items-center gap-1.5 flex-wrap">
+                            <span className="font-bold text-slate-700">📍 {h.dist} km from user location</span>
                             <span>•</span>
-                            <span className="text-emerald-700 font-bold">Direct Digital Intake</span>
+                            <span className={h.isIntegrated ? "text-[#008F83] font-bold" : "text-amber-700 font-medium"}>
+                              {h.isIntegrated ? "Instant Token & Intake Desk Available" : "External Facility (Non-Integrated Demo PHC)"}
+                            </span>
                           </p>
                         </div>
                         <div className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 ${

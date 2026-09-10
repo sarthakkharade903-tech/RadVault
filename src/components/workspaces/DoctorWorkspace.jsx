@@ -34,6 +34,7 @@ import {
   getFullPatientClinicalDocket,
   generateClinicalAiSummary
 } from '../../services/ashaService';
+import { CONNECTED_FACILITIES } from '../../services/locationService';
 
 
 
@@ -153,6 +154,15 @@ export default function DoctorWorkspace({
     setTimeout(() => setSuccessMsg(''), 4000);
   };
 
+  const [selectedFacilityId, setSelectedFacilityId] = useState(() => {
+    return localStorage.getItem('radvault_doctor_facility_id') || 'ALL';
+  });
+
+  const handleSelectFacility = (newId) => {
+    setSelectedFacilityId(newId);
+    localStorage.setItem('radvault_doctor_facility_id', newId);
+  };
+
   // ─── Live Teleconsultation Desk State ───
   const [teleQueue, setTeleQueue] = useState([]);
   const [activeTeleSession, setActiveTeleSession] = useState(null);
@@ -247,18 +257,26 @@ export default function DoctorWorkspace({
         doctorProfileRef.current = resolvedDoctor;
       }
 
-      // Authoritative doctor scoping: query referrals strictly by doctor_id UUID (ZERO name fallback)
-      // Concurrently query teleconsult queue for doctor's facility in parallel
+      // Multi-Facility & Doctor Scoping
+      const targetFac = CONNECTED_FACILITIES.find(f => f.id === selectedFacilityId);
+      const activeFacilityName = targetFac ? targetFac.name : resolvedDoctor.facility_name;
+
+      let referralQuery = supabase
+        .from('referrals')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (selectedFacilityId === 'MY_ASSIGNED' && resolvedDoctor.id) {
+        referralQuery = referralQuery.eq('doctor_id', resolvedDoctor.id);
+      } else if (selectedFacilityId !== 'ALL' && targetFac) {
+        const prefix = targetFac.name.split(' ')[0];
+        referralQuery = referralQuery.or(`destination_facility_id.eq.${targetFac.id},destination_hospital.ilike.%${prefix}%`);
+      }
+
       const [resReferrals, resTele] = await Promise.all([
-        resolvedDoctor.id
-          ? supabase
-              .from('referrals')
-              .select('*')
-              .eq('doctor_id', resolvedDoctor.id)
-              .order('created_at', { ascending: false })
-              .limit(50)
-          : Promise.resolve({ data: [], error: null }),
-        getWaitingTeleconsultSessions(resolvedDoctor.facility_name).catch(err => {
+        referralQuery,
+        getWaitingTeleconsultSessions(activeFacilityName).catch(err => {
           console.warn('[DoctorWorkspace] Teleconsult fetch error in parallel load:', err);
           return { data: [] };
         })
@@ -331,7 +349,7 @@ export default function DoctorWorkspace({
     } finally {
       if (!isSilent) setLoading(false);
     }
-  }, [isDemoMode, demoDataEnabled]);
+  }, [isDemoMode, demoDataEnabled, selectedFacilityId]);
 
 
   const loadTeleQueue = useCallback(async () => {
@@ -347,7 +365,7 @@ export default function DoctorWorkspace({
   useEffect(() => {
     loadDoctorDbData(false);
 
-    const channel = supabase.channel('doctor_referrals_live')
+    const channel = supabase.channel(`doctor_referrals_live_${selectedFacilityId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'referrals' }, () => {
         loadDoctorDbData(true);
       })
@@ -898,10 +916,29 @@ export default function DoctorWorkspace({
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="hidden sm:flex flex-col text-right">
+          <div className="flex items-center gap-2 sm:gap-3">
+            {/* Facility Context Selector for Doctor */}
+            <div className="flex items-center gap-1.5 bg-[#F5F3FF] border border-[#7C3AED]/30 px-2.5 py-1.5 rounded-xl shadow-2xs">
+              <Building2 className="w-3.5 h-3.5 text-[#7C3AED] shrink-0" />
+              <select
+                value={selectedFacilityId}
+                onChange={(e) => handleSelectFacility(e.target.value)}
+                className="bg-transparent text-xs font-black text-slate-800 focus:outline-none cursor-pointer pr-1 max-w-[180px] sm:max-w-none truncate"
+                title="Filter doctor queue by facility"
+              >
+                <option value="ALL">🌐 All Network Facilities</option>
+                <option value="MY_ASSIGNED">👨‍⚕️ My Assigned Cases Only</option>
+                {CONNECTED_FACILITIES.map(f => (
+                  <option key={f.id} value={f.id}>
+                    🏥 {f.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="hidden md:flex flex-col text-right">
               <span className="text-xs font-black text-slate-900">{doctorProfile?.name || 'Dr. Arvind Kulkarni'}</span>
-              <span className="text-[10px] font-bold text-[#7C3AED]">{doctorProfile?.facility_name || 'Shrirampur PHC'}</span>
+              <span className="text-[10px] font-bold text-[#7C3AED]">{doctorProfile?.specialty || 'General Medicine'}</span>
             </div>
             <button
               onClick={loadDoctorDbData}
