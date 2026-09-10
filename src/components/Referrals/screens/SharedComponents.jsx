@@ -298,21 +298,61 @@ export function SpO2Input({ value = '', onChange }) {
 
 // ─── Temperature Selector ─────────────────────────────────────────────────────
 export function TempInput({ value, onChange }) {
-  const isFever = value && value !== 'No Fever';
+  const isNumeric = value && !isNaN(parseFloat(value));
+  const isNormal = value === '98.4' || value === 'No Fever' || (isNumeric && parseFloat(value) < 100);
+  const isFever = value === '101.2' || value === 'Fever' || (isNumeric && parseFloat(value) >= 100);
+
   return (
     <div className="mb-5">
-      <p className="font-bold text-sm text-[#212121] mb-2.5">Body Temperature</p>
-      <div className="grid grid-cols-2 gap-3">
-        {['No Fever', 'Fever Present'].map((label) => (
-          <button key={label} type="button" onClick={() => onChange(label === 'Fever Present' ? 'Fever' : 'No Fever')}
-            className={`py-3.5 rounded-xl font-extrabold text-sm border-2 transition-all cursor-pointer ${
-              (label === 'Fever Present' && isFever) || (label === 'No Fever' && value === 'No Fever')
-                ? label === 'Fever Present' ? 'bg-[#D32F2F] border-[#D32F2F] text-white shadow-xs' : 'bg-[#008F83] border-[#008F83] text-white shadow-xs'
-                : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
-            }`}>
-            {label === 'Fever Present' ? '🔥 High Fever' : '🟢 Normal Temp'}
-          </button>
-        ))}
+      <div className="flex items-center justify-between mb-2">
+        <label className="font-bold text-sm text-[#212121]">Body Temperature (°F)</label>
+        {value && (
+          <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border ${
+            isFever ? 'bg-red-100 text-red-800 border-red-200' : 'bg-emerald-100 text-emerald-800 border-emerald-200'
+          }`}>
+            {isFever ? 'FEVER (>=100°F)' : 'NORMAL (<100°F)'}
+          </span>
+        )}
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 mb-2">
+        <button
+          type="button"
+          onClick={() => onChange('98.4')}
+          className={`py-2.5 px-3 rounded-xl font-bold text-xs border-2 transition-all cursor-pointer ${
+            isNormal && value
+              ? 'bg-[#008F83] border-[#008F83] text-white shadow-xs'
+              : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
+          }`}
+        >
+          🟢 Normal (98.4°F)
+        </button>
+        <button
+          type="button"
+          onClick={() => onChange('101.2')}
+          className={`py-2.5 px-3 rounded-xl font-bold text-xs border-2 transition-all cursor-pointer ${
+            isFever
+              ? 'bg-[#D32F2F] border-[#D32F2F] text-white shadow-xs'
+              : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
+          }`}
+        >
+          🔥 Fever (101.2°F)
+        </button>
+      </div>
+
+      <div className="bg-white p-2.5 rounded-xl border border-slate-200 flex items-center justify-between">
+        <input
+          type="text"
+          inputMode="decimal"
+          value={isNumeric ? value : ''}
+          onChange={(e) => {
+            const val = e.target.value.replace(/[^0-9.]/g, '').slice(0, 5);
+            onChange(val);
+          }}
+          placeholder="Or type exact °F (e.g. 99.2)"
+          className="text-xs font-bold text-slate-900 focus:outline-none placeholder-slate-400 w-full"
+        />
+        <span className="text-xs font-bold text-slate-400 shrink-0">°F</span>
       </div>
     </div>
   );

@@ -1447,12 +1447,30 @@ export async function getFullPatientClinicalDocket(patientId, patientName = null
     abhaId: null,
   };
 
-  // HARDENING: Clinical identity must be UUID-only. Never fallback to patient_name matching.
-  if (!patientId || !isValidUuid(patientId)) {
-    result.error = !patientId
-      ? 'Patient identifier is missing.'
-      : `Invalid clinical identifier format (not a UUID): ${patientId}`;
+  let targetUuid = patientId;
+  if (!patientId) {
+    result.error = 'Patient identifier is missing.';
     return result;
+  }
+
+  // Resolve Unified ID (e.g. MH-P-47893) to canonical UUID if not already a UUID
+  if (!isValidUuid(patientId)) {
+    try {
+      const { data: matchedPt } = await supabase
+        .from('patients')
+        .select('id')
+        .eq('unified_id', patientId)
+        .maybeSingle();
+      if (matchedPt?.id && isValidUuid(matchedPt.id)) {
+        targetUuid = matchedPt.id;
+      } else {
+        result.error = `Invalid clinical identifier format (not a UUID or known Unified ID): ${patientId}`;
+        return result;
+      }
+    } catch (e) {
+      result.error = `Resolution error for ${patientId}: ${e.message}`;
+      return result;
+    }
   }
 
   try {
@@ -1461,7 +1479,7 @@ export async function getFullPatientClinicalDocket(patientId, patientName = null
     const { data: vp, error: vpErr } = await supabase
       .from('village_patients')
       .select('id, name, age_years, gender, blood_group, mobile, abha_id, allergies, current_medications, chronic_conditions, has_chronic, is_pregnant, tb_symptoms')
-      .eq('id', patientId)
+      .eq('id', targetUuid)
       .maybeSingle();
 
     if (vpErr) {
@@ -1475,12 +1493,17 @@ export async function getFullPatientClinicalDocket(patientId, patientName = null
       const { data: pt, error: ptErr } = await supabase
         .from('patients')
         .select('id, full_name, age, gender, blood_group, phone_number, vitals')
-        .eq('id', patientId)
+        .eq('id', targetUuid)
         .maybeSingle();
 
       if (ptErr) console.warn('[ashaService] patients query error:', ptErr.message);
 
       if (pt) {
+        const ptVitals = pt.vitals || {};
+        const ptConditions = Array.isArray(ptVitals.conditions)
+          ? ptVitals.conditions
+          : (ptVitals.condition ? [ptVitals.condition] : []);
+
         clinicalProfile = {
           id: pt.id,
           name: pt.full_name,
@@ -1488,10 +1511,10 @@ export async function getFullPatientClinicalDocket(patientId, patientName = null
           gender: pt.gender,
           blood_group: pt.blood_group,
           mobile: pt.phone_number,
-          allergies: '',
-          current_medications: '',
-          chronic_conditions: [],
-          has_chronic: false,
+          allergies: ptVitals.allergies || '',
+          current_medications: ptVitals.medications || '',
+          chronic_conditions: ptConditions,
+          has_chronic: ptConditions.length > 0,
           is_pregnant: false,
           tb_symptoms: false,
           abha_id: null
@@ -1499,9 +1522,9 @@ export async function getFullPatientClinicalDocket(patientId, patientName = null
       }
     }
 
-    // If still unresolved, DO NOT search by name. Mark as unresolved.
+    // If still unresolved, mark as unresolved.
     if (!clinicalProfile) {
-      result.error = `Clinical identity unresolved: No registered patient record matches UUID ${patientId}.`;
+      result.error = `Clinical identity unresolved: No registered patient record matches UUID ${targetUuid}.`;
       return result;
     }
 
@@ -1519,42 +1542,59 @@ export async function getFullPatientClinicalDocket(patientId, patientName = null
     result.gender = clinicalProfile.gender || null;
     result.abhaId = clinicalProfile.abha_id || null;
 
-    // 2. Vitals history strictly by verified patientId UUID
+    // 2. Vitals history strictly by verified targetUuid
     const { data: vitals } = await supabase
       .from('vitals_history')
-      .select('recorded_at, bp_systolic, bp_diastolic, pulse_bpm, spo2_pct, temperature_c, blood_glucose_mgdl')
-      .eq('patient_id', patientId)
+      .select('recorded_at, bp_systolic, bp_diastolic, pulse_bpm, spo2_pct, temperature_c, blood_glucose, weight_kg, height_cm, source, recorded_by')
+      .eq('patient_id', targetUuid)
       .order('recorded_at', { ascending: false })
-      .limit(5);
+      .limit(8);
     result.vitals = vitals || [];
 
-    // 3. Past consultations strictly by verified patientId UUID
+    // 3. Past consultations strictly by verified targetUuid
     const { data: cons } = await supabase
       .from('consultations')
-      .select('id, diagnosis, clinical_assessment, treatment_advice, prescriptions, created_at, doctor_id, follow_up_recommended_date')
-      .eq('patient_id', patientId)
+      .select('id, diagnosis, clinical_assessment, treatment_advice, prescriptions, investigations, created_at, doctor_id, follow_up_recommended_date')
+      .eq('patient_id', targetUuid)
       .order('created_at', { ascending: false })
-      .limit(5);
+      .limit(8);
     result.pastConsultations = cons || [];
 
-    // 4. Past teleconsultations strictly by verified patientId UUID
+    // 4. Past teleconsultations strictly by verified targetUuid
     const { data: tele } = await supabase
       .from('teleconsult_sessions')
       .select('id, diagnosis, rx_medicines, doctor_advice, doctor_name, session_status, created_at, chief_complaint')
-      .eq('patient_id', patientId)
+      .eq('patient_id', targetUuid)
       .eq('session_status', 'COMPLETED')
       .order('created_at', { ascending: false })
       .limit(5);
     result.teleconsults = tele || [];
 
-    // 5. Past ASHA triage encounters strictly by verified patientId UUID
+    // 5. Past ASHA triage encounters strictly by verified targetUuid
     const { data: enc } = await supabase
       .from('encounters')
       .select('id, complaint, priority, symptoms, danger_signs, vitals, outcome, created_at')
-      .eq('patient_id', patientId)
+      .eq('patient_id', targetUuid)
       .order('created_at', { ascending: false })
-      .limit(4);
+      .limit(6);
     result.encounters = enc || [];
+
+    // 6. Medical documents & lab reports
+    const { data: docs } = await supabase
+      .from('medical_documents')
+      .select('id, title, category, document_date, notes, file_path, file_type, source, created_at')
+      .eq('patient_id', targetUuid)
+      .order('created_at', { ascending: false })
+      .limit(6);
+    result.documents = docs || [];
+
+    const { data: labs } = await supabase
+      .from('radvault_lab_reports')
+      .select('id, report_type, lab_name, uploaded_at, urgency, status, file_url, file_name, summary, doctor_comment')
+      .eq('patient_id', targetUuid)
+      .order('uploaded_at', { ascending: false })
+      .limit(6);
+    result.labReports = labs || [];
 
   } catch (err) {
     console.warn('[ashaService] getFullPatientClinicalDocket error:', err.message);
