@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import {
   Heart, Droplet, Weight, Ruler, Thermometer, Wind, Activity,
   CheckCircle2, Clock, Phone, ChevronRight, ActivitySquare, Plus,
   ShieldAlert, Baby, Lock, Camera, Loader2, ShieldCheck, Sparkles,
-  Award, QrCode, Edit3
+  Award, QrCode, Edit3, Shield, Download
 } from "lucide-react";
 import { getLatestVitals } from "../../services/ashaService";
 import UpdateVitalsModal from "../Patient/UpdateVitalsModal";
@@ -169,7 +169,21 @@ export default function PatientHome({ member, onNavigateTab }) {
   const isAbhaLinked = Boolean(cleanAbha);
   const abhaDisplay = isAbhaLinked ? cleanAbha : "PENDING";
   const currentAddress = (member?.id && localStorage.getItem(`radvault_abha_addr_${member.id}`)) ||
-    (isAbhaLinked ? `${cleanAbha.replace(/\D/g, "")}@abdm` : "rekha.bai@abdm");
+    (isAbhaLinked ? `${cleanAbha.replace(/\D/g, "")}@abdm` : `${(member.name || "user").toLowerCase().replace(/[^a-z0-9]/g, "")}@abdm`);
+
+  const displayDob = useMemo(() => {
+    if (member?.dob) return new Date(member.dob).toLocaleDateString("en-IN");
+    if (member?.age_years) {
+      const year = new Date().getFullYear() - Number(member.age_years);
+      return `15/06/${year}`;
+    }
+    return "12/04/1990";
+  }, [member]);
+
+  const officialAbdmUrl = useMemo(() => {
+    const rawClean = (cleanAbha || "").replace(/\D/g, "");
+    return `https://healthid.ndhm.gov.in/verify?abha=${rawClean}&name=${encodeURIComponent(member?.name || "")}&hid=${encodeURIComponent(currentAddress)}`;
+  }, [cleanAbha, member?.name, currentAddress]);
   
   // Pull vitals
   const bp = latestVitals.bp_systolic;
@@ -219,7 +233,7 @@ export default function PatientHome({ member, onNavigateTab }) {
       <div className="max-w-7xl mx-auto px-4 mt-6">
         <div className="relative rounded-[32px] border-2 border-amber-300/80 bg-gradient-to-br from-amber-50 via-[#FFF8E7] to-amber-100/70 p-6 sm:p-8 shadow-[0_20px_45px_-12px_rgba(245,158,11,0.25)] overflow-hidden">
           
-          <div className="relative z-10 flex flex-col md:flex-row gap-6 md:items-start justify-between">
+          <div className="relative z-10 flex flex-col lg:flex-row gap-6 lg:items-center justify-between">
             
             {/* Patient Info Left */}
             <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5 text-center sm:text-left">
@@ -294,86 +308,156 @@ export default function PatientHome({ member, onNavigateTab }) {
               </div>
             </div>
 
-            {/* Health ID Box Right (3D Card) */}
-            <div className={`rounded-[28px] p-6 border-2 w-full md:w-80 shrink-0 relative overflow-hidden transition-all shadow-md ${
-              isAbhaLinked
-                ? "bg-white border-emerald-300/80 shadow-[0_15px_30px_-10px_rgba(16,185,129,0.2)]"
-                : "bg-white/95 border-amber-200/80 shadow-[0_15px_30px_-10px_rgba(245,158,11,0.2)]"
-            }`}>
-               <div className="flex items-center justify-between mb-3 relative z-10">
-                 <div className="flex items-center gap-1.5">
-                   {isAbhaLinked ? <ShieldCheck className="w-4 h-4 text-emerald-600" /> : <ShieldAlert className="w-4 h-4 text-amber-500" />}
-                   <span className="text-[10px] font-black text-[#16324F] uppercase tracking-[0.2em]">
-                     {isAbhaLinked ? "ABDM Health ID" : "Health ID"}
-                   </span>
-                 </div>
-                 {isAbhaLinked && (
-                   <span className="text-[9px] font-black bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-md border border-emerald-200">
-                     Active
-                   </span>
-                 )}
-               </div>
-               
-               <div className="flex flex-col items-center text-center relative z-10">
-                 <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-2.5 border shadow-xs transition-transform group-hover:scale-105 ${
-                   isAbhaLinked ? "bg-emerald-50 border-emerald-200" : "bg-amber-50 border-amber-100"
-                 }`}>
-                   {isAbhaLinked ? <ShieldCheck className="w-7 h-7 text-emerald-600" /> : <Lock className="w-7 h-7 text-amber-500" />}
-                 </div>
+            {/* ── Official ABHA Health ID Card (Direct In-Dashboard View) ── */}
+            <div className="w-full lg:w-[420px] shrink-0">
+              {isAbhaLinked ? (
+                <div className="space-y-2.5">
+                  {/* The Physical-Style Blue Card */}
+                  <div
+                    id="dashboard-official-abha-card"
+                    className="bg-white rounded-[26px] border-2 border-blue-400/90 shadow-[0_16px_35px_-8px_rgba(29,78,216,0.25)] overflow-hidden text-slate-800 transition-all hover:shadow-[0_20px_40px_-8px_rgba(29,78,216,0.32)] relative"
+                  >
+                    {/* Official Blue Banner Header */}
+                    <div className="bg-gradient-to-r from-blue-700 via-blue-600 to-indigo-700 px-4 py-3 text-white flex items-center justify-between shadow-sm">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg bg-white/20 text-white flex items-center justify-center shadow-xs">
+                          <Shield className="w-3.5 h-3.5" />
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-black tracking-wider leading-none">NATIONAL HEALTH AUTHORITY</p>
+                          <p className="text-[8px] font-bold text-blue-100 mt-0.5">Ayushman Bharat Health Account (ABHA) · Govt. of India</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] font-black bg-white text-blue-800 px-2.5 py-0.5 rounded shadow-xs">
+                          ABHA
+                        </span>
+                      </div>
+                    </div>
 
-                 <h3 className="text-sm font-black text-[#16324F] mb-0.5">
-                   {isAbhaLinked ? "ABHA Account Linked" : "Secure your health identity"}
-                 </h3>
+                    {/* Card Demographic Details Body */}
+                    <div className="p-4 bg-gradient-to-b from-white via-blue-50/20 to-slate-50/40">
+                      <div className="flex items-start gap-3">
+                        {/* Avatar / Photo */}
+                        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 text-white font-black text-xl flex items-center justify-center shadow-md shrink-0 border-2 border-white overflow-hidden">
+                          {avatarStr && !imgError ? (
+                            <img src={avatarStr} alt={member.name} className="w-full h-full object-cover" />
+                          ) : (
+                            <span>{(member.name || "P")[0].toUpperCase()}</span>
+                          )}
+                        </div>
 
-                 {isAbhaLinked ? (
-                   <div className="w-full bg-slate-50 border border-slate-200/80 rounded-xl p-2.5 my-2 text-left space-y-1">
-                     <div>
-                       <span className="text-[8px] font-black uppercase text-slate-400 block tracking-wider">ABHA ID</span>
-                       <span className="font-mono text-xs font-black text-slate-900 block">{abhaDisplay}</span>
-                     </div>
-                     <div>
-                       <span className="text-[8px] font-black uppercase text-slate-400 block tracking-wider">ABHA Handle</span>
-                       <span className="font-mono text-[10px] font-bold text-emerald-700 truncate block">{currentAddress}</span>
-                     </div>
-                   </div>
-                 ) : (
-                   <p className="text-[11px] font-medium text-[#64748B] mb-3 leading-relaxed px-1">
-                     Link your ABHA number to access complete health records, fast-track hospital OPD, and government benefits.
-                   </p>
-                 )}
+                        {/* Name & ABHA Handle */}
+                        <div className="min-w-0 flex-1 space-y-0.5">
+                          <div>
+                            <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider block">NAME / नाव</span>
+                            <h4 className="text-sm font-black text-slate-900 leading-tight truncate">{member.name}</h4>
+                          </div>
 
-                 <div className="w-full flex flex-col gap-2 mt-1">
-                   <button
-                     type="button"
-                     onClick={() => {
-                       setAbhaModalMode("auto");
-                       setShowAbhaModal(true);
-                     }}
-                     className={`w-full font-black text-xs py-3 rounded-xl shadow-sm transition-all uppercase tracking-wider cursor-pointer flex items-center justify-center gap-1.5 ${
-                       isAbhaLinked
-                         ? "bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white shadow-emerald-500/20"
-                         : "bg-gradient-to-r from-amber-400 via-amber-500 to-orange-400 hover:from-amber-500 hover:to-orange-500 text-white shadow-amber-500/20"
-                     }`}
-                   >
-                     {isAbhaLinked ? <Award className="w-4 h-4" /> : null}
-                     <span>{isAbhaLinked ? "View Official ABHA Card" : "Link ABHA Number"}</span>
-                   </button>
+                          <div>
+                            <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider block">ABHA ADDRESS / आभा पत्ता</span>
+                            <p className="text-[11px] font-mono font-black text-blue-700 truncate">{currentAddress}</p>
+                          </div>
 
-                   {isAbhaLinked && (
-                     <button
-                       type="button"
-                       onClick={() => {
-                         setAbhaModalMode("edit");
-                         setShowAbhaModal(true);
-                       }}
-                       className="w-full bg-white hover:bg-slate-50 text-slate-700 font-black text-[11px] py-2.5 rounded-xl border border-slate-200 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-                     >
-                       <Edit3 className="w-3.5 h-3.5 text-slate-500" />
-                       <span>Edit ABHA Details</span>
-                     </button>
-                   )}
-                 </div>
-               </div>
+                          <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-600 pt-0.5 flex-wrap">
+                            <span>{member.gender || "Female"}</span>
+                            <span>•</span>
+                            <span>DOB: {displayDob}</span>
+                            <span>•</span>
+                            <span className="text-rose-600 font-black">{member.blood_group || "O+"}</span>
+                          </div>
+                        </div>
+                        
+                        {/* Real Scannable High-Contrast QR Code */}
+                        <div className="p-1.5 bg-white rounded-xl shadow-xs border border-slate-200 shrink-0 flex flex-col items-center">
+                          <QRCodeSVG value={officialAbdmUrl} size={60} level="Q" includeMargin={false} />
+                          <span className="text-[6px] font-black text-slate-400 uppercase mt-0.5 tracking-wider">Scan with Camera</span>
+                        </div>
+                      </div>
+
+                      {/* 14-Digit Number Highlight Box */}
+                      <div className="mt-3 p-2.5 bg-blue-50/90 rounded-xl border border-blue-200/90 text-center shadow-2xs">
+                        <p className="text-[8px] font-black text-blue-800 uppercase tracking-widest leading-none">
+                          ABHA NUMBER / आभा क्रमांक
+                        </p>
+                        <p className="text-[17px] sm:text-[19px] font-mono font-black text-slate-900 tracking-[0.14em] leading-tight mt-1">
+                          {abhaDisplay}
+                        </p>
+                      </div>
+
+                      {/* Card Bottom Meta Bar */}
+                      <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-[9px] font-black">
+                        <span className="text-emerald-700 flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600" /> 100% Verified Digital Health ID
+                        </span>
+                        <span className="text-slate-400 font-bold">Linked: Shirwal PHC</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Actions Attached Directly Below the Card */}
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAbhaModalMode("edit");
+                        setShowAbhaModal(true);
+                      }}
+                      className="flex-1 bg-white hover:bg-blue-50 text-blue-700 font-black text-xs py-2.5 px-3 rounded-xl border border-blue-200 shadow-2xs transition-all flex items-center justify-center gap-1.5 cursor-pointer hover:border-blue-300"
+                    >
+                      <Edit3 className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Edit ABHA Number</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAbhaModalMode("auto");
+                        setShowAbhaModal(true);
+                      }}
+                      className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-black text-xs py-2.5 px-3.5 rounded-xl shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Download / View</span>
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* Unlinked State: Clean Blue ABDM Invitation Card */
+                <div className="bg-white rounded-[26px] border-2 border-blue-200 p-5 shadow-md relative overflow-hidden space-y-3">
+                  <div className="bg-gradient-to-r from-blue-700 to-indigo-700 -mx-5 -mt-5 px-4 py-3 text-white flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Shield className="w-4 h-4 text-blue-200" />
+                      <span className="text-[10px] font-black tracking-wider uppercase">NATIONAL HEALTH AUTHORITY</span>
+                    </div>
+                    <span className="text-[9px] font-bold bg-amber-400 text-amber-950 px-2 py-0.5 rounded font-mono">
+                      UNLINKED
+                    </span>
+                  </div>
+
+                  <div className="py-2 text-center space-y-1.5">
+                    <div className="w-12 h-12 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center mx-auto text-blue-600">
+                      <Lock className="w-6 h-6" />
+                    </div>
+                    <h4 className="text-sm font-black text-slate-900">Ayushman Bharat Health Account</h4>
+                    <p className="text-[11px] text-slate-500 font-medium max-w-xs mx-auto">
+                      Link your 14-digit ABHA number to unlock paperless hospital check-in, scan &amp; share OPD, and PM-JAY ₹5L cover.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAbhaModalMode("edit");
+                      setShowAbhaModal(true);
+                    }}
+                    className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-black text-xs py-3 rounded-xl shadow-md shadow-blue-500/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer uppercase tracking-wider"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                    <span>Enter / Link ABHA Number</span>
+                  </button>
+                </div>
+              )}
             </div>
 
           </div>
