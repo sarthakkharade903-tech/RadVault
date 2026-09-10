@@ -933,7 +933,7 @@ export default function DoctorWorkspace({
                     <h1 className="text-lg font-black text-slate-900">
                       Welcome, {doctorProfile?.name || 'Dr. Arvind Kulkarni'}
                     </h1>
-                    <span className="text-[10px] uppercase font-black px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    <span className="text-[10px] uppercase font-black px-2 py-0.5 rounded-full bg-teal-50 text-teal-700 border border-teal-200">
                       ● Active Duty
                     </span>
                   </div>
@@ -1057,12 +1057,12 @@ export default function DoctorWorkspace({
 
                   <div 
                     onClick={() => { setActiveTab('cases'); setQueueFilter('Completed'); }}
-                    className="p-5 bg-white border border-slate-200 hover:border-emerald-500 rounded-2xl cursor-pointer transition-colors space-y-1 shadow-2xs"
+                    className="p-5 bg-white border border-slate-200 hover:border-teal-500 rounded-2xl cursor-pointer transition-colors space-y-1 shadow-2xs"
                   >
                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Signed Consultations</span>
                     <div className="flex items-baseline gap-2">
-                      <span className="text-2xl font-black text-emerald-700">{counts.completed}</span>
-                      <span className="text-xs text-emerald-600 font-bold">Finished</span>
+                      <span className="text-2xl font-black text-[#008F83]">{counts.completed}</span>
+                      <span className="text-xs text-[#008F83] font-bold">Finished</span>
                     </div>
                   </div>
                 </div>
@@ -1080,7 +1080,7 @@ export default function DoctorWorkspace({
                       attentionCase.type === 'IN_PROGRESS'
                         ? 'bg-[#1E1B4B] border-indigo-500/50 text-white'
                         : attentionCase.type === 'NEW_ASSIGNMENT'
-                        ? 'bg-[#052E26] border-emerald-600/50 text-white'
+                        ? 'bg-[#003D38] border-teal-600/50 text-white'
                         : 'bg-slate-900 border-slate-700 text-white'
                     }`}
                   >
@@ -1093,8 +1093,8 @@ export default function DoctorWorkspace({
                           </span>
                         )}
                         {attentionCase.type === 'NEW_ASSIGNMENT' && (
-                          <span className="text-[10px] uppercase font-black tracking-wider bg-emerald-500/20 text-emerald-300 px-3 py-0.5 rounded-full border border-emerald-500/40 flex items-center gap-1.5">
-                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping shrink-0" />
+                          <span className="text-[10px] uppercase font-black tracking-wider bg-teal-500/20 text-teal-300 px-3 py-0.5 rounded-full border border-teal-500/40 flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-teal-400 animate-ping shrink-0" />
                             NEW REFERRAL ASSIGNMENT
                           </span>
                         )}
@@ -1186,7 +1186,7 @@ export default function DoctorWorkspace({
                           attentionCase.type === 'IN_PROGRESS'
                             ? 'bg-indigo-400 hover:bg-indigo-300 text-slate-950'
                             : attentionCase.type === 'NEW_ASSIGNMENT'
-                            ? 'bg-emerald-400 hover:bg-emerald-300 text-slate-950'
+                            ? 'bg-teal-400 hover:bg-teal-300 text-slate-950'
                             : 'bg-[#7C3AED] hover:bg-[#6D28D9] text-white'
                         }`}
                       >
@@ -1279,7 +1279,7 @@ export default function DoctorWorkspace({
                                   <span>Open Case</span>
                                 </button>
                               ) : (
-                                <span className="text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-xl border border-emerald-100 flex items-center gap-1">
+                                <span className="text-[11px] font-bold text-[#008F83] bg-[#E8F7F3] px-2.5 py-1 rounded-xl border border-teal-100 flex items-center gap-1">
                                   <CheckCircle className="w-3.5 h-3.5" /> Consultation Signed
                                 </span>
                               )}
@@ -1341,7 +1341,7 @@ export default function DoctorWorkspace({
                     {filteredReferrals.map(ref => {
                       const isHigh = ref.priority === 'HIGH' || ref.priority === 'RED';
                       const isUrgent = ref.priority === 'ORANGE';
-                      const labelClass = isHigh ? 'bg-rose-50 text-rose-800 border-rose-200' : isUrgent ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-emerald-50 text-emerald-800 border-emerald-200';
+                      const labelClass = isHigh ? 'bg-rose-50 text-rose-800 border-rose-200' : isUrgent ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-teal-50 text-teal-800 border-teal-200';
                       const isWaiting = ref.status === 'Arrived' || ref.status === 'Accepted' || ref.status === 'Assigned' || ref.status === 'In Consultation';
 
                       return (
@@ -1393,7 +1393,7 @@ export default function DoctorWorkspace({
                                 ? 'bg-indigo-50 text-indigo-700 border-indigo-200 animate-pulse'
                                 : isWaiting
                                 ? 'bg-amber-50 text-amber-700 border-amber-200'
-                                : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                : 'bg-teal-50 text-teal-800 border-teal-200'
                             }`}>
                               ● {ref.status}
                             </span>
@@ -1436,7 +1436,7 @@ export default function DoctorWorkspace({
                                 <span>Open Clinical Case</span>
                               </button>
                             ) : (
-                              <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded border border-emerald-100 flex items-center gap-1 ml-auto">
+                              <span className="text-[10px] font-bold text-[#008F83] bg-[#E8F7F3] px-2.5 py-1 rounded border border-teal-100 flex items-center gap-1 ml-auto">
                                 <CheckCircle className="w-3.5 h-3.5" /> Consultation Signed
                               </span>
                             )}
@@ -2251,7 +2251,7 @@ export default function DoctorWorkspace({
 
               <div className="flex items-center gap-2.5">
                 <div className="bg-black/40 px-3 py-1.5 rounded-full text-xs font-mono font-bold flex items-center gap-2 border border-white/10">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <span className="w-2 h-2 rounded-full bg-teal-400 animate-pulse" />
                   <span>{Math.floor(teleCallTimer / 60)}:{(teleCallTimer % 60).toString().padStart(2, '0')}</span>
                 </div>
                 <button
@@ -2277,7 +2277,7 @@ export default function DoctorWorkspace({
                     </div>
                     <p className="font-extrabold text-xs text-white">{activeTeleSession.patient_name}</p>
                     <p className="text-[10px] text-teal-300 flex items-center justify-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-teal-400 animate-pulse" />
                       Village Patient Mobile Device (Audio/Video Live)
                     </p>
                     {/* Animated soundwave */}
@@ -2529,7 +2529,7 @@ export default function DoctorWorkspace({
                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
                       Frontline Vitals & Biometrics
                     </span>
-                    <span className="text-[9px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded font-bold">
+                    <span className="text-[9px] bg-teal-50 text-teal-700 border border-teal-200 px-2 py-0.5 rounded font-bold">
                       Real-Time
                     </span>
                   </div>
