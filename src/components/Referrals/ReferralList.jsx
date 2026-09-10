@@ -2,12 +2,41 @@ import React, { useState, useMemo } from 'react';
 import {
   MapPin, Globe, RefreshCw, Plus, ArrowLeft, Users, Flame,
   AlertTriangle, Activity, Clock, CheckCircle2, Video, Search,
-  X, ChevronRight, ArrowRight, Phone, ShieldCheck, Heart,
+  X, ChevronRight, ChevronLeft, ArrowRight, Phone, ShieldCheck, Heart,
   Trash2, Building2, User, Stethoscope, ChevronDown,
-  Ambulance, Home, HeartPulse, Hospital
+  Ambulance, Home, HeartPulse, Hospital, Calendar, Zap, Loader2
 } from 'lucide-react';
 
+// ─── DATE / SHIFT UTILITIES ───
+const getTodayDateStr = () => {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
+const toLocalDateStr = (isoString) => {
+  if (!isoString) return '';
+  const d = new Date(isoString);
+  if (isNaN(d.getTime())) return '';
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const formatDisplayDate = (dateStr) => {
+  if (!dateStr) return '';
+  const [year, month, day] = dateStr.split('-');
+  const d = new Date(Number(year), Number(month) - 1, Number(day));
+  if (isNaN(d.getTime())) return dateStr;
+  return d.toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric'
+  });
+};
 
 // ─── Multilingual Localization Dictionary ────────────────────
 const TRANSLATIONS = {
@@ -74,7 +103,22 @@ const TRANSLATIONS = {
     destinationHospital: "Destination Facility & Service",
     emergencyHelpline: "Emergency Helpline 108",
     closeBtn: "Close Dossier",
-    confirmDelete: "Are you sure you want to remove this referral?"
+    confirmDelete: "Are you sure you want to remove this referral?",
+    todayShift: "Today's Shift (24h)",
+    prevDay: "Prev Day",
+    nextDay: "Next Day",
+    allArchive: "All Archive",
+    shiftTitleToday: "Active Frontline Referrals (Last 24 Hours)",
+    shiftSubToday: "Live cases automatically clearing after 24h to keep queue clear",
+    shiftTitleDate: "Referral Shift Archive",
+    shiftSubDate: "Showing cases dispatched on",
+    shiftTitleArchive: "All-Time Referrals Archive",
+    shiftSubArchive: "Showing all historical referral records across facility history",
+    deleteReferralTitle: "Delete Patient Referral",
+    deleteReferralSub: "Permanently remove this referral and unlink across hospital and doctor queues?",
+    deleteImpactWarning: "Deleting this referral will remove the case from the frontline pipeline, unbind hospital intake records, and clean up doctor queues in Supabase. (Frontline demographic records in Patient register remain preserved).",
+    cancelBtn: "Cancel",
+    confirmDeleteBtn: "Confirm & Delete Referral"
   },
   mr: {
     location: "शिरवळ गाव · सेक्टर ४",
@@ -139,7 +183,22 @@ const TRANSLATIONS = {
     destinationHospital: "पाठवलेले रुग्णालय व विभाग",
     emergencyHelpline: "तातडीची रुग्णवाहिका १०८",
     closeBtn: "बंद करा",
-    confirmDelete: "तुम्हाला हे रेफरल खरोखर काढून टाकायचे आहे का?"
+    confirmDelete: "तुम्हाला हे रेफरल खरोखर काढून टाकायचे आहे का?",
+    todayShift: "आजची शिफ्ट (२४ तास)",
+    prevDay: "मागील दिवस",
+    nextDay: "पुढील दिवस",
+    allArchive: "सर्व जुनी नोंद",
+    shiftTitleToday: "सक्रिय रेफरल (मागील २४ तास)",
+    shiftSubToday: "रांगेत गर्दी होऊ नये म्हणून २४ तासांनंतर प्रकरणे आपोआप इतिहासामध्ये जातात",
+    shiftTitleDate: "रेफरल शिफ्ट नोंद",
+    shiftSubDate: "या दिवशी पाठवलेली प्रकरणे:",
+    shiftTitleArchive: "सर्वकालीन रेफरल दस्तऐवज",
+    shiftSubArchive: "सर्व ऐतिहासिक रेफरल नोंदी दाखवत आहे",
+    deleteReferralTitle: "रेफरल कायमचे काढून टाका",
+    deleteReferralSub: "हे रेफरल काढून रुग्णालय व डॉक्टर रांगेतून अनलिंक करायचे आहे का?",
+    deleteImpactWarning: "हे रेफरल काढून टाकल्यास रुग्णालय तपासणी व डॉक्टर रांगेतून ते हटवले जाईल. (रुग्णाची प्राथमिक नोंद कायम राहील).",
+    cancelBtn: "रद्द करा",
+    confirmDeleteBtn: "खात्री आहे, काढून टाका"
   },
   hi: {
     location: "शिरवल गांव · सेक्टर ४",
@@ -196,7 +255,22 @@ const TRANSLATIONS = {
     destinationHospital: "गंतव्य अस्पताल एवं विभाग",
     emergencyHelpline: "आपातकालीन एम्बुलेंस १०८",
     closeBtn: "बंद करें",
-    confirmDelete: "क्या आप वाकई यह रेफरल हटाना चाहते हैं?"
+    confirmDelete: "क्या आप वाकई यह रेफरल हटाना चाहते हैं?",
+    todayShift: "आज की शिफ्ट (24 घंटे)",
+    prevDay: "पिछला दिन",
+    nextDay: "अगला दिन",
+    allArchive: "सभी पुरानी सूची",
+    shiftTitleToday: "सक्रिय रेफरल (पिछले 24 घंटे)",
+    shiftSubToday: "कतार साफ रखने के लिए 24 घंटे बाद मामले अपने आप इतिहास में चले जाते हैं",
+    shiftTitleDate: "रेफरल शिफ्ट संग्रह",
+    shiftSubDate: "इस तारीख को भेजे गए मामले:",
+    shiftTitleArchive: "सर्वकालीन रेफरल संग्रह",
+    shiftSubArchive: "सभी ऐतिहासिक रेफरल रिकॉर्ड दिखाए जा रहे हैं",
+    deleteReferralTitle: "रेफरल हमेशा के लिए हटाएं",
+    deleteReferralSub: "क्या आप यह रेफरल हटाकर अस्पताल और डॉक्टर कतार से अलग करना चाहते हैं?",
+    deleteImpactWarning: "इस रेफरल को हटाने से अस्पताल और डॉक्टर कतार से यह हट जाएगा। (रोगी का मूल रिकॉर्ड सुरक्षित रहेगा)।",
+    cancelBtn: "रद्द करें",
+    confirmDeleteBtn: "पुष्टि करें और हटाएं"
   }
 };
 
@@ -674,12 +748,24 @@ function NeedsAttentionCard({ referral, t, onOpen, onDelete }) {
         </div>
 
         {/* Action Button */}
-        <button
-          onClick={() => onOpen(referral)}
-          className="self-end sm:self-center px-4 py-2 bg-[#0F2942] hover:bg-slate-800 text-white text-xs font-black rounded-xl shadow-xs flex items-center gap-1.5 transition-transform active:scale-95 cursor-pointer"
-        >
-          <span>{t.viewReferral}</span>
-        </button>
+        <div className="flex items-center gap-2 self-end sm:self-center">
+          <button
+            onClick={() => onOpen(referral)}
+            className="px-4 py-2 bg-[#0F2942] hover:bg-slate-800 text-white text-xs font-black rounded-xl shadow-xs flex items-center gap-1.5 transition-transform active:scale-95 cursor-pointer"
+          >
+            <span>{t.viewReferral}</span>
+          </button>
+          {onDelete && (
+            <button
+              type="button"
+              onClick={() => onDelete(referral)}
+              title={t.deleteReferralTitle || "Delete referral"}
+              className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors cursor-pointer border border-transparent hover:border-red-200"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
+        </div>
       </div>
 
     </div>
@@ -763,9 +849,10 @@ function PipelineReferralCard({ referral, t, onOpen, onDelete }) {
         </button>
         {onDelete && (
           <button
-            onClick={() => onDelete(referral.id)}
-            title={t.deleteBtn}
-            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+            type="button"
+            onClick={() => onDelete(referral)}
+            title={t.deleteReferralTitle || "Delete referral"}
+            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer border border-transparent hover:border-red-200"
           >
             <Trash2 className="w-3.5 h-3.5" />
           </button>
@@ -777,7 +864,7 @@ function PipelineReferralCard({ referral, t, onOpen, onDelete }) {
 }
 
 // ─── 4. Referral Dossier Modal ────────────────────────────────
-function ReferralDetailModal({ referral, t, onClose }) {
+function ReferralDetailModal({ referral, t, onClose, onDelete }) {
   if (!referral) return null;
 
   return (
@@ -863,6 +950,19 @@ function ReferralDetailModal({ referral, t, onClose }) {
             <Phone className="w-4 h-4" />
             <span>{t.emergencyHelpline}</span>
           </a>
+          {onDelete && (
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                onDelete(referral);
+              }}
+              className="py-3 px-4 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span>{t.deleteReferralTitle || "Delete"}</span>
+            </button>
+          )}
           <button
             onClick={onClose}
             className="py-3 px-5 rounded-xl bg-[#008F83] hover:bg-[#007A70] text-white font-black text-xs transition-colors cursor-pointer"
@@ -911,13 +1011,59 @@ export default function ReferralList({ referrals = [], onCreateNew, onDeleteRefe
   const [activeFilter, setActiveFilter] = useState('ALL'); // 'ALL' | 'NEEDS_ATTENTION' | 'RED' | 'ORANGE' | 'GREEN'
   const [selectedReferral, setSelectedReferral] = useState(null);
 
-  // STRICTLY ACTIVE NON-COMPLETED REFERRALS
+  // ─── Shift & Date Scope Filter ───
+  const todayStr = useMemo(() => getTodayDateStr(), []);
+  const [selectedDate, setSelectedDate] = useState(todayStr);
+  const [dateViewMode, setDateViewMode] = useState('TODAY_SHIFT'); // 'TODAY_SHIFT' | 'CALENDAR_DATE' | 'ALL_ARCHIVE'
+  const [deleteConfirmModal, setDeleteConfirmModal] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
+
+  const handlePrevDay = () => {
+    const [year, month, day] = selectedDate.split('-').map(Number);
+    const d = new Date(year, month - 1, day - 1);
+    const prevStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    setSelectedDate(prevStr);
+    setDateViewMode('CALENDAR_DATE');
+  };
+
+  const handleNextDay = () => {
+    const [year, month, day] = selectedDate.split('-').map(Number);
+    const d = new Date(year, month - 1, day + 1);
+    const nextStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    setSelectedDate(nextStr);
+    setDateViewMode('CALENDAR_DATE');
+  };
+
+  // 1. Scoped referrals based on Selected Date or 24-Hour Active Shift
+  const dateScopedReferrals = useMemo(() => {
+    if (dateViewMode === 'ALL_ARCHIVE') {
+      return referrals;
+    }
+
+    if (dateViewMode === 'TODAY_SHIFT') {
+      const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+      const now = Date.now();
+      return referrals.filter(r => {
+        const createdRaw = r.rawCreatedAt || r.created_at;
+        const created = createdRaw ? new Date(createdRaw).getTime() : now;
+        return (now - created) <= ONE_DAY_MS;
+      });
+    }
+
+    // CALENDAR_DATE mode: strictly matches selectedDate (YYYY-MM-DD)
+    return referrals.filter(r => {
+      const createdRaw = r.rawCreatedAt || r.created_at;
+      return toLocalDateStr(createdRaw) === selectedDate;
+    });
+  }, [referrals, dateViewMode, selectedDate]);
+
+  // STRICTLY ACTIVE NON-COMPLETED REFERRALS FROM SCOPED DATA
   const activeReferrals = useMemo(() => {
-    return referrals.filter(r => 
+    return dateScopedReferrals.filter(r => 
       r.rawStatus !== 'COMPLETED' && 
       r.status !== 'Completed'
     );
-  }, [referrals]);
+  }, [dateScopedReferrals]);
 
   // Urgent/Attention referrals (RED priority or Awaiting Review)
   const needsAttentionList = useMemo(() => {
@@ -958,10 +1104,8 @@ export default function ReferralList({ referrals = [], onCreateNew, onDeleteRefe
     return result;
   }, [activeReferrals, activeFilter, searchQuery]);
 
-  const handleDelete = (id) => {
-    if (window.confirm(t.confirmDelete)) {
-      onDeleteReferral(id);
-    }
+  const handleDelete = (referral) => {
+    setDeleteConfirmModal(referral);
   };
 
   return (
@@ -980,7 +1124,114 @@ export default function ReferralList({ referrals = [], onCreateNew, onDeleteRefe
         onManualSync={handleManualSync}
       />
 
-      {/* ── 2. Search & Filter Bar ── */}
+      {/* ── 2. Interactive Calendar Date Navigator & 24h Shift Window ── */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-3 sm:p-4 mb-4 shadow-2xs">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          {/* Left: Quick Mode Buttons */}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setDateViewMode('TODAY_SHIFT');
+                setSelectedDate(todayStr);
+              }}
+              className={`px-3 py-1.5 rounded-xl font-black text-xs transition-all flex items-center gap-1.5 cursor-pointer ${
+                dateViewMode === 'TODAY_SHIFT'
+                  ? 'bg-[#008F83] text-white shadow-xs'
+                  : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+              }`}
+            >
+              <Zap className="w-3.5 h-3.5 text-amber-300" />
+              <span>{t.todayShift || "Today's Shift (24h)"}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handlePrevDay}
+              className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-colors cursor-pointer flex items-center gap-1"
+              title="Previous Day"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+              <span>{t.prevDay || "Prev Day"}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleNextDay}
+              disabled={selectedDate >= todayStr}
+              className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-colors cursor-pointer flex items-center gap-1 disabled:opacity-40"
+              title="Next Day"
+            >
+              <span>{t.nextDay || "Next Day"}</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+
+            {/* Native HTML5 Calendar Date Picker */}
+            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1">
+              <Calendar className="w-3.5 h-3.5 text-[#008F83]" />
+              <input
+                type="date"
+                max={todayStr}
+                value={selectedDate}
+                onChange={(e) => {
+                  if (e.target.value) {
+                    setSelectedDate(e.target.value);
+                    setDateViewMode('CALENDAR_DATE');
+                  }
+                }}
+                className="text-xs font-bold text-slate-800 bg-transparent focus:outline-none cursor-pointer"
+              />
+            </div>
+
+            {/* All Archive Toggle */}
+            <button
+              type="button"
+              onClick={() => setDateViewMode('ALL_ARCHIVE')}
+              className={`px-3 py-1.5 rounded-xl font-black text-xs transition-all flex items-center gap-1.5 cursor-pointer ${
+                dateViewMode === 'ALL_ARCHIVE'
+                  ? 'bg-slate-800 text-white shadow-xs'
+                  : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+              }`}
+            >
+              <span>📂</span>
+              <span>{t.allArchive || "All Archive"}</span>
+            </button>
+          </div>
+
+          {/* Right: Active Date Scope Pill / Legend */}
+          <div className="text-right">
+            <span className="text-[11px] font-bold text-slate-500 block">
+              {dateViewMode === 'TODAY_SHIFT' && (
+                <span className="text-emerald-700 font-extrabold flex items-center justify-start md:justify-end gap-1">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>{t.shiftTitleToday || "Active Frontline Referrals (Last 24 Hours)"}</span>
+                </span>
+              )}
+              {dateViewMode === 'CALENDAR_DATE' && (
+                <span className="text-indigo-700 font-extrabold flex items-center justify-start md:justify-end gap-1">
+                  <span>📅</span>
+                  <span>{formatDisplayDate(selectedDate)}</span>
+                </span>
+              )}
+              {dateViewMode === 'ALL_ARCHIVE' && (
+                <span className="text-amber-700 font-extrabold flex items-center justify-start md:justify-end gap-1">
+                  <span>📂</span>
+                  <span>{t.shiftTitleArchive || "All-Time Historical Archive"}</span>
+                </span>
+              )}
+            </span>
+            <span className="text-[10px] text-slate-400 font-medium">
+              {dateViewMode === 'TODAY_SHIFT'
+                ? (t.shiftSubToday || "Live cases automatically clearing after 24h to keep queue clear")
+                : dateViewMode === 'CALENDAR_DATE'
+                ? `${t.shiftSubDate || "Cases dispatched on"} ${formatDisplayDate(selectedDate)}`
+                : (t.shiftSubArchive || "Showing all historical referral records across facility history")}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* ── 3. Search & Filter Bar ── */}
       <div className="space-y-3 mb-6">
         
         {/* Search Input */}
@@ -1036,7 +1287,7 @@ export default function ReferralList({ referrals = [], onCreateNew, onDeleteRefe
 
       </div>
 
-      {/* ── 3. Zero State (When All Cases Completed) ── */}
+      {/* ── 4. Zero State (When All Cases Completed) ── */}
       {filteredActiveReferrals.length === 0 ? (
         <div className="text-center py-12 bg-white border-2 border-dashed border-slate-200 rounded-3xl p-6">
           <ShieldCheck className="w-12 h-12 text-emerald-500 mx-auto mb-3" />
@@ -1129,7 +1380,88 @@ export default function ReferralList({ referrals = [], onCreateNew, onDeleteRefe
           referral={selectedReferral}
           t={t}
           onClose={() => setSelectedReferral(null)}
+          onDelete={handleDelete}
         />
+      )}
+
+      {/* ─── MODAL: UPGRADED TWO-STEP DELETE CONFIRMATION ─── */}
+      {deleteConfirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 border border-slate-200 shadow-2xl space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-rose-50 border border-rose-200 text-rose-600 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-black text-sm text-slate-900">
+                  {t.deleteReferralTitle || "Delete Patient Referral"}
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {t.deleteReferralSub || "Permanently remove this referral and unlink across hospital and doctor queues?"}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmModal(null)}
+                className="p-1 rounded-full text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Patient details card */}
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-1 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="font-black text-slate-900">{deleteConfirmModal.patientName || 'Unknown Patient'}</span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">
+                  {deleteConfirmModal.status || 'Pending'}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500 font-mono">
+                {deleteConfirmModal.patientId}
+              </p>
+              <p className="text-[11px] text-slate-600 font-medium line-clamp-2 pt-1 border-t border-slate-200">
+                {deleteConfirmModal.aiNote || 'General referral'}
+              </p>
+            </div>
+
+            <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-[11px] leading-relaxed">
+              ⚠️ <strong>Logical Links Impact:</strong> {t.deleteImpactWarning || "Deleting this referral will remove the case from the frontline pipeline, unbind hospital intake records, and clean up doctor queues in Supabase. (Frontline demographic records in Patient register remain preserved)."}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                disabled={deletingId === deleteConfirmModal.id}
+                onClick={() => setDeleteConfirmModal(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl cursor-pointer"
+              >
+                {t.cancelBtn || "Cancel"}
+              </button>
+              <button
+                type="button"
+                disabled={deletingId === deleteConfirmModal.id}
+                onClick={async () => {
+                  setDeletingId(deleteConfirmModal.id);
+                  try {
+                    await onDeleteReferral(deleteConfirmModal);
+                    setDeleteConfirmModal(null);
+                  } finally {
+                    setDeletingId(null);
+                  }
+                }}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-black text-xs rounded-xl shadow-md flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {deletingId === deleteConfirmModal.id ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Trash2 className="w-3.5 h-3.5" />
+                )}
+                <span>{t.confirmDeleteBtn || "Confirm & Delete Referral"}</span>
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>

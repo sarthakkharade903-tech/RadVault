@@ -40,6 +40,8 @@ export default function ReferralsDashboard({ onBack, initialTab = 'list', demoMo
           id: d.id,
           patientName: d.patient_name || 'Village Resident',
           patientId: d.patient_id ? String(d.patient_id).slice(0, 8).toUpperCase() : 'ABHA-PAT',
+          patient_id: d.patient_id,
+          destination_facility_id: d.destination_facility_id,
           createdBy: d.created_by || 'ASHA Worker',
           department: d.destination_department || d.department || 'General Medicine & OPD',
           hospital: d.destination_hospital || d.facility || 'Shrirampur Primary Health Centre',
@@ -57,7 +59,11 @@ export default function ReferralsDashboard({ onBack, initialTab = 'list', demoMo
           rawStatus: d.status || 'SUBMITTED',
           tokenNumber: d.token_number || null,
           aiNote: d.symptoms || d.ai_note || d.reason || d.asha_notes || 'Referred for specialist medical care',
+          symptoms: d.symptoms,
+          vitals: d.vitals,
           is_pregnant: (d.destination_department || d.department || '').toLowerCase().includes('maternity') || (d.destination_department || d.department || '').toLowerCase().includes('anc'),
+          rawCreatedAt: d.created_at || new Date().toISOString(),
+          created_at: d.created_at || new Date().toISOString(),
           createdAt: new Date(d.created_at || Date.now()).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
         }));
         setReferrals(mapped);
@@ -87,18 +93,26 @@ export default function ReferralsDashboard({ onBack, initialTab = 'list', demoMo
   }, []);
 
   const handleNewReferral = (newReferralData) => {
+    const nowIso = new Date().toISOString();
     const mapped = {
       id: newReferralData.id || `ref-${Date.now()}`,
       patientName: newReferralData.patient_name || 'Village Resident',
       patientId: newReferralData.patient_id ? String(newReferralData.patient_id).slice(0, 8).toUpperCase() : 'ABHA-PAT',
+      patient_id: newReferralData.patient_id,
+      destination_facility_id: newReferralData.destination_facility_id,
       createdBy: newReferralData.created_by || 'ASHA Worker',
       department: newReferralData.destination_department || newReferralData.department || 'General Medicine & OPD',
       hospital: newReferralData.destination_hospital || newReferralData.facility || 'Shrirampur Primary Health Centre',
       doctor: newReferralData.doctor_assigned || 'On-Duty Medical Officer',
       priority: newReferralData.priority === 'HIGH' || newReferralData.priority === 'RED' ? 'RED' : 'GREEN',
       status: newReferralData.status || 'Pending',
+      rawStatus: newReferralData.status || 'SUBMITTED',
       aiNote: newReferralData.symptoms || newReferralData.reason || newReferralData.asha_notes || 'Referred for specialist evaluation',
+      symptoms: newReferralData.symptoms,
+      vitals: newReferralData.vitals,
       is_pregnant: newReferralData.destination_department?.toLowerCase().includes('maternity') || newReferralData.destination_department?.toLowerCase().includes('anc'),
+      rawCreatedAt: nowIso,
+      created_at: nowIso,
       createdAt: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
     };
 
@@ -117,26 +131,72 @@ export default function ReferralsDashboard({ onBack, initialTab = 'list', demoMo
     }, 5000);
   };
 
-  const handleDeleteReferral = async (referralId) => {
-    // Delete from Supabase referrals
+  const handleDeleteReferral = async (referralTarget) => {
+    const targetId = typeof referralTarget === 'object' ? referralTarget.id : referralTarget;
+    const targetObj = typeof referralTarget === 'object' ? referralTarget : referrals.find(r => r.id === targetId);
+
+    if (!targetId) return;
+
     try {
-      await supabase.from('referrals').delete().eq('id', referralId);
+      // 1. Delete canonical record from public.referrals
+      const { error: delErr } = await supabase
+        .from('referrals')
+        .delete()
+        .eq('id', targetId);
+
+      if (delErr) {
+        console.error("[ReferralsDashboard] Failed to delete referral from Supabase:", delErr);
+        throw new Error(delErr.message);
+      }
+
+      // 2. Best-effort cascading cleanup of matching care_requests
+      try {
+        const patientRef = targetObj?.patient_id;
+        if (patientRef) {
+          await supabase
+            .from('care_requests')
+            .delete()
+            .or(`id.eq.${targetId},and(patient_id.eq.${patientRef},status.neq.COMPLETED)`);
+        } else {
+          await supabase
+            .from('care_requests')
+            .delete()
+            .eq('id', targetId);
+        }
+      } catch (cErr) {
+        console.warn("[ReferralsDashboard] care_requests cleanup notice:", cErr?.message);
+      }
+
+      // 3. Best-effort unlinking of encounters
+      try {
+        await supabase
+          .from('encounters')
+          .update({ referral_id: null })
+          .eq('referral_id', targetId);
+      } catch (eErr) {
+        console.warn("[ReferralsDashboard] encounters unlinking notice:", eErr?.message);
+      }
+
+      // 4. Update React state immediately
+      setReferrals(prev => prev.filter(r => r.id !== targetId));
+      setSuccessMsg(
+        lang === 'mr'
+          ? "रेफरल यशस्वीरित्या काढून टाकले आहे."
+          : lang === 'hi'
+          ? "रेफरल सफलतापूर्वक हटा दिया गया है।"
+          : "Referral removed successfully across all hospital and frontline queues."
+      );
+
+      setTimeout(() => {
+        setSuccessMsg('');
+      }, 4000);
     } catch (err) {
-      console.warn("Could not delete from Supabase:", err);
+      console.error("[ReferralsDashboard] Delete error:", err);
+      setErrorMsg(`Could not delete referral: ${err.message}`);
+      setTimeout(() => {
+        setErrorMsg('');
+      }, 5000);
     }
-
-    setReferrals(prev => prev.filter(r => r.id !== referralId));
-    setSuccessMsg(
-      lang === 'mr'
-        ? "रेफरल यशस्वीरित्या काढून टाकले आहे."
-        : lang === 'hi'
-        ? "रेफरल सफलतापूर्वक हटा दिया गया है।"
-        : "Referral removed successfully."
-    );
-
-    setTimeout(() => {
-      setSuccessMsg('');
-    }, 4000);
   };
 
   return (
