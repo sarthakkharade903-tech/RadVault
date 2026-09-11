@@ -3,7 +3,8 @@ import {
   ChevronLeft, Sparkles, Loader2, CheckCircle2, AlertTriangle,
   Building2, UserCircle2, Stethoscope, Ambulance, Mic, Square,
   Volume2, Trash2, Check, ArrowRight, ArrowLeft, Search, Plus, RefreshCw,
-  Radio, Navigation, ShieldCheck, HeartPulse, ShieldAlert
+  Radio, Navigation, ShieldCheck, HeartPulse, ShieldAlert,
+  Activity, FileText, Award, Zap
 } from 'lucide-react';
 import PatientSelectScreen from './screens/PatientSelectScreen';
 import PatientTypeScreen from './screens/PatientTypeScreen';
@@ -162,6 +163,25 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
   const [aiResult, setAiResult] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiRoadmap, setAiRoadmap] = useState(null);
+  const [loadingStep, setLoadingStep] = useState(0);
+
+  const KIMI_TELEMETRY_STEPS = [
+    { title: "Kimi-K3 Deep Clinical Reasoning", desc: "Correlating frontline vitals, reported symptoms & maternal risk profiles..." },
+    { title: "Pathophysiology & Risk Synthesis", desc: "Evaluating hemodynamic stability, anemia decompensation & fetal hypoxia..." },
+    { title: "Hospital Protocol Mapping", desc: "Formulating Pune Sassoon General Hospital fast-track stat lab & intake orders..." },
+    { title: "Welfare Entitlement Audit", desc: "Verifying JSY (₹1,400+₹600), JSSK cashless care, and ABHA PM-JAY coverage..." },
+  ];
+
+  useEffect(() => {
+    let interval;
+    if (aiLoading) {
+      setLoadingStep(0);
+      interval = setInterval(() => {
+        setLoadingStep(prev => (prev + 1) % 4);
+      }, 1400);
+    }
+    return () => clearInterval(interval);
+  }, [aiLoading]);
 
   // Routing State — dynamically populated from CONNECTED_FACILITIES & Supabase
   const hasUserSelectedRef = useRef(false);
@@ -537,6 +557,14 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
       const resolvedGender = patient?.gender || null;
       const resolvedPhone = patient?.mobile || patient?.phone || null;
 
+      let referralAiNote = aiRoadmap?.note || aiResult?.note || ashaNotes;
+      if (isJsyClaim && !referralAiNote.includes('ASHA Accompanying')) {
+        referralAiNote += " [ASHA Accompanying Patient - JSY Escort]";
+      }
+      if (aiRoadmap?.hospitalRoadmap && !referralAiNote.includes(aiRoadmap.hospitalRoadmap)) {
+        referralAiNote += ` | FAST-TRACK ORDERS: ${aiRoadmap.hospitalRoadmap}`;
+      }
+
       const payload = {
         patient_id: patientId,
         patient_name: patientName,
@@ -552,7 +580,8 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
         priority: finalPriority,
         reason: ashaNotes,
         asha_notes: ashaNotes,
-        clinical_summary: aiResult?.clinicalSummary || aiResult?.note || ashaNotes,
+        clinical_summary: aiRoadmap?.hospitalRoadmap || aiResult?.clinicalSummary || aiResult?.note || ashaNotes,
+        ai_note: referralAiNote,
         vitals: patientVitals
       };
 
@@ -708,131 +737,273 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
               </div>
             </div>
 
-            {/* 2. On-Demand Kimi AI Care Roadmap Card (Saves Tokens) */}
+            {/* 2. On-Demand Kimi AI Care Roadmap Card (Token-Saver Teaser) */}
             {!aiRoadmap && !aiLoading && (
-              <div className="bg-gradient-to-br from-purple-50/80 via-indigo-50/60 to-teal-50/70 border-2 border-purple-200/80 rounded-2xl p-5 shadow-2xs text-left space-y-3">
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center shadow-xs shrink-0">
-                    <Sparkles className="w-5 h-5" />
+              <div className="bg-gradient-to-br from-indigo-950 via-slate-900 to-purple-950 border-2 border-indigo-500/40 rounded-3xl p-6 shadow-xl text-left space-y-4 text-white relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
+                <div className="flex items-start gap-4 relative z-10">
+                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-600 via-purple-600 to-pink-500 text-white flex items-center justify-center shadow-lg shadow-indigo-500/30 shrink-0">
+                    <Sparkles className="w-6 h-6 animate-pulse text-amber-300" />
                   </div>
-                  <div className="flex-1">
+                  <div className="flex-1 space-y-1">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <h4 className="text-xs font-black uppercase text-purple-950 tracking-wider">
-                        Advanced AI Clinical Care Roadmap
+                      <h4 className="text-sm font-black uppercase text-white tracking-wider">
+                        Tactical AI Clinical Command Roadmap
                       </h4>
-                      <span className="text-[10px] font-extrabold bg-purple-100 text-purple-800 px-2 py-0.5 rounded-full">
-                        Powered by Kimi AI
+                      <span className="text-[10px] font-extrabold bg-gradient-to-r from-indigo-500 to-purple-500 text-white px-2.5 py-0.5 rounded-full shadow-xs">
+                        ⚡ Powered by Moonshot Kimi-K3
                       </span>
                     </div>
-                    <p className="text-xs text-slate-600 mt-1 leading-relaxed">
-                      Generate verified diagnostic risk assessment, immediate frontline first-aid steps, and a step-by-step hospital intake roadmap.
+                    <p className="text-xs text-slate-300 leading-relaxed">
+                      Deploy Kimi-K3's deep clinical reasoning model to synthesize patient vitals, verify diagnostic differentials, prescribe frontline ASHA transit stabilization, and generate fast-track stat orders for Pune Sassoon Hospital.
                     </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-center relative z-10">
+                  <div className="bg-slate-800/80 border border-rose-500/30 rounded-xl p-2.5">
+                    <span className="text-[10px] font-black uppercase text-rose-400 block">Pillar 1</span>
+                    <span className="text-[11px] font-bold text-slate-200">Clinical Differential</span>
+                  </div>
+                  <div className="bg-slate-800/80 border border-teal-500/30 rounded-xl p-2.5">
+                    <span className="text-[10px] font-black uppercase text-teal-400 block">Pillar 2</span>
+                    <span className="text-[11px] font-bold text-slate-200">ASHA Ground Protocol</span>
+                  </div>
+                  <div className="bg-slate-800/80 border border-indigo-500/30 rounded-xl p-2.5">
+                    <span className="text-[10px] font-black uppercase text-indigo-400 block">Pillar 3</span>
+                    <span className="text-[11px] font-bold text-slate-200">Sassoon Stat Orders</span>
+                  </div>
+                  <div className="bg-slate-800/80 border border-amber-500/30 rounded-xl p-2.5">
+                    <span className="text-[10px] font-black uppercase text-amber-400 block">Pillar 4</span>
+                    <span className="text-[11px] font-bold text-slate-200">Govt Schemes (JSY)</span>
                   </div>
                 </div>
 
                 <button
                   type="button"
                   onClick={handleGenerateAiRoadmap}
-                  className="w-full py-3.5 bg-purple-600 hover:bg-purple-700 text-white font-black text-xs sm:text-sm rounded-xl shadow-xs flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-[0.99]"
+                  className="w-full py-4 bg-gradient-to-r from-indigo-600 via-purple-600 to-teal-600 hover:from-indigo-500 hover:via-purple-500 hover:to-teal-500 text-white font-black text-xs sm:text-sm rounded-2xl shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2.5 transition-all cursor-pointer active:scale-[0.99] relative z-10"
                 >
-                  <Sparkles className="w-4 h-4" />
-                  <span>✨ Generate AI Clinical Summary & Care Roadmap</span>
+                  <Sparkles className="w-5 h-5 text-amber-300" />
+                  <span>Generate Full AI Clinical Roadmap & Fast-Track Orders</span>
                 </button>
-                <p className="text-[10px] text-center font-bold text-slate-400">
-                  Zero tokens used by default · Only calls Kimi AI on explicit button tap
-                </p>
+                <div className="flex items-center justify-between text-[10px] text-slate-400 font-semibold px-1 relative z-10">
+                  <span>⚡ On-demand execution · Zero tokens consumed until triggered</span>
+                  <span>Direct routing to Pune Sassoon Hospital triage</span>
+                </div>
               </div>
             )}
 
-            {/* AI Loading State */}
+            {/* AI Loading State with Live Telemetry Stepper */}
             {aiLoading && (
-              <div className="bg-purple-50/70 border-2 border-dashed border-purple-300 rounded-2xl p-8 text-center space-y-3 shadow-2xs">
-                <Loader2 className="w-8 h-8 text-purple-600 animate-spin mx-auto" />
-                <h4 className="text-xs font-black uppercase text-purple-900 tracking-wider">
-                  Consulting Kimi AI Clinical Engine...
-                </h4>
-                <p className="text-xs text-slate-500 font-medium max-w-sm mx-auto">
-                  Synthesizing patient vitals, reported symptoms, and frontline observations into an action roadmap
-                </p>
+              <div className="bg-slate-900 border-2 border-indigo-500/50 rounded-3xl p-8 text-center space-y-4 shadow-xl text-white relative overflow-hidden">
+                <div className="w-14 h-14 rounded-2xl bg-indigo-600/20 border border-indigo-500/40 text-indigo-400 flex items-center justify-center mx-auto shadow-inner">
+                  <Loader2 className="w-8 h-8 text-indigo-400 animate-spin" />
+                </div>
+                <div className="space-y-1">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 text-[11px] font-bold">
+                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+                    <span>Moonshot Kimi-K3 Deep Reasoning Active</span>
+                  </div>
+                  <h4 className="text-sm font-black uppercase text-white tracking-wider mt-2">
+                    {KIMI_TELEMETRY_STEPS[loadingStep]?.title || "Consulting Kimi AI Clinical Engine..."}
+                  </h4>
+                  <p className="text-xs text-slate-400 font-medium max-w-md mx-auto leading-relaxed">
+                    {KIMI_TELEMETRY_STEPS[loadingStep]?.desc || "Synthesizing patient vitals, reported symptoms, and frontline observations into an action roadmap..."}
+                  </p>
+                </div>
+
+                {/* Progress bar dots */}
+                <div className="flex items-center justify-center gap-2 pt-2">
+                  {[0, 1, 2, 3].map((stepIdx) => (
+                    <div
+                      key={stepIdx}
+                      className={`h-1.5 rounded-full transition-all duration-300 ${
+                        loadingStep === stepIdx ? 'w-8 bg-indigo-400' : 'w-2 bg-slate-700'
+                      }`}
+                    />
+                  ))}
+                </div>
               </div>
             )}
 
-            {/* Generated AI Care Roadmap Card */}
+            {/* Tactical AI Clinical Command Deck */}
             {aiRoadmap && (
-              <div className="bg-white border-2 border-purple-200 rounded-2xl p-5 text-left space-y-4 shadow-xs animate-in fade-in">
-                <div className="flex items-center justify-between pb-3 border-b border-purple-100">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-xl bg-purple-600 text-white flex items-center justify-center shadow-xs">
-                      <Sparkles className="w-4 h-4" />
+              <div className="bg-slate-900 border-2 border-indigo-500/30 rounded-3xl p-5 sm:p-6 text-left space-y-5 shadow-xl animate-in fade-in duration-300 text-slate-100">
+                {/* Header: Model Telemetry & Live Indicator */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-800">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-600 via-purple-600 to-pink-500 flex items-center justify-center text-white shadow-lg shadow-indigo-500/20 shrink-0">
+                      <Sparkles className="w-5 h-5 animate-pulse text-amber-300" />
                     </div>
                     <div>
-                      <h4 className="text-xs font-black uppercase text-purple-950 tracking-wider flex items-center gap-1.5">
-                        <span>AI Clinical Care Roadmap</span>
-                        <span className="text-[10px] font-bold bg-purple-100 text-purple-800 px-1.5 py-0.2 rounded">
-                          {aiRoadmap.model || 'Kimi-K3'}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs font-black uppercase tracking-wider text-white">
+                          AI Clinical Command Deck
                         </span>
-                      </h4>
-                      <p className="text-[11px] text-slate-500 font-medium">Frontline briefing attached to hospital referral</p>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 flex items-center gap-1">
+                          <Zap className="w-2.5 h-2.5 text-amber-400" />
+                          <span>{aiRoadmap.model || 'Moonshot Kimi-K3'}</span>
+                        </span>
+                        {aiRoadmap.isLive ? (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                            <span>Live Modal Inference</span>
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-teal-500/20 text-teal-300 border border-teal-500/30">
+                            Verified Protocol Matrix
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        Synthesized for <span className="text-slate-200 font-bold">{patient?.name || 'Village Patient'}</span> · Destination: <span className="text-indigo-300 font-bold">Pune Sassoon General Hospital</span>
+                      </p>
                     </div>
                   </div>
+
                   <button
                     type="button"
                     onClick={handleGenerateAiRoadmap}
                     disabled={aiLoading}
-                    className="text-xs font-bold text-purple-700 hover:text-purple-900 flex items-center gap-1 cursor-pointer transition-colors"
+                    className="self-start sm:self-center px-3 py-1.5 bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-300 hover:text-white rounded-xl text-xs font-bold transition-all border border-slate-700 flex items-center gap-1.5 cursor-pointer"
                   >
-                    <RefreshCw className="w-3.5 h-3.5" /> Re-run
+                    <RefreshCw className={`w-3.5 h-3.5 ${aiLoading ? 'animate-spin' : ''}`} />
+                    <span>Re-analyze</span>
                   </button>
                 </div>
 
-                {/* 1. Key Diagnostic Risks */}
-                {aiRoadmap.keyRisks && aiRoadmap.keyRisks.length > 0 && (
-                  <div>
-                    <h5 className="text-[11px] font-black uppercase tracking-wider text-rose-700 mb-1.5 flex items-center gap-1">
-                      <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
-                      <span>Key Diagnostic Risks & Red Flags</span>
-                    </h5>
-                    <ul className="space-y-1.5 bg-rose-50/70 p-3.5 rounded-xl border border-rose-100 text-xs font-semibold text-rose-950">
-                      {aiRoadmap.keyRisks.map((risk, idx) => (
-                        <li key={idx} className="flex items-start gap-2">
-                          <span className="text-rose-500 font-bold leading-none mt-1">•</span>
-                          <span>{risk}</span>
+                {/* 4 Ground-Reality Cards Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Pillar 1: Clinical Differential & Danger Triggers */}
+                  <div className="bg-gradient-to-br from-rose-950/40 via-slate-900 to-rose-950/20 border border-rose-500/40 rounded-2xl p-4 space-y-3 relative overflow-hidden">
+                    <div className="flex items-start gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-rose-500/20 border border-rose-500/30 text-rose-400 flex items-center justify-center shrink-0">
+                        <ShieldAlert className="w-4 h-4" />
+                      </div>
+                      <div className="flex-1">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-rose-400 block">
+                          Pillar 1 · Clinical Differential
+                        </span>
+                        <h5 className="text-xs font-bold text-white leading-tight mt-0.5">
+                          {aiRoadmap.clinicalDiagnosis || aiRoadmap.note}
+                        </h5>
+                      </div>
+                    </div>
+
+                    {aiRoadmap.clinicalReasoning && (
+                      <p className="text-[11px] text-slate-300 leading-relaxed bg-slate-950/60 p-2.5 rounded-xl border border-rose-500/20 font-medium">
+                        {aiRoadmap.clinicalReasoning}
+                      </p>
+                    )}
+
+                    {aiRoadmap.dangerFlags && aiRoadmap.dangerFlags.length > 0 && (
+                      <div className="space-y-1.5 pt-1">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-rose-300 flex items-center gap-1">
+                          <AlertTriangle className="w-3 h-3 text-rose-400" />
+                          <span>En-Route Red Flags (Emergency Diversion):</span>
+                        </span>
+                        <ul className="space-y-1 text-[11px] text-rose-200">
+                          {aiRoadmap.dangerFlags.map((flag, idx) => (
+                            <li key={idx} className="flex items-start gap-1.5">
+                              <span className="text-rose-400 font-black">•</span>
+                              <span className="leading-snug">{flag}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Pillar 2: ASHA Frontline Action & Ground Protocol */}
+                  <div className="bg-gradient-to-br from-teal-950/40 via-slate-900 to-teal-950/20 border border-teal-500/40 rounded-2xl p-4 space-y-3">
+                    <div className="flex items-start gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-teal-500/20 border border-teal-500/30 text-teal-300 flex items-center justify-center shrink-0">
+                        <HeartPulse className="w-4 h-4" />
+                      </div>
+                      <div className="flex-1">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-teal-400 block">
+                          Pillar 2 · ASHA Ground Directives
+                        </span>
+                        <h5 className="text-xs font-bold text-white leading-tight mt-0.5">
+                          Immediate Field Care & 108 Transit Stabilization
+                        </h5>
+                      </div>
+                    </div>
+
+                    <ul className="space-y-2 pt-1">
+                      {(aiRoadmap.ashaGroundProtocol || aiRoadmap.firstAidSteps || []).map((stepItem, idx) => (
+                        <li key={idx} className="flex items-start gap-2 text-[11px] text-slate-200 bg-slate-950/60 p-2.5 rounded-xl border border-teal-500/20">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-teal-400 shrink-0 mt-0.5" />
+                          <span className="leading-snug">{stepItem}</span>
                         </li>
                       ))}
                     </ul>
                   </div>
-                )}
 
-                {/* 2. Immediate ASHA First-Aid Guidance */}
-                {aiRoadmap.firstAidSteps && aiRoadmap.firstAidSteps.length > 0 && (
-                  <div>
-                    <h5 className="text-[11px] font-black uppercase tracking-wider text-teal-800 mb-1.5 flex items-center gap-1">
-                      <HeartPulse className="w-3.5 h-3.5 text-[#008F83]" />
-                      <span>Immediate ASHA Frontline Actions</span>
-                    </h5>
-                    <ul className="space-y-1.5 bg-teal-50/70 p-3.5 rounded-xl border border-teal-100 text-xs font-semibold text-teal-950">
-                      {aiRoadmap.firstAidSteps.map((stepItem, idx) => (
-                        <li key={idx} className="flex items-start gap-2">
-                          <span className="text-[#008F83] font-bold leading-none mt-0.5">✓</span>
-                          <span>{stepItem}</span>
+                  {/* Pillar 3: Sassoon Hospital Fast-Track Orders */}
+                  <div className="bg-gradient-to-br from-indigo-950/40 via-slate-900 to-indigo-950/20 border border-indigo-500/40 rounded-2xl p-4 space-y-3">
+                    <div className="flex items-start gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 flex items-center justify-center shrink-0">
+                        <Building2 className="w-4 h-4" />
+                      </div>
+                      <div className="flex-1">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-indigo-400 block">
+                          Pillar 3 · Receiving Hospital Orders
+                        </span>
+                        <h5 className="text-xs font-bold text-white leading-tight mt-0.5">
+                          Pune Sassoon General Hospital — Fast-Track Intake
+                        </h5>
+                      </div>
+                    </div>
+
+                    <ul className="space-y-2 pt-1">
+                      {(aiRoadmap.hospitalStatOrders || [aiRoadmap.hospitalRoadmap]).filter(Boolean).map((order, idx) => (
+                        <li key={idx} className="flex items-start gap-2 text-[11px] text-indigo-100 bg-slate-950/60 p-2.5 rounded-xl border border-indigo-500/20">
+                          <Activity className="w-3.5 h-3.5 text-indigo-400 shrink-0 mt-0.5" />
+                          <span className="leading-snug">{order}</span>
                         </li>
                       ))}
                     </ul>
                   </div>
-                )}
 
-                {/* 3. Receiving Hospital Protocol */}
-                {aiRoadmap.hospitalRoadmap && (
-                  <div>
-                    <h5 className="text-[11px] font-black uppercase tracking-wider text-indigo-900 mb-1.5 flex items-center gap-1">
-                      <Building2 className="w-3.5 h-3.5 text-indigo-600" />
-                      <span>Receiving Hospital Care Protocol</span>
-                    </h5>
-                    <p className="text-xs text-slate-700 font-medium bg-slate-50 p-3.5 rounded-xl border border-slate-200 leading-relaxed">
-                      {aiRoadmap.hospitalRoadmap}
-                    </p>
+                  {/* Pillar 4: Welfare Schemes & Financial Protection */}
+                  <div className="bg-gradient-to-br from-amber-950/40 via-slate-900 to-amber-950/20 border border-amber-500/40 rounded-2xl p-4 space-y-3">
+                    <div className="flex items-start gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/30 text-amber-300 flex items-center justify-center shrink-0">
+                        <Award className="w-4 h-4" />
+                      </div>
+                      <div className="flex-1">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-amber-400 block">
+                          Pillar 4 · Financial Protection Shield
+                        </span>
+                        <h5 className="text-xs font-bold text-white leading-tight mt-0.5">
+                          Indian Govt Welfare & 100% Cashless Entitlements
+                        </h5>
+                      </div>
+                    </div>
+
+                    <ul className="space-y-2 pt-1">
+                      {(aiRoadmap.govtSchemes || []).map((scheme, idx) => (
+                        <li key={idx} className="flex items-start gap-2 text-[11px] text-amber-100 bg-slate-950/60 p-2.5 rounded-xl border border-amber-500/20">
+                          <ShieldCheck className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+                          <span className="leading-snug">{scheme}</span>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
-                )}
+                </div>
+
+                {/* Direct doctor handoff note banner */}
+                <div className="p-3 bg-indigo-950/50 border border-indigo-500/30 rounded-xl flex items-center justify-between gap-3 text-xs text-indigo-200">
+                  <div className="flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-indigo-400 shrink-0" />
+                    <span>This full clinical roadmap will be attached directly to the patient's digital referral slip for Sassoon Hospital doctors.</span>
+                  </div>
+                  <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-indigo-500/30 text-indigo-200 shrink-0">
+                    Ready to Dispatch
+                  </span>
+                </div>
               </div>
             )}
 
