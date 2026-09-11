@@ -5,17 +5,6 @@ import { govHospitals } from '../data/govHospitals';
 
 export const CONNECTED_FACILITIES = [
   {
-    id: 'f1111111-1111-1111-1111-111111111111',
-    name: 'Shrirampur Primary Health Centre',
-    district: 'Ahmednagar',
-    lat: 19.6174,
-    lon: 74.6595,
-    type: 'PHC',
-    typeLabel: 'Primary Health Centre (PHC)',
-    isIntegrated: true,
-    isGovernment: true
-  },
-  {
     id: 'f2222222-2222-2222-2222-222222222222',
     name: 'Pune Sassoon General Hospital',
     district: 'Pune',
@@ -23,6 +12,17 @@ export const CONNECTED_FACILITIES = [
     lon: 73.8746,
     type: 'DH',
     typeLabel: 'Tertiary Teaching Hospital (DH)',
+    isIntegrated: true,
+    isGovernment: true
+  },
+  {
+    id: 'f1111111-1111-1111-1111-111111111111',
+    name: 'Shrirampur Primary Health Centre',
+    district: 'Ahmednagar',
+    lat: 19.6174,
+    lon: 74.6595,
+    type: 'PHC',
+    typeLabel: 'Primary Health Centre (PHC)',
     isIntegrated: true,
     isGovernment: true
   },
@@ -64,11 +64,21 @@ export function calculateHaversineDistance(lat1, lon1, lat2, lon2) {
   return Number(d.toFixed(1));
 }
 
+export function getNearestFacility(lat, lon) {
+  const targetLat = lat ?? 18.5284;
+  const targetLon = lon ?? 73.8746;
+  const sorted = [...CONNECTED_FACILITIES].map(f => ({
+    ...f,
+    dist: calculateHaversineDistance(targetLat, targetLon, f.lat, f.lon) ?? 999
+  })).sort((a, b) => a.dist - b.dist);
+  return sorted[0] || CONNECTED_FACILITIES[0];
+}
+
 export async function fetchGovHospitals(lat, lon) {
   try {
-    // Default to Shirwal Village (ASHA Sector 4) if coordinates not provided
-    let targetLat = lat ?? 18.1340;
-    let targetLon = lon ?? 73.9820;
+    // Default to Pune Sector (Sassoon Catchment) if coordinates not provided
+    let targetLat = lat ?? 18.5284;
+    let targetLon = lon ?? 73.8746;
 
     // Calculate with provided coords
     let results = govHospitals.map(h => {
@@ -94,10 +104,10 @@ export async function fetchGovHospitals(lat, lon) {
     .sort((a, b) => a.rawDist - b.rawDist);
 
     // If GPS placed the user outside Maharashtra/50km (e.g. testing environment),
-    // recalculate relative to ASHA Field Sector 4 (Shirwal) so the real government list is never empty
+    // recalculate relative to Pune Sector (Sassoon) so the real government list is never empty
     if (results.length === 0) {
-      targetLat = 18.1340;
-      targetLon = 73.9820;
+      targetLat = 18.5284;
+      targetLon = 73.8746;
       results = govHospitals.map(h => {
         const dist = calculateHaversineDistance(targetLat, targetLon, h.lat, h.lon) ?? 0;
         const typeLabel =
@@ -141,13 +151,13 @@ export function getCurrentLocation() {
           });
         },
         (err) => {
-          console.warn("Live GPS unavailable or permission denied, using Maharashtra sector coords:", err.message);
-          resolve({ lat: 18.1340, lon: 73.9820, isFallback: true });
+          console.warn("Live GPS unavailable or permission denied, using Pune catchment coords:", err.message);
+          resolve({ lat: 18.5284, lon: 73.8746, isFallback: true });
         },
         { timeout: 6000, enableHighAccuracy: true, maximumAge: 30000 }
       );
     } else {
-      resolve({ lat: 18.1340, lon: 73.9820, isFallback: true });
+      resolve({ lat: 18.5284, lon: 73.8746, isFallback: true });
     }
   });
 }

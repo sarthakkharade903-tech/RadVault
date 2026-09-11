@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { getNearestFacility } from './locationService';
 
 /**
  * Emergency Categories aligned with International Computer-Aided Dispatch (CAD)
@@ -196,8 +197,10 @@ export async function submitEmergencySOS(payload) {
     breathing = 'Normal',
     dangerSigns = [],
     additionalNotes = '',
-    facility = 'Shrirampur Primary Health Centre'
+    facility
   } = payload;
+
+  const resolvedFacility = facility || (gpsCoords ? getNearestFacility(gpsCoords.lat, gpsCoords.lng)?.name : 'Pune Sassoon General Hospital') || 'Pune Sassoon General Hospital';
 
   const catObj = EMERGENCY_CATEGORIES.find(c => c.id === categoryId) || EMERGENCY_CATEGORIES[0];
   const referenceId = `SOS-MH-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -239,7 +242,7 @@ export async function submitEmergencySOS(payload) {
     asha_notes: notesString,
     status: 'PENDING_DISPATCH',
     slot_preference: `SOS #${referenceId} · ${catObj.cadCategory}`,
-    facility: facility || 'Shrirampur Primary Health Centre',
+    facility: resolvedFacility,
     department: 'Emergency Casualty & Trauma',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()

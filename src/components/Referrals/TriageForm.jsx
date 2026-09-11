@@ -164,6 +164,7 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
   const [aiRoadmap, setAiRoadmap] = useState(null);
 
   // Routing State — dynamically populated from CONNECTED_FACILITIES & Supabase
+  const hasUserSelectedRef = useRef(false);
   const [hospital, setHospital] = useState(CONNECTED_FACILITIES[0].name);
   const [selectedFacility, setSelectedFacility] = useState(CONNECTED_FACILITIES[0]);
   const [facilitiesList, setFacilitiesList] = useState(CONNECTED_FACILITIES);
@@ -228,11 +229,18 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
             };
           });
           setFacilitiesList(merged);
-          // Set initial default if not set
-          const defaultFac = merged.find(f => f.name.toLowerCase().includes('shrirampur')) || merged[0];
-          if (defaultFac) {
-            setSelectedFacility(defaultFac);
-            setHospital(defaultFac.name);
+          // Auto-select nearest facility if user hasn't explicitly chosen one
+          if (!hasUserSelectedRef.current && merged.length > 0) {
+            const targetLat = userCoords?.lat ?? 18.5284;
+            const targetLon = userCoords?.lon ?? 73.8746;
+            const sorted = [...merged].sort((a, b) => {
+              const dA = calculateHaversineDistance(targetLat, targetLon, a.lat, a.lon) ?? 999;
+              const dB = calculateHaversineDistance(targetLat, targetLon, b.lat, b.lon) ?? 999;
+              return dA - dB;
+            });
+            const nearestFac = sorted[0] || merged[0];
+            setSelectedFacility(nearestFac);
+            setHospital(nearestFac.name);
           }
         }
       } catch (e) {
@@ -241,12 +249,12 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
     }
     loadFacilities();
     return () => { isMounted = false; };
-  }, []);
+  }, [userCoords]);
 
   // Compute facilities sorted by proximity (connected first, expandable regional health centres)
   const baseFacilities = useMemo(() => {
-    const userLat = userCoords?.lat ?? 18.1340;
-    const userLon = userCoords?.lon ?? 73.9820;
+    const userLat = userCoords?.lat ?? 18.5284;
+    const userLon = userCoords?.lon ?? 73.8746;
 
     const list = facilitiesList.length > 0 ? facilitiesList : CONNECTED_FACILITIES;
     const connected = list.map(f => {
@@ -276,6 +284,18 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
 
     return [...connected, ...extra].sort((a, b) => (a.rawDist || 0) - (b.rawDist || 0));
   }, [facilitiesList, userCoords, showMoreFacilities, hospSearch, nearbyGovHospitals]);
+
+  // Auto-sync default selected facility to the closest hospital when baseFacilities updates
+  useEffect(() => {
+    if (!hasUserSelectedRef.current && baseFacilities && baseFacilities.length > 0) {
+      const nearest = baseFacilities[0];
+      if (nearest && nearest.name !== hospital) {
+        setHospital(nearest.name);
+        const matched = facilitiesList.find(f => f.id === nearest.id || f.name.toLowerCase() === nearest.name.toLowerCase()) || nearest;
+        setSelectedFacility(matched);
+      }
+    }
+  }, [baseFacilities, facilitiesList, hospital]);
 
   // ── Real Audio Recording State ──
   const [isRecording, setIsRecording] = useState(false);
@@ -499,12 +519,12 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
         if (matchedConnected && isUuid(matchedConnected.id)) {
           destinationFacilityId = matchedConnected.id;
         } else {
-          // Default to first connected facility (Shrirampur PHC)
+          // Default to first connected facility (Pune Sassoon General Hospital)
           destinationFacilityId = CONNECTED_FACILITIES[0].id;
         }
       }
 
-      const chosenHospital = selectedFacility?.name || hospital || 'Shrirampur Primary Health Centre';
+      const chosenHospital = selectedFacility?.name || hospital || CONNECTED_FACILITIES[0].name;
 
       // Zero Demographic Fabrication: preserve actual values, never default to 30, 'Other', or fake phone
       const resolvedAge = (patient?.age_years !== undefined && patient?.age_years !== null)
@@ -913,6 +933,7 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
                         data-facility-id={h.id}
                         data-facility-name={h.name}
                         onClick={() => {
+                          hasUserSelectedRef.current = true;
                           setHospital(h.name);
                           const matched = facilitiesList.find(f => f.name.toLowerCase() === h.name.toLowerCase()) ||
                                           facilitiesList.find(f => f.id === h.id) ||

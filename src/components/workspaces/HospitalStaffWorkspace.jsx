@@ -2082,6 +2082,69 @@ function PatientClinicalCaseSheet({
   );
 }
 
+// ─── SWR (Stale-While-Revalidate) Cache for Instant Paints ───
+const SWR_STAFF_CACHE_KEY = 'radvault_staff_swr_cache_';
+function getCachedStaffData(facilityId) {
+  try {
+    const raw = sessionStorage.getItem(`${SWR_STAFF_CACHE_KEY}${facilityId}`);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {
+    console.warn('[HospitalStaff] SWR cache read error:', e);
+  }
+  return null;
+}
+
+function setCachedStaffData(facilityId, data) {
+  try {
+    sessionStorage.setItem(`${SWR_STAFF_CACHE_KEY}${facilityId}`, JSON.stringify(data));
+  } catch (e) {
+    console.warn('[HospitalStaff] SWR cache write error:', e);
+  }
+}
+
+// ─── High-Fidelity Referral Card Skeleton ───
+function ReferralCardSkeleton({ count = 3 }) {
+  return (
+    <div className="space-y-3">
+      {Array.from({ length: count }).map((_, idx) => (
+        <div
+          key={`skel-${idx}`}
+          className="bg-white border border-slate-200/90 rounded-3xl p-5 shadow-2xs space-y-3.5 animate-pulse"
+        >
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-slate-200 rounded-2xl shrink-0" />
+              <div className="space-y-2">
+                <div className="h-4 bg-slate-200 rounded-lg w-40 sm:w-56" />
+                <div className="h-3 bg-slate-100 rounded-md w-28" />
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="h-6 bg-slate-100 rounded-full w-20" />
+              <div className="h-6 bg-slate-100 rounded-full w-16" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 py-1">
+            <div className="h-10 bg-slate-50 border border-slate-100 rounded-xl" />
+            <div className="h-10 bg-slate-50 border border-slate-100 rounded-xl" />
+            <div className="h-10 bg-slate-50 border border-slate-100 rounded-xl" />
+            <div className="h-10 bg-slate-50 border border-slate-100 rounded-xl" />
+          </div>
+
+          <div className="flex items-center justify-between pt-1">
+            <div className="h-3 bg-slate-100 rounded w-1/2" />
+            <div className="flex items-center gap-2">
+              <div className="h-8 bg-slate-100 rounded-xl w-24" />
+              <div className="h-8 bg-teal-100 rounded-xl w-28" />
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function HospitalStaffWorkspace({
   isDemoMode = false,
   demoDataEnabled = true,
@@ -2097,26 +2160,42 @@ export default function HospitalStaffWorkspace({
   const [sourceFilter, setSourceFilter] = useState('ALL'); // 'ALL' | 'ASHA' | 'PATIENT_DIRECT' | 'TELECONSULT'
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Operational State
-  const [referrals, setReferrals] = useState([]);
-  const [doctors, setDoctors] = useState([]);
-  const [staffProfile, setStaffProfile] = useState(null);
-  const [facility, setFacility] = useState(null);
+  // Selected facility with local persistence
   const [selectedFacilityId, setSelectedFacilityId] = useState(() => {
     return localStorage.getItem('radvault_reception_facility_id') || 'ALL';
   });
-  const [loading, setLoading] = useState(true);
+
+  // Operational State — Hydrated instantly from SWR cache if present
+  const initialCache = useMemo(() => getCachedStaffData(selectedFacilityId), [selectedFacilityId]);
+
+  const [referrals, setReferrals] = useState(() => initialCache?.referrals || []);
+  const [doctors, setDoctors] = useState(() => initialCache?.doctors || []);
+  const [staffProfile, setStaffProfile] = useState(() => initialCache?.staffProfile || null);
+  const [facility, setFacility] = useState(() => initialCache?.facility || null);
+  const [loading, setLoading] = useState(() => !initialCache);
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
 
   const handleSelectFacility = (newId) => {
     setSelectedFacilityId(newId);
     localStorage.setItem('radvault_reception_facility_id', newId);
+    const cached = getCachedStaffData(newId);
+    if (cached) {
+      if (cached.referrals) setReferrals(cached.referrals);
+      if (cached.doctors) setDoctors(cached.doctors);
+      if (cached.emergencyCases) setEmergencyCases(cached.emergencyCases);
+      if (cached.allEmergencyLogs) setAllEmergencyLogs(cached.allEmergencyLogs);
+      if (cached.staffProfile) setStaffProfile(cached.staffProfile);
+      if (cached.facility) setFacility(cached.facility);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
   };
 
   // ─── Emergency SOS Dispatch CAD State ───
-  const [emergencyCases, setEmergencyCases] = useState([]);
-  const [allEmergencyLogs, setAllEmergencyLogs] = useState([]);
+  const [emergencyCases, setEmergencyCases] = useState(() => initialCache?.emergencyCases || []);
+  const [allEmergencyLogs, setAllEmergencyLogs] = useState(() => initialCache?.allEmergencyLogs || []);
   const [emergencyAlarmMuted, setEmergencyAlarmMuted] = useState(false);
   const [emergencyFilter, setEmergencyFilter] = useState('ACTIVE'); // 'ACTIVE' | 'ALL' | 'RESOLVED'
   const [actionLoadingId, setActionLoadingId] = useState(null);
@@ -2411,31 +2490,66 @@ export default function HospitalStaffWorkspace({
     }
 
     try {
-      // 1. Ensure authenticated session for Hospital Receptionist with timeout guard
-      try {
-        const authPromise = ensureRoleAuth('reception');
-        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Auth timeout')), 3500));
-        await Promise.race([authPromise, timeoutPromise]);
-      } catch (authNotice) {
-        console.warn('[HospitalStaff] Reception auth notice (proceeding with active session):', authNotice?.message);
+      // 1. Prepare Scoped Doctors query
+      let docQuery = supabase.from('doctors').select('*');
+      if (selectedFacilityId !== 'ALL' && targetFac) {
+        docQuery = docQuery.eq('facility_id', targetFac.id);
       }
 
-      const { data: { user: activeUser } } = await supabase.auth.getUser().catch(() => ({ data: { user: null } }));
+      // 2. Prepare Canonical Referrals query
+      let refQuery = supabase
+        .from('referrals')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (selectedFacilityId !== 'ALL' && targetFac) {
+        const prefix = targetFac.name.split(' ')[0];
+        refQuery = refQuery.or(`destination_facility_id.eq.${targetFac.id},destination_hospital.ilike.%${prefix}%`);
+      }
 
-      // 2. Fetch Hospital Staff Profile and Facility
-      let staffData = null;
-      if (activeUser) {
+      // 3. Prepare Emergency SOS CAD query
+      let emergencyQuery = supabase
+        .from('care_requests')
+        .select('*')
+        .eq('source', 'EMERGENCY_SOS')
+        .order('created_at', { ascending: false });
+      if (selectedFacilityId !== 'ALL' && targetFac) {
+        const prefix = targetFac.name.split(' ')[0];
+        emergencyQuery = emergencyQuery.or(`facility.ilike.%${prefix}%,facility.ilike.%${targetFac.name}%`);
+      }
+
+      // 4. Non-blocking Receptionist Auth & Profile check
+      const authAndStaffPromise = (async () => {
         try {
-          const { data } = await supabase
-            .from('hospital_staff')
-            .select('*, facilities(*)')
-            .eq('user_id', activeUser.id)
-            .maybeSingle();
-          staffData = data;
-        } catch (sErr) {
-          console.warn('[HospitalStaff] staff profile fetch notice:', sErr?.message);
+          const authPromise = ensureRoleAuth('reception');
+          const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Auth timeout')), 2200));
+          await Promise.race([authPromise, timeoutPromise]).catch(() => {});
+          const { data: { user: activeUser } } = await supabase.auth.getUser().catch(() => ({ data: { user: null } }));
+          if (activeUser) {
+            const { data: staffData } = await supabase
+              .from('hospital_staff')
+              .select('*, facilities(*)')
+              .eq('user_id', activeUser.id)
+              .maybeSingle();
+            return { activeUser, staffData };
+          }
+        } catch (e) {
+          console.warn('[HospitalStaff] Parallel staff fetch notice:', e?.message);
         }
-      }
+        return { activeUser: null, staffData: null };
+      })();
+
+      // ── Execute all 4 primary data fetches concurrently (collapsing waterfall) ──
+      const [authStaffRes, docRes, refRes, emergencyRes] = await Promise.allSettled([
+        authAndStaffPromise,
+        docQuery,
+        refQuery,
+        emergencyQuery
+      ]);
+
+      // 5. Process Auth & Staff Profile
+      const { activeUser, staffData } = (authStaffRes.status === 'fulfilled' && authStaffRes.value)
+        ? authStaffRes.value
+        : { activeUser: null, staffData: null };
 
       const resolvedStaffName = staffData?.name || activeUser?.email?.split('@')[0] || 'Hospital Staff Operations';
       const defaultFacility = staffData?.facilities || CONNECTED_FACILITIES[0];
@@ -2448,85 +2562,51 @@ export default function HospitalStaffWorkspace({
           }
         : defaultFacility);
 
-      setStaffProfile({
+      const resolvedStaffProfile = {
         name: resolvedStaffName,
         role: staffData?.role || 'Hospital Staff Operations',
         phc_name: activeFacilityObj.name
-      });
+      };
+      setStaffProfile(resolvedStaffProfile);
 
-      setFacility({
-        id: targetFac ? targetFac.id : (defaultFacility.id || 'f1111111-1111-1111-1111-111111111111'),
+      const resolvedFacility = {
+        id: targetFac ? targetFac.id : (defaultFacility.id || 'f2222222-2222-2222-2222-222222222222'),
         name: targetFac ? targetFac.name : defaultFacility.name,
         district: targetFac ? targetFac.district : defaultFacility.district
-      });
+      };
+      setFacility(resolvedFacility);
 
-      // 3. Fetch Scoped Doctors for this Facility (or all doctors if ALL)
-      let docQuery = supabase.from('doctors').select('*');
-      if (selectedFacilityId !== 'ALL' && targetFac) {
-        docQuery = docQuery.eq('facility_id', targetFac.id);
+      // 6. Process Doctors
+      let finalDocs = DEMO_DOCTORS;
+      if (docRes.status === 'fulfilled' && docRes.value?.data && docRes.value.data.length > 0) {
+        finalDocs = docRes.value.data;
       }
-      const { data: doctorsData, error: docErr } = await docQuery;
-      if (docErr) console.warn('[HospitalStaff] doctors query warning:', docErr.message);
-      setDoctors(doctorsData && doctorsData.length > 0 ? doctorsData : DEMO_DOCTORS);
+      setDoctors(finalDocs);
 
-      // 4. Fetch Canonical Referrals for this Facility (or all facilities if ALL)
-      let refQuery = supabase
-        .from('referrals')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (selectedFacilityId !== 'ALL' && targetFac) {
-        const prefix = targetFac.name.split(' ')[0];
-        refQuery = refQuery.or(`destination_facility_id.eq.${targetFac.id},destination_hospital.ilike.%${prefix}%`);
-      }
-
-      const { data: refData, error: refErr } = await refQuery;
-      if (refErr) console.warn('[HospitalStaff] referrals query notice:', refErr.message);
-
-      // 5. Separately Fetch Emergency SOS from care_requests (Emergency CAD Console)
-      // FIX: When selectedFacilityId is 'ALL', do NOT filter by facility name so all district alerts appear!
-      try {
-        let emergencyQuery = supabase
-          .from('care_requests')
-          .select('*')
-          .eq('source', 'EMERGENCY_SOS')
-          .order('created_at', { ascending: false });
-
-        if (selectedFacilityId !== 'ALL' && targetFac) {
-          const prefix = targetFac.name.split(' ')[0];
-          emergencyQuery = emergencyQuery.or(`facility.ilike.%${prefix}%,facility.ilike.%${targetFac.name}%`);
-        }
-
-        const { data: careData, error: careErr } = await emergencyQuery;
-        if (careErr) console.warn('[HospitalStaff] emergency query notice:', careErr.message);
-
-        if (careData && careData.length > 0) {
-          const emergencies = careData.map(parseEmergencyRecord);
-          const activeEmergencies = emergencies.filter(c => c.status !== 'RESOLVED' && c.status !== 'COMPLETED');
-          setEmergencyCases(activeEmergencies);
-          setAllEmergencyLogs(emergencies);
-        } else if (demoDataEnabled) {
-          // If no active DB records, retain demo emergency cases so CAD console is ready for presentation
-          setEmergencyCases(DEMO_EMERGENCY_SOS);
-          setAllEmergencyLogs(DEMO_EMERGENCY_SOS);
-        } else {
-          setEmergencyCases([]);
-          setAllEmergencyLogs([]);
-        }
-      } catch (cErr) {
-        console.warn('[HospitalStaff] Emergency SOS CAD fetch notice:', cErr?.message);
-        if (demoDataEnabled) {
-          setEmergencyCases(DEMO_EMERGENCY_SOS);
-          setAllEmergencyLogs(DEMO_EMERGENCY_SOS);
-        }
+      // 7. Process Emergency Cases
+      let activeEmergencies = [];
+      let emergencies = [];
+      if (emergencyRes.status === 'fulfilled' && emergencyRes.value?.data && emergencyRes.value.data.length > 0) {
+        emergencies = emergencyRes.value.data.map(parseEmergencyRecord);
+        activeEmergencies = emergencies.filter(c => c.status !== 'RESOLVED' && c.status !== 'COMPLETED');
+        setEmergencyCases(activeEmergencies);
+        setAllEmergencyLogs(emergencies);
+      } else if (demoDataEnabled) {
+        setEmergencyCases(DEMO_EMERGENCY_SOS);
+        setAllEmergencyLogs(DEMO_EMERGENCY_SOS);
+        activeEmergencies = DEMO_EMERGENCY_SOS;
+        emergencies = DEMO_EMERGENCY_SOS;
+      } else {
+        setEmergencyCases([]);
+        setAllEmergencyLogs([]);
       }
 
-      // Canonical physical referrals strictly from public.referrals
+      // 8. Process Referrals & Patient Identity Enrichment
+      const refData = (refRes.status === 'fulfilled' && refRes.value?.data) ? refRes.value.data : null;
       const combinedRefs = isDemoMode
         ? (demoDataEnabled ? INITIAL_DEMO_REFERRALS : [])
         : (refData && refData.length > 0 ? refData : (demoDataEnabled ? INITIAL_DEMO_REFERRALS : []));
 
-      // 6. Enrich referrals with patients' human-readable unified_id (MH-P-xxxxx)
       const isUuid = (val) => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
       const patientUuids = Array.from(new Set(combinedRefs.map(r => r.patient_id).filter(isUuid)));
 
@@ -2574,6 +2654,17 @@ export default function HospitalStaffWorkspace({
           }
         }
         return enrichedRefs;
+      });
+
+      // 9. Persist to SWR Cache for instant 0ms paints on re-visits or facility toggle
+      setCachedStaffData(selectedFacilityId, {
+        referrals: enrichedRefs,
+        doctors: finalDocs,
+        emergencyCases: activeEmergencies,
+        allEmergencyLogs: emergencies,
+        staffProfile: resolvedStaffProfile,
+        facility: resolvedFacility,
+        timestamp: Date.now()
       });
 
     } catch (err) {
@@ -3118,15 +3209,6 @@ export default function HospitalStaffWorkspace({
     return list;
   }, [allEmergencyLogs, emergencyCases, emergencyFilter]);
 
-  if (loading && referrals.length === 0 && emergencyCases.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[50vh] gap-3">
-        <Loader2 className="w-8 h-8 animate-spin text-[#008F83]" />
-        <span className="text-xs font-bold text-slate-500">Syncing intake queue &amp; CAD console...</span>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-[#F8FAFC]">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
@@ -3370,7 +3452,11 @@ export default function HospitalStaffWorkspace({
               )}
             </div>
             <div className="text-xl sm:text-2xl font-black text-red-900">
-              {counts.emergencyActive}
+              {loading && emergencyCases.length === 0 ? (
+                <span className="inline-block w-8 h-7 bg-red-200/50 rounded-lg animate-pulse" />
+              ) : (
+                counts.emergencyActive
+              )}
             </div>
             <p className="text-[10px] font-bold text-red-600 truncate">
               {counts.emergencyActive > 0 ? 'Urgent helpline dispatch' : 'No active alerts'}
@@ -3390,7 +3476,11 @@ export default function HospitalStaffWorkspace({
           >
             <span className="text-[10px] font-black uppercase tracking-wider text-amber-800 block">⚡ Needs Action</span>
             <div className="text-xl sm:text-2xl font-black text-amber-900">
-              {counts.actionNeeded}
+              {loading && referrals.length === 0 ? (
+                <span className="inline-block w-8 h-7 bg-amber-200/50 rounded-lg animate-pulse" />
+              ) : (
+                counts.actionNeeded
+              )}
             </div>
             <p className="text-[10px] font-bold text-amber-700 truncate">
               {counts.pending} intake · {counts.arrived} arrive
@@ -3408,7 +3498,11 @@ export default function HospitalStaffWorkspace({
           >
             <span className="text-[10px] font-black uppercase tracking-wider text-teal-800 block">🪑 In Waiting Room</span>
             <div className="text-xl sm:text-2xl font-black text-teal-900">
-              {counts.waitingRoom}
+              {loading && referrals.length === 0 ? (
+                <span className="inline-block w-8 h-7 bg-teal-200/50 rounded-lg animate-pulse" />
+              ) : (
+                counts.waitingRoom
+              )}
             </div>
             <p className="text-[10px] font-bold text-[#008F83] truncate">
               {counts.enRoute} en route
@@ -3426,7 +3520,11 @@ export default function HospitalStaffWorkspace({
           >
             <span className="text-[10px] font-black uppercase tracking-wider text-purple-800 block">🩺 With Doctor</span>
             <div className="text-xl sm:text-2xl font-black text-purple-900">
-              {counts.inConsultation}
+              {loading && referrals.length === 0 ? (
+                <span className="inline-block w-8 h-7 bg-purple-200/50 rounded-lg animate-pulse" />
+              ) : (
+                counts.inConsultation
+              )}
             </div>
             <p className="text-[10px] font-bold text-purple-600 truncate">
               Exam in room
@@ -3444,7 +3542,11 @@ export default function HospitalStaffWorkspace({
           >
             <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800 block">✅ Completed</span>
             <div className="text-xl sm:text-2xl font-black text-emerald-900">
-              {counts.completed}
+              {loading && referrals.length === 0 ? (
+                <span className="inline-block w-8 h-7 bg-emerald-200/50 rounded-lg animate-pulse" />
+              ) : (
+                counts.completed
+              )}
             </div>
             <p className="text-[10px] font-bold text-emerald-600 truncate">
               Signed today
@@ -3654,7 +3756,15 @@ export default function HospitalStaffWorkspace({
           </button>
 
           {/* 1. URGENT / ACTION REQUIRED SECTION */}
-          {counts.actionNeeded > 0 ? (
+          {loading && referrals.length === 0 ? (
+            <div className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-xs space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="h-4 bg-slate-200 rounded-md w-56 animate-pulse" />
+                <div className="h-3 bg-slate-100 rounded-md w-24 animate-pulse" />
+              </div>
+              <ReferralCardSkeleton count={2} />
+            </div>
+          ) : counts.actionNeeded > 0 ? (
             <div className="bg-white border-2 border-teal-600/40 rounded-3xl p-5 sm:p-6 shadow-xs space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-2.5">
@@ -3846,7 +3956,15 @@ export default function HospitalStaffWorkspace({
           </div>
 
           {/* Referral Queue Stream */}
-          {filteredReferrals.length > 0 ? (
+          {loading && referrals.length === 0 ? (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="h-4 bg-slate-200 rounded-md w-48 animate-pulse" />
+                <div className="h-3 bg-slate-100 rounded-md w-24 animate-pulse" />
+              </div>
+              <ReferralCardSkeleton count={3} />
+            </div>
+          ) : filteredReferrals.length > 0 ? (
             queueFilter === 'ALL' && !searchQuery ? (
               <div className="space-y-6">
                 {/* 1. Needs Your Action */}
@@ -4082,7 +4200,18 @@ export default function HospitalStaffWorkspace({
 
           {/* Emergency Cards Stream */}
           <div className="space-y-4">
-            {filteredEmergencyList.length > 0 ? (
+            {loading && filteredEmergencyList.length === 0 ? (
+              <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-2xs space-y-4 animate-pulse">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <div className="h-5 bg-slate-200 rounded-md w-64" />
+                  <div className="h-5 bg-slate-100 rounded-full w-24" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="h-12 bg-slate-50 rounded-xl" />
+                  <div className="h-12 bg-slate-50 rounded-xl" />
+                </div>
+              </div>
+            ) : filteredEmergencyList.length > 0 ? (
               filteredEmergencyList.map(sos => {
                 const isCat1 = sos.cadCategory === 'CAT 1';
                 const isResolved = sos.status === 'RESOLVED' || sos.status === 'COMPLETED';
