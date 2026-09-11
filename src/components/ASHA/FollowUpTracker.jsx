@@ -3,7 +3,8 @@ import {
   Phone, CheckCircle2, Check, Heart, Baby, Activity,
   Stethoscope, Shield, CalendarCheck, ArrowRight, RefreshCw,
   Send, Loader2, Hospital, MapPin, Building2, User, FileText,
-  Calendar, AlertTriangle, Clock, Globe, ChevronDown, Home
+  Calendar, AlertTriangle, Clock, Globe, ChevronDown, Home,
+  ChevronLeft, ChevronRight, Zap
 } from "lucide-react";
 import followupGhibli from "../../assets/followup_ghibli.jpg";
 import { supabase } from "../../services/supabase";
@@ -448,6 +449,50 @@ function getDemoItems(t) {
   ];
 }
 
+// ─── DATE / SHIFT UTILITIES (Matching Hospital Dashboard) ───
+const getTodayDateStr = () => {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const toLocalDateStr = (isoString) => {
+  if (!isoString) return '';
+  const d = new Date(isoString);
+  if (isNaN(d.getTime())) return '';
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const formatHumanDate = (dateStr) => {
+  if (!dateStr) return '';
+  const parts = dateStr.split('-').map(Number);
+  if (parts.length !== 3) return dateStr;
+  const dateObj = new Date(parts[0], parts[1] - 1, parts[2]);
+  return dateObj.toLocaleDateString('en-IN', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric'
+  });
+};
+
+const shiftDateStr = (dateStr, deltaDays) => {
+  if (!dateStr) return getTodayDateStr();
+  const parts = dateStr.split('-').map(Number);
+  if (parts.length !== 3) return getTodayDateStr();
+  const dateObj = new Date(parts[0], parts[1] - 1, parts[2]);
+  dateObj.setDate(dateObj.getDate() + deltaDays);
+  const year = dateObj.getFullYear();
+  const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const day = String(dateObj.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 const FILTER_TABS = ["all", "overdue", "dueToday", "upcoming", "done"];
 
 export default function FollowUpTracker({ patients, onLogVisit, onEditPatient, demoMode = false }) {
@@ -466,6 +511,38 @@ export default function FollowUpTracker({ patients, onLogVisit, onEditPatient, d
   const [careRequests, setCareRequests] = useState([]);
   const [doctorFollowUps, setDoctorFollowUps] = useState([]);
   const [loadingReferrals, setLoadingReferrals] = useState(false);
+
+  // ─── Shift / Date / Calendar Navigator State (Matching Hospital Staff Portal) ───
+  const todayStr = getTodayDateStr();
+  const [selectedDate, setSelectedDate] = useState(todayStr);
+  const [dateViewMode, setDateViewMode] = useState('ALL_DATES'); // 'ALL_DATES' | 'TODAY' | 'CALENDAR_DATE'
+
+  // ─── Interactive Doctor Checkup Verification Checklist State ───
+  const [checkedTasks, setCheckedTasks] = useState(() => {
+    try {
+      const saved = localStorage.getItem("radvault_followup_checklist");
+      return saved ? JSON.parse(saved) : {};
+    } catch { return {}; }
+  });
+
+  const toggleChecklist = (itemId, taskKey) => {
+    setCheckedTasks(prev => {
+      const current = prev[itemId] || {};
+      const updated = {
+        ...prev,
+        [itemId]: {
+          ...current,
+          [taskKey]: !current[taskKey]
+        }
+      };
+      try {
+        localStorage.setItem("radvault_followup_checklist", JSON.stringify(updated));
+      } catch (e) {
+        console.warn("Checklist save error:", e);
+      }
+      return updated;
+    });
+  };
 
   const [completedSet, setCompletedSet] = useState(() => {
     try {
@@ -541,25 +618,32 @@ export default function FollowUpTracker({ patients, onLogVisit, onEditPatient, d
     const docItems = (doctorFollowUps || []).map(item => {
       const followUpDate = item.follow_up_date ? new Date(item.follow_up_date) : new Date();
       const daysDiff = Math.floor((followUpDate - new Date()) / 86400000);
+      const itemDateStr = toLocalDateStr(item.follow_up_date || item.created_at) || todayStr;
       return {
         id: `doc-followup-${item.id}`,
         encounterId: item.encounterId || item.id,
         patientId: item.patientId || item.patient_id,
         patientCode: `DOC${String(item.id).slice(0, 6).toUpperCase()}`,
         patientName: item.patientName || "Village Patient",
-        gender: item.gender || "Male",
-        age: item.age ? `${item.age} years` : "45 years",
+        gender: item.gender || "Female",
+        age: item.age ? `${item.age} years` : "22 years",
         mobile: item.mobile || "",
         village: item.village || "Shirwal",
         type: "doctorFollowUp",
         label: "Specialist Follow-Up",
         category: "Hospital Specialist Review",
         detail: item.follow_up_reason || "Doctor specialist recommended home follow-up visit.",
-        conditionNote: "Verify prescribed medications and check symptom progression.",
+        conditionNote: item.treatmentAdvice || "Verify prescribed medications and check symptom progression.",
         urgencyDays: daysDiff <= 0 ? (daysDiff < 0 ? -2 : 0) : 1,
         actionLabel: t.checkRecovery,
-        hospital: item.hospital || "District Hospital",
+        hospital: item.hospital || "Pune Sassoon General Hospital",
         isDoctorFollowUp: true,
+        doctorName: item.doctorName || "Dr. Neha Joshi",
+        specialty: item.specialty || "Consultant Obstetrician",
+        diagnosis: item.diagnosis || "Severe Gestational Anemia (Hb < 8.0 g/dL)",
+        treatmentAdvice: item.treatmentAdvice,
+        prescriptions: item.prescriptions,
+        itemDateStr,
       };
     });
 
@@ -599,19 +683,42 @@ export default function FollowUpTracker({ patients, onLogVisit, onEditPatient, d
         hospital,
         category,
         conditionNote,
+        doctorName: it.doctorName,
+        specialty: it.specialty,
+        diagnosis: it.diagnosis,
+        treatmentAdvice: it.treatmentAdvice,
+        prescriptions: it.prescriptions,
+        isDoctorFollowUp: it.isDoctorFollowUp,
+        itemDateStr: it.itemDateStr || toLocalDateStr(it.created_at) || todayStr,
       };
     });
 
     enriched.sort((a, b) => a.urgencyDays - b.urgencyDays);
     return enriched;
-  }, [patients, careRequests, doctorFollowUps, lang, demoMode]);
+  }, [patients, careRequests, doctorFollowUps, lang, demoMode, todayStr]);
 
   const visibleItems = useMemo(() => {
-    if (activeFilter === "done") return allItems.filter(it => completedSet.has(it.id));
-    const pending = allItems.filter(it => !completedSet.has(it.id));
-    if (activeFilter === "all") return pending;
-    return pending.filter(it => getUrgencyBand(it) === activeFilter);
-  }, [allItems, activeFilter, completedSet]);
+    let list = allItems;
+
+    // Filter by Tab
+    if (activeFilter === "done") {
+      list = list.filter(it => completedSet.has(it.id));
+    } else {
+      list = list.filter(it => !completedSet.has(it.id));
+      if (activeFilter !== "all") {
+        list = list.filter(it => getUrgencyBand(it) === activeFilter);
+      }
+    }
+
+    // Filter by Date View Mode (Matching Hospital Dashboard)
+    if (dateViewMode === 'TODAY') {
+      list = list.filter(it => it.itemDateStr === todayStr || getUrgencyBand(it) === 'dueToday');
+    } else if (dateViewMode === 'CALENDAR_DATE') {
+      list = list.filter(it => it.itemDateStr === selectedDate || (selectedDate === todayStr && getUrgencyBand(it) === 'dueToday'));
+    }
+
+    return list;
+  }, [allItems, activeFilter, completedSet, dateViewMode, selectedDate, todayStr]);
 
   const counts = useMemo(() => ({
     all:      allItems.filter(it => !completedSet.has(it.id)).length,
@@ -628,12 +735,22 @@ export default function FollowUpTracker({ patients, onLogVisit, onEditPatient, d
   const markDone = async (id) => {
     const it = allItems.find(x => x.id === id);
     if (it && it.isDoctorFollowUp) {
-      const res = await completeFollowUp(it.encounterId);
+      const checks = checkedTasks[id] || {};
+      const verifiedItems = [];
+      if (checks.meds) verifiedItems.push("Medication adherence verified");
+      if (checks.vitals) verifiedItems.push("Home recovery vitals stable");
+      if (checks.symptoms) verifiedItems.push("No danger signs reported");
+
+      const note = verifiedItems.length > 0 
+        ? `Doctor follow-up checkoff: ${verifiedItems.join(", ")}.`
+        : "Doctor specialist follow-up visit conducted by ASHA.";
+
+      const res = await completeFollowUp(it.encounterId, note);
       if (res && !res.success) {
         if (!res.persisted) {
           setSyncNotice({
             type: 'warning',
-            message: 'Session checkoff saved locally. Note: Durable follow-up completion state is not supported by the current schema for consultations.'
+            message: 'Session checkoff saved locally. Note: Durable follow-up completion state is not supported by schema.'
           });
         } else {
           setSyncNotice({
@@ -645,7 +762,7 @@ export default function FollowUpTracker({ patients, onLogVisit, onEditPatient, d
       } else if (res && res.success && res.persisted) {
         setSyncNotice({
           type: 'success',
-          message: 'Follow-up visit completion durably recorded in health record.'
+          message: 'Doctor consultation follow-up completed and durably synced to Supabase!'
         });
       }
     }
@@ -838,6 +955,110 @@ export default function FollowUpTracker({ patients, onLogVisit, onEditPatient, d
         </div>
       </div>
 
+      {/* ─── CALENDAR / SHIFT NAVIGATOR (Matching Hospital Dashboard) ─── */}
+      <div className="max-w-6xl mx-auto px-4 sm:px-8 pt-3 pb-1">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white border border-slate-200/90 rounded-2xl p-2.5 shadow-2xs">
+          <div className="flex items-center gap-2 bg-slate-100/90 p-1.5 rounded-2xl text-xs font-black flex-wrap">
+            
+            {/* Quick Jump: Today's Follow-Ups */}
+            <button
+              type="button"
+              onClick={() => {
+                setDateViewMode('TODAY');
+                setSelectedDate(todayStr);
+              }}
+              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 ${
+                dateViewMode === 'TODAY'
+                  ? 'bg-[#008F83] text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+              title="Active visits scheduled for today"
+            >
+              <Zap className="w-3.5 h-3.5 text-amber-300" />
+              <span>Today's Visits</span>
+            </button>
+
+            {/* Day-by-Day Calendar Stepper */}
+            <div className={`flex items-center bg-white rounded-xl border shadow-2xs px-1 py-0.5 transition-all ${
+              dateViewMode === 'CALENDAR_DATE'
+                ? 'border-[#008F83] ring-2 ring-[#008F83]/20 shadow-xs'
+                : 'border-slate-200'
+            }`}>
+              {/* Prev Day Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  const prev = shiftDateStr(selectedDate, -1);
+                  setSelectedDate(prev);
+                  setDateViewMode('CALENDAR_DATE');
+                }}
+                title="Previous Day"
+                className="p-1 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg cursor-pointer"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+
+              {/* Calendar Date Input & Label */}
+              <label className="relative flex items-center gap-1.5 px-2 py-0.5 cursor-pointer text-[11px] font-black text-slate-800 hover:text-[#008F83] select-none">
+                <Calendar className="w-3.5 h-3.5 text-[#008F83]" />
+                <span>{formatHumanDate(selectedDate)}</span>
+                {selectedDate === todayStr && (
+                  <span className="text-[9px] bg-emerald-50 text-[#008F83] border border-emerald-200 px-1 rounded-sm ml-0.5 font-bold">
+                    Today
+                  </span>
+                )}
+                {/* Native date input overlay for instant calendar popup on click */}
+                <input
+                  type="date"
+                  value={selectedDate}
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      setSelectedDate(e.target.value);
+                      setDateViewMode('CALENDAR_DATE');
+                    }
+                  }}
+                  className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                  title="Click to pick specific date"
+                />
+              </label>
+
+              {/* Next Day Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  const next = shiftDateStr(selectedDate, 1);
+                  setSelectedDate(next);
+                  setDateViewMode('CALENDAR_DATE');
+                }}
+                title="Next Day"
+                className="p-1 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg cursor-pointer"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* All Dates Toggle */}
+            <button
+              type="button"
+              onClick={() => setDateViewMode('ALL_DATES')}
+              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1 ${
+                dateViewMode === 'ALL_DATES'
+                  ? 'bg-slate-800 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <CalendarCheck className="w-3.5 h-3.5 text-slate-300" />
+              <span>All Dates</span>
+            </button>
+
+          </div>
+
+          <div className="text-[11px] font-bold text-slate-500 px-2">
+            {dateViewMode === 'ALL_DATES' ? 'Viewing all scheduled follow-ups' : `Filtered: ${formatHumanDate(selectedDate)}`}
+          </div>
+        </div>
+      </div>
+
       {/* ── Active Checks Notice Banner ── */}
       <div className="max-w-6xl mx-auto px-4 sm:px-8 pt-3 pb-1">
         <div className="bg-gradient-to-r from-emerald-50/90 via-teal-50/60 to-emerald-50/80 border border-emerald-200/80 rounded-2xl p-3.5 sm:p-4 flex items-center justify-between gap-4 shadow-2xs">
@@ -962,36 +1183,112 @@ export default function FollowUpTracker({ patients, onLogVisit, onEditPatient, d
                   </div>
                 </div>
 
-                {/* Column 2: Facility & Clinical Instructions */}
-                <div className="flex-1 min-w-0 border-t lg:border-t-0 lg:border-l border-slate-100 lg:pl-6 pt-3 lg:pt-0 flex flex-col justify-center">
-                  <div className="flex items-start gap-2.5">
-                    <div className="w-8 h-8 rounded-xl bg-teal-50 border border-teal-200/80 text-[#008F83] flex items-center justify-center shrink-0 mt-0.5">
-                      <Hospital className="w-4 h-4 stroke-[2.2]" />
+                  {/* Column 2: Facility & Clinical Instructions */}
+                  <div className="flex-1 min-w-0 border-t lg:border-t-0 lg:border-l border-slate-100 lg:pl-6 pt-3 lg:pt-0 flex flex-col justify-center">
+                    <div className="flex items-start gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-teal-50 border border-teal-200/80 text-[#008F83] flex items-center justify-center shrink-0 mt-0.5">
+                        {item.isDoctorFollowUp ? (
+                          <Stethoscope className="w-4 h-4 text-indigo-600 stroke-[2.2]" />
+                        ) : (
+                          <Hospital className="w-4 h-4 stroke-[2.2]" />
+                        )}
+                      </div>
+                      <div>
+                        <h4 className="font-black text-slate-900 text-sm leading-tight">
+                          {item.hospital}
+                        </h4>
+                        <span className="text-[11px] font-bold text-slate-400 mt-0.5 block">
+                          {item.category}
+                        </span>
+                      </div>
                     </div>
-                    <div>
-                      <h4 className="font-black text-slate-900 text-sm leading-tight">
-                        {item.hospital}
-                      </h4>
-                      <span className="text-[11px] font-bold text-slate-400 mt-0.5 block">
-                        {item.category}
-                      </span>
-                    </div>
-                  </div>
 
-                  <div className="mt-3 flex items-start justify-between gap-3 bg-slate-50/70 rounded-xl p-2.5 border border-slate-100">
-                    <div className="min-w-0 space-y-0.5">
-                      <p className="text-xs font-bold text-slate-700 leading-relaxed">
-                        {item.detail}
-                      </p>
-                      <p className="text-xs font-medium text-slate-500 leading-relaxed">
-                        {item.conditionNote}
-                      </p>
-                    </div>
-                    <div className="text-teal-600 shrink-0 mt-0.5" title="Prescription & Follow-Up File">
-                      <FileText className="w-4 h-4" />
-                    </div>
+                    {item.isDoctorFollowUp ? (
+                      <div className="mt-3 bg-gradient-to-br from-indigo-50/80 via-white to-emerald-50/60 rounded-2xl p-3.5 border border-indigo-100 text-xs shadow-2xs space-y-2.5">
+                        
+                        {/* Attending Specialist Banner */}
+                        <div className="flex items-center justify-between gap-2 pb-2 border-b border-indigo-100">
+                          <div className="min-w-0">
+                            <span className="font-black text-indigo-950 text-xs truncate block">
+                              {item.doctorName} · {item.specialty}
+                            </span>
+                            <span className="text-[10px] font-bold text-slate-500">Tertiary Specialist Consultation</span>
+                          </div>
+                          <span className="text-[9px] font-black uppercase tracking-wider text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded-md shrink-0">
+                            Doctor Prescribed
+                          </span>
+                        </div>
+
+                        {/* Clinical Diagnosis & Advice */}
+                        <div className="space-y-1 bg-white/90 p-2.5 rounded-xl border border-indigo-50">
+                          {item.diagnosis && (
+                            <div className="flex items-start gap-1.5">
+                              <span className="text-[10px] font-black uppercase text-indigo-900 shrink-0">Diagnosis:</span>
+                              <span className="font-black text-slate-900 text-xs">{item.diagnosis}</span>
+                            </div>
+                          )}
+                          {item.treatmentAdvice && (
+                            <div className="text-[11px] text-slate-700 font-medium leading-relaxed">
+                              <span className="font-bold text-emerald-800">Care Plan / Rx: </span>
+                              {item.treatmentAdvice}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Interactive ASHA Verification Checkbox List */}
+                        <div className="pt-1 space-y-1.5">
+                          <div className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+                            Doctor Checkup Follow-Up Verification:
+                          </div>
+                          {[
+                            { key: "meds", label: "Medication adherence verified (patient taking prescribed medicines)" },
+                            { key: "recovery", label: "Home recovery check conducted (no severe fatigue or bleeding)" },
+                            { key: "vitals", label: "Vitals monitored and recorded during visit" }
+                          ].map(chk => {
+                            const isChecked = Boolean(checkedTasks[item.id]?.[chk.key]);
+                            return (
+                              <div
+                                key={chk.key}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleChecklist(item.id, chk.key);
+                                }}
+                                className={`flex items-center gap-2 p-2 rounded-xl border text-[11px] font-bold cursor-pointer transition-all select-none ${
+                                  isChecked
+                                    ? "bg-emerald-100/90 border-emerald-300 text-emerald-950 shadow-2xs"
+                                    : "bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50"
+                                }`}
+                              >
+                                <div className={`w-4 h-4 rounded-md flex items-center justify-center border transition-all shrink-0 ${
+                                  isChecked
+                                    ? "bg-[#008F83] border-[#008F83] text-white"
+                                    : "border-slate-300 bg-white"
+                                }`}>
+                                  {isChecked && <Check className="w-3 h-3 stroke-[3]" />}
+                                </div>
+                                <span className="leading-tight">{chk.label}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                      </div>
+                    ) : (
+                      <div className="mt-3 flex items-start justify-between gap-3 bg-slate-50/70 rounded-xl p-2.5 border border-slate-100">
+                        <div className="min-w-0 space-y-0.5">
+                          <p className="text-xs font-bold text-slate-700 leading-relaxed">
+                            {item.detail}
+                          </p>
+                          <p className="text-xs font-medium text-slate-500 leading-relaxed">
+                            {item.conditionNote}
+                          </p>
+                        </div>
+                        <div className="text-teal-600 shrink-0 mt-0.5" title="Prescription & Follow-Up File">
+                          <FileText className="w-4 h-4" />
+                        </div>
+                      </div>
+                    )}
                   </div>
-                </div>
 
                 {/* Column 3: Due Pill & Actions */}
                 <div className="w-full lg:w-56 shrink-0 flex flex-col justify-center items-stretch lg:items-end gap-2.5 border-t lg:border-t-0 lg:border-l border-slate-100 lg:pl-6 pt-3 lg:pt-0">
