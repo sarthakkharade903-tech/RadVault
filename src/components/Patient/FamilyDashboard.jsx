@@ -447,7 +447,8 @@ export default function FamilyDashboard({ family, members: initialMembers = [], 
 
               <div className="grid gap-3">
                 {membersList.map(m => {
-                  const isSelected = m.id === selectedMember.id;
+                  const isSelected = selectedMember && m.id === selectedMember.id;
+                  const memberAvatar = m.avatar_url || localStorage.getItem(`radvault_avatar_${m.id}`);
                   return (
                     <div
                       key={m.id}
@@ -459,13 +460,17 @@ export default function FamilyDashboard({ family, members: initialMembers = [], 
                       }`}
                     >
                       <div className="flex items-center gap-3.5">
-                        <div className="w-11 h-11 rounded-full bg-amber-100 text-amber-900 font-black text-sm flex items-center justify-center flex-shrink-0">
-                          {m.name[0].toUpperCase()}
+                        <div className="w-11 h-11 rounded-full bg-amber-100 text-amber-900 font-black text-sm flex items-center justify-center flex-shrink-0 overflow-hidden border border-amber-200/80">
+                          {memberAvatar ? (
+                            <img src={memberAvatar} alt={m.name || "Member"} className="w-full h-full object-cover" />
+                          ) : (
+                            <span>{m.name ? m.name[0].toUpperCase() : "M"}</span>
+                          )}
                         </div>
                         <div>
-                          <p className="font-black text-slate-900 text-sm">{m.name}</p>
+                          <p className="font-black text-slate-900 text-sm">{m.name || "Family Member"}</p>
                           <p className="text-xs text-slate-500 font-medium mt-0.5">
-                            {m.gender} • {m.age_years ? `${m.age_years} yrs` : "Resident"} • {m.relation_to_head || "Member"}
+                            {m.gender || "Member"} • {m.age_years ? `${m.age_years} yrs` : "Resident"} • {m.relation_to_head || "Member"}
                           </p>
                         </div>
                       </div>
@@ -483,7 +488,7 @@ export default function FamilyDashboard({ family, members: initialMembers = [], 
 
             {/* ── Government Health Schemes & Eligibility Section ── */}
             <div className="pt-2">
-              <GovernmentSchemes family={family} members={members} />
+              <GovernmentSchemes family={family} members={membersList} />
             </div>
 
           </div>
