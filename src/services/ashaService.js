@@ -441,14 +441,14 @@ export async function createPhysicalReferral(payload) {
       const priorityLabel = isHigh ? '🔴 Emergency / Immediate Attention' : isMedium ? '🟡 Urgent / Within 24 Hours' : '🟢 Routine / Local Care';
 
       const defaultCreatedBy = payload.created_by || 'ASHA Worker (Priya Deshmukh)';
-      const hospitalName = payload.destination_hospital || payload.facility || 'Shrirampur Primary Health Centre';
+      const hospitalName = payload.destination_hospital || payload.facility || 'Pune Sassoon General Hospital';
 
       const referralData = {
         patient_id: targetPatientId,
         patient_name: payload.patient_name || clinicalPatient?.full_name || null,
         created_by: defaultCreatedBy,
         destination_hospital: hospitalName,
-        destination_facility_id: payload.destination_facility_id,
+        destination_facility_id: payload.destination_facility_id || 'f2222222-2222-2222-2222-222222222222',
         destination_department: payload.department || payload.destination_department || 'General Medicine',
         doctor_assigned: payload.doctor_assigned || null,
         ...(payload.doctor_id && isValidUuid(payload.doctor_id) ? { doctor_id: payload.doctor_id } : {}),
@@ -560,7 +560,7 @@ export async function createCareRequest(payload) {
     patient_name: payload.patient_name || clinicalPatient?.full_name || 'Village Patient',
     source: payload.source || 'PATIENT_DIRECT',
     created_by: defaultCreatedBy,
-    facility: payload.facility || payload.destination_hospital || 'Shrirampur Primary Health Centre',
+    facility: payload.facility || payload.destination_hospital || 'Pune Sassoon General Hospital',
     department: payload.department || 'General Medicine',
     slot_preference: payload.slot_preference || null,
     appointment_date: payload.appointment_date || null,
@@ -921,7 +921,7 @@ export async function getDoctorFollowUps() {
           follow_up_date: c.follow_up_recommended_date,
           follow_up_reason: detail || 'Doctor specialist follow-up visit required.',
           priority: c.referrals?.priority || 'HIGH',
-          hospital: c.referrals?.destination_hospital || 'Shrirampur Primary Health Centre'
+          hospital: c.referrals?.destination_hospital || 'Pune Sassoon General Hospital'
         });
       });
     }
@@ -958,7 +958,7 @@ export async function getDoctorFollowUps() {
             follow_up_date: e.follow_up_date,
             follow_up_reason: e.follow_up_reason || e.complaint || 'Encounter follow-up required.',
             priority: e.referrals?.priority || 'HIGH',
-            hospital: e.referrals?.destination_hospital || 'Shrirampur Primary Health Centre'
+            hospital: e.referrals?.destination_hospital || 'Pune Sassoon General Hospital'
           });
         });
       }
@@ -1073,7 +1073,7 @@ export async function createWaitingTeleconsult(payload) {
   const { data: careReq, error: careErr } = await createCareRequest({
     patient_id: resolvedPatientId,
     patient_name: payload.patient_name || 'Village Patient',
-    facility: payload.facility || 'Shrirampur Primary Health Centre',
+    facility: payload.facility || 'Pune Sassoon General Hospital',
     department: 'Tele-Health Virtual OPD',
     priority: payload.priority || 'ROUTINE',
     reason: `Virtual Teleconsultation [Token: ${token}]: ${payload.chief_complaint}`,
@@ -1090,7 +1090,7 @@ export async function createWaitingTeleconsult(payload) {
     const sessionRecord = {
       patient_id: resolvedPatientId,
       patient_name: payload.patient_name || 'Village Patient',
-      facility: payload.facility || 'Shrirampur Primary Health Centre',
+      facility: payload.facility || 'Pune Sassoon General Hospital',
       chief_complaint: payload.chief_complaint || 'General Consultation',
       additional_notes: payload.additional_notes || null,
       vitals_snapshot: payload.vitals_snapshot || {},

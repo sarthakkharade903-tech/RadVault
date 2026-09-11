@@ -229,18 +229,12 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
             };
           });
           setFacilitiesList(merged);
-          // Auto-select nearest facility if user hasn't explicitly chosen one
+          // Auto-select Pune Sassoon General Hospital if user hasn't explicitly chosen one
           if (!hasUserSelectedRef.current && merged.length > 0) {
-            const targetLat = userCoords?.lat ?? 18.5284;
-            const targetLon = userCoords?.lon ?? 73.8746;
-            const sorted = [...merged].sort((a, b) => {
-              const dA = calculateHaversineDistance(targetLat, targetLon, a.lat, a.lon) ?? 999;
-              const dB = calculateHaversineDistance(targetLat, targetLon, b.lat, b.lon) ?? 999;
-              return dA - dB;
-            });
-            const nearestFac = sorted[0] || merged[0];
-            setSelectedFacility(nearestFac);
-            setHospital(nearestFac.name);
+            const sassoon = merged.find(f => f.id === 'f2222222-2222-2222-2222-222222222222' || f.name.toLowerCase().includes('sassoon'));
+            const defaultFac = sassoon || merged[0];
+            setSelectedFacility(defaultFac);
+            setHospital(defaultFac.name);
           }
         }
       } catch (e) {
@@ -268,7 +262,12 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
         typeLabel: f.district ? `${f.district} District · ${f.typeLabel || 'Facility'}` : (f.typeLabel || 'Government Facility'),
         isIntegrated: true
       };
-    }).sort((a, b) => a.rawDist - b.rawDist);
+    }).sort((a, b) => {
+      // Prioritize Pune Sassoon General Hospital as the primary integrated apex center
+      if (a.id === 'f2222222-2222-2222-2222-222222222222' || a.name.toLowerCase().includes('sassoon')) return -1;
+      if (b.id === 'f2222222-2222-2222-2222-222222222222' || b.name.toLowerCase().includes('sassoon')) return 1;
+      return a.rawDist - b.rawDist;
+    });
 
     if (!showMoreFacilities && !hospSearch) {
       return connected;
@@ -282,13 +281,18 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
         isIntegrated: false
       }));
 
-    return [...connected, ...extra].sort((a, b) => (a.rawDist || 0) - (b.rawDist || 0));
+    return [...connected, ...extra].sort((a, b) => {
+      if (a.id === 'f2222222-2222-2222-2222-222222222222') return -1;
+      if (b.id === 'f2222222-2222-2222-2222-222222222222') return 1;
+      return (a.rawDist || 0) - (b.rawDist || 0);
+    });
   }, [facilitiesList, userCoords, showMoreFacilities, hospSearch, nearbyGovHospitals]);
 
-  // Auto-sync default selected facility to the closest hospital when baseFacilities updates
+  // Auto-sync default selected facility to Pune Sassoon General Hospital when baseFacilities updates
   useEffect(() => {
     if (!hasUserSelectedRef.current && baseFacilities && baseFacilities.length > 0) {
-      const nearest = baseFacilities[0];
+      const sassoon = baseFacilities.find(f => f.id === 'f2222222-2222-2222-2222-222222222222' || f.name.toLowerCase().includes('sassoon'));
+      const nearest = sassoon || baseFacilities[0];
       if (nearest && nearest.name !== hospital) {
         setHospital(nearest.name);
         const matched = facilitiesList.find(f => f.id === nearest.id || f.name.toLowerCase() === nearest.name.toLowerCase()) || nearest;

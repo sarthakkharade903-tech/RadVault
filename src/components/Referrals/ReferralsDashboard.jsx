@@ -44,7 +44,7 @@ export default function ReferralsDashboard({ onBack, initialTab = 'list', demoMo
           destination_facility_id: d.destination_facility_id,
           createdBy: d.created_by || 'ASHA Worker',
           department: d.destination_department || d.department || 'General Medicine & OPD',
-          hospital: d.destination_hospital || d.facility || 'Shrirampur Primary Health Centre',
+          hospital: d.destination_hospital || d.facility || 'Pune Sassoon General Hospital',
           doctor: d.doctor_assigned || 'On-Duty Medical Officer',
           priority: (d.priority === 'URGENT' || d.priority === 'RED' || d.priority === 'EMERGENCY' || d.priority === 'HIGH')
             ? 'RED'
@@ -102,7 +102,7 @@ export default function ReferralsDashboard({ onBack, initialTab = 'list', demoMo
       destination_facility_id: newReferralData.destination_facility_id,
       createdBy: newReferralData.created_by || 'ASHA Worker',
       department: newReferralData.destination_department || newReferralData.department || 'General Medicine & OPD',
-      hospital: newReferralData.destination_hospital || newReferralData.facility || 'Shrirampur Primary Health Centre',
+      hospital: newReferralData.destination_hospital || newReferralData.facility || 'Pune Sassoon General Hospital',
       doctor: newReferralData.doctor_assigned || 'On-Duty Medical Officer',
       priority: newReferralData.priority === 'HIGH' || newReferralData.priority === 'RED' ? 'RED' : 'GREEN',
       status: newReferralData.status || 'Pending',

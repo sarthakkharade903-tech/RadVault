@@ -81,29 +81,43 @@ export default function PatientLogin({ onLoggedIn, onBack }) {
                 onClick={() => {
                   const demoAuth = {
                     family: {
-                      id: "f1111111-1111-1111-1111-111111111111",
-                      head_name: "Prakash Patil",
-                      village: "Shirwal",
-                      family_email: "patil.family@gmail.com"
+                      id: "d9568f85-3c12-4a51-89c1-26d0c4c638ee",
+                      family_name: "Patil Family",
+                      head_name: "Rahul Patil",
+                      head_of_family: "Rahul Patil",
+                      village: "Vadgaon",
+                      family_email: "sarthakkharade903@gmail.com"
                     },
                     members: [
                       {
-                        id: "p1111111-1111-1111-1111-111111111111",
-                        name: "Prakash Patil",
-                        age: 48,
-                        gender: "Male",
-                        blood_group: "B+",
-                        phone: "9822110022",
-                        village: "Shirwal"
-                      },
-                      {
-                        id: "p2222222-2222-2222-2222-222222222222",
-                        name: "Sunita Patil",
-                        age: 44,
+                        id: "b6f81101-46d0-4b4d-8df0-9d9ce11a6a70",
+                        name: "Rekha Bai",
+                        age_years: 22,
+                        age: 22,
                         gender: "Female",
                         blood_group: "O+",
-                        phone: "9822110023",
-                        village: "Shirwal"
+                        phone: "9797979797",
+                        mobile: "9797979797",
+                        village: "Vadgaon",
+                        relation_to_head: "Wife",
+                        is_pregnant: true,
+                        abha_id: "64-8837-7348-6384",
+                        asha_verified_at: "2026-09-11T07:19:13.499Z"
+                      },
+                      {
+                        id: "b1e7283e-388a-468b-a992-2b3520a77912",
+                        name: "Rahul Patil",
+                        age_years: 26,
+                        age: 26,
+                        gender: "Male",
+                        blood_group: "B-",
+                        phone: "9898989898",
+                        mobile: "9898989898",
+                        village: "Vadgaon",
+                        relation_to_head: "Head of Family",
+                        is_pregnant: false,
+                        abha_id: "72-9104-5821-3940",
+                        asha_verified_at: "2026-09-11T07:19:13.499Z"
                       }
                     ]
                   };

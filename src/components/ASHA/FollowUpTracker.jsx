@@ -305,7 +305,7 @@ function buildReferralItems(careRequests, t) {
       ? Math.floor((today - new Date(req.created_at)) / 86400000)
       : 0;
 
-    const hospital = req.facility || "Shrirampur Primary Health Centre";
+    const hospital = req.facility || "Pune Sassoon General Hospital";
     const patientName = req.patient_name || "Village Resident";
     const mobile = req.mobile || req.patient_mobile || "";
     const status = (req.status || "").toUpperCase();
@@ -385,7 +385,7 @@ function getDemoItems(t) {
       type: "postTreatment",
       label: "Post-Discharge Care",
       category: "Post-Discharge Care",
-      hospital: "Shrirampur Primary Health Centre",
+      hospital: "Pune Sassoon General Hospital",
       detail: "Discharged from hospital — check recovery & medicines.",
       conditionNote: "Hypertension. Continue prescribed medication.",
       urgencyDays: -2,
@@ -577,7 +577,7 @@ export default function FollowUpTracker({ patients, onLogVisit, onEditPatient, d
       const gender = it.gender || pt?.gender || (it.type === 'anc' ? 'Female' : 'Male');
       const age = it.age || (pt?.age ? `${pt.age} years` : (it.type === 'anc' ? '28 years' : '52 years'));
       const mobile = it.mobile || pt?.mobile || "+91 98765 43210";
-      const hospital = it.hospital || "Shrirampur Primary Health Centre";
+      const hospital = it.hospital || "Pune Sassoon General Hospital";
       const category = it.category || it.label || "Post-Discharge Care";
 
       let conditionNote = it.conditionNote;

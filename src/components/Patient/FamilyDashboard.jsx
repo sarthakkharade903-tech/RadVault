@@ -11,7 +11,7 @@ import MedicalDocumentCard from './MedicalDocumentCard';
 import DocumentPreview from './DocumentPreview';
 import UploadModal from './UploadModal';
 import GovernmentSchemes from './GovernmentSchemes';
-import { getDocuments } from '../../services/vaultService';
+import { getDocuments, deleteDocument } from '../../services/vaultService';
 
 // ─── Single-Language Dictionaries (No Mixed Text) ─────────
 const PORTAL_TRANSLATIONS = {
@@ -156,6 +156,16 @@ export default function FamilyDashboard({ family, members, onLogout, onBack, onO
       (doc.notes && doc.notes.toLowerCase().includes(q))
     );
   });
+
+  const handleDeleteDoc = async (doc) => {
+    if (!window.confirm(`Are you sure you want to delete "${doc.title || doc.file_name}"?`)) return;
+    try {
+      await deleteDocument(doc.id);
+      setDocuments(prev => prev.filter(d => d.id !== doc.id));
+    } catch (e) {
+      console.error("Failed to delete document:", e);
+    }
+  };
 
   return (
     <div className="flex flex-col h-screen bg-[#FCFAF5] font-sans text-slate-800 selection:bg-amber-100">
@@ -338,7 +348,7 @@ export default function FamilyDashboard({ family, members, onLogout, onBack, onO
               ) : filteredDocs.length > 0 ? (
                 <div className="space-y-4">
                   {filteredDocs.map(doc => (
-                    <MedicalDocumentCard key={doc.id} doc={doc} onView={setPreviewDoc} />
+                    <MedicalDocumentCard key={doc.id} doc={doc} onView={setPreviewDoc} onDelete={handleDeleteDoc} />
                   ))}
                 </div>
               ) : (

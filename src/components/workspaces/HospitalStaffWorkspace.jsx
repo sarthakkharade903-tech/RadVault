@@ -121,6 +121,7 @@ const INITIAL_DEMO_REFERRALS = [
     patient_blood_group: 'B+',
     created_by: 'ASHA Worker: Sunita Deshmukh',
     destination_hospital: 'Pune Sassoon General Hospital',
+    destination_facility_id: 'f2222222-2222-2222-2222-222222222222',
     destination_department: 'Cardiology',
     doctor_assigned: 'On-Duty Specialist',
     priority: 'HIGH',
@@ -144,6 +145,7 @@ const INITIAL_DEMO_REFERRALS = [
     is_pregnant: true,
     created_by: 'ASHA Worker: Sunita Deshmukh',
     destination_hospital: 'Pune Sassoon General Hospital',
+    destination_facility_id: 'f2222222-2222-2222-2222-222222222222',
     destination_department: 'Gynecology & Obstetrics',
     doctor_assigned: 'On-Duty Specialist',
     priority: 'ORANGE',
@@ -166,6 +168,7 @@ const INITIAL_DEMO_REFERRALS = [
     patient_blood_group: 'A+',
     created_by: 'ASHA Worker: Sunita Deshmukh',
     destination_hospital: 'Pune Sassoon General Hospital',
+    destination_facility_id: 'f2222222-2222-2222-2222-222222222222',
     destination_department: 'General Medicine',
     doctor_assigned: 'Dr. Priya Sharma',
     priority: 'GREEN',
@@ -189,6 +192,7 @@ const INITIAL_DEMO_REFERRALS = [
     created_by: 'Direct Patient (Self-Booking)',
     source: 'PATIENT_DIRECT',
     destination_hospital: 'Pune Sassoon General Hospital',
+    destination_facility_id: 'f2222222-2222-2222-2222-222222222222',
     destination_department: 'General Medicine',
     doctor_assigned: null,
     priority: 'GREEN',
@@ -212,6 +216,7 @@ const INITIAL_DEMO_REFERRALS = [
     created_by: 'Virtual Teleconsultation (eSanjeevani)',
     source: 'TELECONSULT',
     destination_hospital: 'Pune Sassoon General Hospital',
+    destination_facility_id: 'f2222222-2222-2222-2222-222222222222',
     destination_department: 'Pediatrics',
     doctor_assigned: 'Dr. Meera Nambiar',
     priority: 'ORANGE',
@@ -344,11 +349,11 @@ function OPDTokenPrintSlip({ referral, facility, onClose }) {
   const doctorName =
     (referral.doctor_assigned ? referral.doctor_assigned.split('(')[0]?.trim() : 'On-Duty Medical Officer');
 
-  const facilityName = facility?.name || 'Shrirampur Primary Health Centre';
-  const districtName = facility?.district || 'Ahmednagar';
+  const facilityName = facility?.name || 'Pune Sassoon General Hospital';
+  const districtName = facility?.district || 'Pune';
 
   const qrData = JSON.stringify({
-    fid: facility?.id || 'f1111111-1111-1111-1111-111111111111',
+    fid: facility?.id || 'f2222222-2222-2222-2222-222222222222',
     ref: referral.id,
     tok: tokenNumber,
     pid: referral.patient_unified_id || referral.patient_id,
@@ -2160,9 +2165,14 @@ export default function HospitalStaffWorkspace({
   const [sourceFilter, setSourceFilter] = useState('ALL'); // 'ALL' | 'ASHA' | 'PATIENT_DIRECT' | 'TELECONSULT'
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Selected facility with local persistence
+  // Selected facility with local persistence — default to Pune Sassoon General Hospital
   const [selectedFacilityId, setSelectedFacilityId] = useState(() => {
-    return localStorage.getItem('radvault_reception_facility_id') || 'ALL';
+    const saved = localStorage.getItem('radvault_reception_facility_id');
+    if (!saved || saved === 'f1111111-1111-1111-1111-111111111111') {
+      try { localStorage.setItem('radvault_reception_facility_id', 'f2222222-2222-2222-2222-222222222222'); } catch (_) {}
+      return 'f2222222-2222-2222-2222-222222222222';
+    }
+    return saved;
   });
 
   // Operational State — Hydrated instantly from SWR cache if present
@@ -2189,6 +2199,8 @@ export default function HospitalStaffWorkspace({
       if (cached.facility) setFacility(cached.facility);
       setLoading(false);
     } else {
+      setReferrals([]);
+      setEmergencyCases([]);
       setLoading(true);
     }
   };
@@ -2481,7 +2493,7 @@ export default function HospitalStaffWorkspace({
             ? INITIAL_DEMO_REFERRALS.filter(r =>
                 r.destination_facility_id === selectedFacilityId ||
                 r.destination_hospital?.toLowerCase().includes(activeFac.name.toLowerCase()) ||
-                (activeFac.name.toLowerCase().includes('shrirampur') && !r.destination_hospital?.toLowerCase().includes('sassoon'))
+                activeFac.name.toLowerCase().includes(r.destination_hospital?.toLowerCase() || '')
               )
             : []);
       setReferrals(filteredDemo);
@@ -2984,7 +2996,7 @@ export default function HospitalStaffWorkspace({
 
   const handleAlertASHA = async (sos) => {
     setActionLoadingId(sos.id);
-    const hospitalName = facility?.name || (isDemoMode ? 'Shrirampur Primary Health Centre' : 'Primary Health Centre');
+    const hospitalName = facility?.name || (isDemoMode ? 'Pune Sassoon General Hospital' : 'Primary Health Centre');
     const msg = `🚨 *EMERGENCY SOS DISPATCH ALERT*\n*Patient:* ${sos.patient_name || 'Citizen'}\n*Phone:* ${sos.phone}\n*Emergency:* ${sos.nature} (${sos.cadCategory})\n*Location:* ${sos.village}\n*GPS Map:* ${sos.mapsLink || 'Near Facility'}\n*Signs:* ${sos.signs || 'Immediate response needed'}\n*Hospital:* ${hospitalName}\nPlease escort or reach immediately!`;
     const waUrl = `https://wa.me/?text=${encodeURIComponent(msg)}`;
     window.open(waUrl, '_blank');

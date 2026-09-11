@@ -43,8 +43,8 @@ const DEMO_DOCTOR_PROFILE = {
   id: 'd3333333-3333-3333-3333-333333333333',
   name: 'Dr. Arvind Kulkarni',
   specialty: 'General Medicine',
-  facility_id: 'f1111111-1111-1111-1111-111111111111',
-  facility_name: 'Shrirampur Primary Health Centre'
+  facility_id: 'f2222222-2222-2222-2222-222222222222',
+  facility_name: 'Pune Sassoon General Hospital'
 };
 
 const INITIAL_DEMO_REFERRALS = [
@@ -53,7 +53,8 @@ const INITIAL_DEMO_REFERRALS = [
     patient_id: 'pat-demo-1',
     patient_name: 'Rajesh Kumar',
     created_by: 'ASHA Worker: Sunita Deshmukh',
-    destination_hospital: 'Shrirampur Primary Health Centre',
+    destination_hospital: 'Pune Sassoon General Hospital',
+    destination_facility_id: 'f2222222-2222-2222-2222-222222222222',
     destination_department: 'General Medicine',
     doctor_id: 'd3333333-3333-3333-3333-333333333333',
     doctor_assigned: 'Dr. Arvind Kulkarni',
@@ -70,7 +71,8 @@ const INITIAL_DEMO_REFERRALS = [
     patient_id: 'pat-demo-2',
     patient_name: 'Sunita Patil',
     created_by: 'ASHA Worker: Sunita Deshmukh',
-    destination_hospital: 'Shrirampur Primary Health Centre',
+    destination_hospital: 'Pune Sassoon General Hospital',
+    destination_facility_id: 'f2222222-2222-2222-2222-222222222222',
     destination_department: 'General Medicine',
     doctor_id: 'd3333333-3333-3333-3333-333333333333',
     doctor_assigned: 'Dr. Arvind Kulkarni',
@@ -87,7 +89,8 @@ const INITIAL_DEMO_REFERRALS = [
     patient_id: 'pat-demo-3',
     patient_name: 'Amit Shinde',
     created_by: 'ASHA Worker: Sunita Deshmukh',
-    destination_hospital: 'Shrirampur Primary Health Centre',
+    destination_hospital: 'Pune Sassoon General Hospital',
+    destination_facility_id: 'f2222222-2222-2222-2222-222222222222',
     destination_department: 'General Medicine',
     doctor_id: 'd3333333-3333-3333-3333-333333333333',
     doctor_assigned: 'Dr. Arvind Kulkarni',
@@ -246,7 +249,7 @@ export default function DoctorWorkspace({
           name: docData.name,
           specialty: docData.specialty,
           facility_id: docData.facility_id,
-          facility_name: docData.facilities?.name || 'Shrirampur Primary Health Centre'
+          facility_name: docData.facilities?.name || 'Pune Sassoon General Hospital'
         } : (isDemoMode ? DEMO_DOCTOR_PROFILE : null);
 
         if (!resolvedDoctor) {
@@ -975,7 +978,7 @@ export default function DoctorWorkspace({
                     </span>
                   </div>
                   <p className="text-xs text-slate-500 font-bold mt-1 flex items-center gap-2 flex-wrap">
-                    <span>📍 {doctorProfile?.facility_name || 'Shrirampur Primary Health Centre'}</span>
+                    <span>📍 {doctorProfile?.facility_name || 'Pune Sassoon General Hospital'}</span>
                     <span>·</span>
                     <span className="text-[#7C3AED]">{doctorProfile?.specialty || 'General Medicine'}</span>
                   </p>
