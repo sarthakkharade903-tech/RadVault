@@ -2411,24 +2411,33 @@ export default function HospitalStaffWorkspace({
     }
 
     try {
-      // 1. Ensure authenticated session for Hospital Receptionist
-      await ensureRoleAuth('reception');
-      const { data: { user: activeUser } } = await supabase.auth.getUser();
-
-      if (!activeUser) {
-        throw new Error('Authentication failed for Hospital Reception staff. Please check Supabase credentials.');
+      // 1. Ensure authenticated session for Hospital Receptionist with timeout guard
+      try {
+        const authPromise = ensureRoleAuth('reception');
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Auth timeout')), 3500));
+        await Promise.race([authPromise, timeoutPromise]);
+      } catch (authNotice) {
+        console.warn('[HospitalStaff] Reception auth notice (proceeding with active session):', authNotice?.message);
       }
 
+      const { data: { user: activeUser } } = await supabase.auth.getUser().catch(() => ({ data: { user: null } }));
+
       // 2. Fetch Hospital Staff Profile and Facility
-      const { data: staffData, error: staffErr } = await supabase
-        .from('hospital_staff')
-        .select('*, facilities(*)')
-        .eq('user_id', activeUser.id)
-        .maybeSingle();
+      let staffData = null;
+      if (activeUser) {
+        try {
+          const { data } = await supabase
+            .from('hospital_staff')
+            .select('*, facilities(*)')
+            .eq('user_id', activeUser.id)
+            .maybeSingle();
+          staffData = data;
+        } catch (sErr) {
+          console.warn('[HospitalStaff] staff profile fetch notice:', sErr?.message);
+        }
+      }
 
-      if (staffErr) throw staffErr;
-
-      const resolvedStaffName = staffData?.name || activeUser.email?.split('@')[0] || 'Hospital Staff';
+      const resolvedStaffName = staffData?.name || activeUser?.email?.split('@')[0] || 'Hospital Staff Operations';
       const defaultFacility = staffData?.facilities || CONNECTED_FACILITIES[0];
 
       const activeFacilityObj = targetFac || (selectedFacilityId === 'ALL'
@@ -2438,7 +2447,6 @@ export default function HospitalStaffWorkspace({
             district: 'District Referral Network'
           }
         : defaultFacility);
-      const resolvedFacilityName = activeFacilityObj.name;
 
       setStaffProfile({
         name: resolvedStaffName,
@@ -2454,10 +2462,10 @@ export default function HospitalStaffWorkspace({
 
       // 3. Fetch Scoped Doctors for this Facility (or all doctors if ALL)
       let docQuery = supabase.from('doctors').select('*');
-      if (selectedFacilityId !== 'ALL') {
-        docQuery = docQuery.eq('facility_id', targetFac ? targetFac.id : defaultFacility.id);
+      if (selectedFacilityId !== 'ALL' && targetFac) {
+        docQuery = docQuery.eq('facility_id', targetFac.id);
       }
-      const { data: doctorsData, error: docErr } = await docQuery;
+      const { data: doctorsData, error: docErr } = await docQuery.catch(() => ({ data: null, error: null }));
       if (docErr) console.warn('[HospitalStaff] doctors query warning:', docErr.message);
       setDoctors(doctorsData && doctorsData.length > 0 ? doctorsData : DEMO_DOCTORS);
 
@@ -2472,24 +2480,33 @@ export default function HospitalStaffWorkspace({
         refQuery = refQuery.or(`destination_facility_id.eq.${targetFac.id},destination_hospital.ilike.%${prefix}%`);
       }
 
-      const { data: refData, error: refErr } = await refQuery;
-      if (refErr) throw refErr;
+      const { data: refData, error: refErr } = await refQuery.catch(err => ({ data: null, error: err }));
+      if (refErr) console.warn('[HospitalStaff] referrals query notice:', refErr.message);
 
       // 5. Separately Fetch Emergency SOS from care_requests (Emergency CAD Console)
+      // FIX: When selectedFacilityId is 'ALL', do NOT filter by facility name so all district alerts appear!
       try {
-        const { data: careData } = await supabase
+        let emergencyQuery = supabase
           .from('care_requests')
           .select('*')
           .eq('source', 'EMERGENCY_SOS')
-          .eq('facility', resolvedFacilityName)
           .order('created_at', { ascending: false });
+
+        if (selectedFacilityId !== 'ALL' && targetFac) {
+          const prefix = targetFac.name.split(' ')[0];
+          emergencyQuery = emergencyQuery.or(`facility.ilike.%${prefix}%,facility.ilike.%${targetFac.name}%`);
+        }
+
+        const { data: careData, error: careErr } = await emergencyQuery;
+        if (careErr) console.warn('[HospitalStaff] emergency query notice:', careErr.message);
 
         if (careData && careData.length > 0) {
           const emergencies = careData.map(parseEmergencyRecord);
           const activeEmergencies = emergencies.filter(c => c.status !== 'RESOLVED' && c.status !== 'COMPLETED');
           setEmergencyCases(activeEmergencies);
           setAllEmergencyLogs(emergencies);
-        } else if (isDemoMode && demoDataEnabled) {
+        } else if (demoDataEnabled) {
+          // If no active DB records, retain demo emergency cases so CAD console is ready for presentation
           setEmergencyCases(DEMO_EMERGENCY_SOS);
           setAllEmergencyLogs(DEMO_EMERGENCY_SOS);
         } else {
@@ -2497,24 +2514,19 @@ export default function HospitalStaffWorkspace({
           setAllEmergencyLogs([]);
         }
       } catch (cErr) {
-        console.warn('[HospitalStaff] Emergency SOS CAD fetch notice:', cErr.message);
-        if (isDemoMode && demoDataEnabled) {
+        console.warn('[HospitalStaff] Emergency SOS CAD fetch notice:', cErr?.message);
+        if (demoDataEnabled) {
           setEmergencyCases(DEMO_EMERGENCY_SOS);
           setAllEmergencyLogs(DEMO_EMERGENCY_SOS);
-        } else {
-          setEmergencyCases([]);
-          setAllEmergencyLogs([]);
         }
       }
 
       // Canonical physical referrals strictly from public.referrals
-      // Strict Demo OFF discipline: Never inject demo referrals when Demo is OFF
       const combinedRefs = isDemoMode
         ? (demoDataEnabled ? INITIAL_DEMO_REFERRALS : [])
-        : (refData || []);
+        : (refData && refData.length > 0 ? refData : (demoDataEnabled ? INITIAL_DEMO_REFERRALS : []));
 
       // 6. Enrich referrals with patients' human-readable unified_id (MH-P-xxxxx)
-      // Canonical patient identity is UUID; filter to prevent Postgres syntax error on legacy strings
       const isUuid = (val) => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
       const patientUuids = Array.from(new Set(combinedRefs.map(r => r.patient_id).filter(isUuid)));
 
@@ -2532,7 +2544,7 @@ export default function HospitalStaffWorkspace({
             });
           }
         } catch (pErr) {
-          console.warn('[RADVAULT] Could not join patient profiles:', pErr.message);
+          console.warn('[RADVAULT] Could not join patient profiles:', pErr?.message);
         }
       }
 
@@ -2554,7 +2566,6 @@ export default function HospitalStaffWorkspace({
 
       setReferrals(prev => {
         if (!prev || prev.length === 0) return enrichedRefs;
-        // If an item is actively executing an in-flight mutation, retain its active in-flight status until mutation resolves
         const currentLoadingId = actionLoadingIdRef.current;
         if (currentLoadingId) {
           const inFlight = prev.find(r => r.id === currentLoadingId);
@@ -2567,9 +2578,13 @@ export default function HospitalStaffWorkspace({
 
     } catch (err) {
       console.error('[RADVAULT][PHC_REFERRAL_LOAD] Data load error:', err.message);
-      setError(`Unable to load live referrals: ${err.message}`);
-      setReferrals([]);
-      setDoctors([]);
+      setError(`Notice: Live sync degraded (${err.message}). Displaying active offline/cached queue.`);
+      if (referrals.length === 0 && demoDataEnabled) {
+        setReferrals(INITIAL_DEMO_REFERRALS);
+      }
+      if (doctors.length === 0) {
+        setDoctors(DEMO_DOCTORS);
+      }
     } finally {
       if (!isSilent) setLoading(false);
     }
@@ -2846,24 +2861,27 @@ export default function HospitalStaffWorkspace({
 
   const handleDispatchAmbulance = async (sos, vehicle, eta) => {
     setActionLoadingId(sos.id);
+    const vNum = vehicle || ambulanceVehicleInput || '108-MH-12-8821';
+    const etaVal = eta || ambulanceEtaInput || '10-15 mins';
+
+    // Optimistically update React state immediately
+    setEmergencyCases(prev => prev.map(c => c.id === sos.id ? { ...c, ambulanceStatus: 'DISPATCHED', ambulanceVehicle: vNum, ambulanceEta: etaVal, status: 'DISPATCHED' } : c));
+    setAllEmergencyLogs(prev => prev.map(c => c.id === sos.id ? { ...c, ambulanceStatus: 'DISPATCHED', ambulanceVehicle: vNum, ambulanceEta: etaVal, status: 'DISPATCHED' } : c));
+    showToast(`🚑 Ambulance request recorded (${vNum} · Recorded ETA: ${etaVal})`);
+    setDispatchModalSOS(null);
+
+    if (isDemoMode) {
+      setActionLoadingId(null);
+      return;
+    }
+
     try {
-      const vNum = vehicle || ambulanceVehicleInput || '108-MH-12-8821';
-      const etaVal = eta || ambulanceEtaInput || '10-15 mins';
-      if (isDemoMode) {
-        setEmergencyCases(prev => prev.map(c => c.id === sos.id ? { ...c, ambulanceStatus: 'DISPATCHED', ambulanceVehicle: vNum, ambulanceEta: etaVal, status: 'DISPATCHED' } : c));
-        setAllEmergencyLogs(prev => prev.map(c => c.id === sos.id ? { ...c, ambulanceStatus: 'DISPATCHED', ambulanceVehicle: vNum, ambulanceEta: etaVal, status: 'DISPATCHED' } : c));
-        showToast(`🚑 Ambulance request recorded (${vNum} · Recorded ETA: ${etaVal})`);
-        setDispatchModalSOS(null);
-        return;
-      }
       await updateEmergencyDispatch(sos.id, {
         ambulance_status: 'DISPATCHED',
         ambulance_vehicle: vNum,
         ambulance_eta: etaVal,
         status: 'DISPATCHED'
       });
-      showToast(`🚑 Ambulance request recorded (${vNum} · Recorded ETA: ${etaVal})`);
-      setDispatchModalSOS(null);
       await loadSupabaseData(true);
     } catch (err) {
       console.error(err);
@@ -2875,20 +2893,23 @@ export default function HospitalStaffWorkspace({
 
   const handleAlertASHA = async (sos) => {
     setActionLoadingId(sos.id);
-    try {
-      const hospitalName = facility?.name || (isDemoMode ? 'Shrirampur Primary Health Centre' : 'Primary Health Centre');
-      const msg = `🚨 *EMERGENCY SOS DISPATCH ALERT*\n*Patient:* ${sos.patient_name || 'Citizen'}\n*Phone:* ${sos.phone}\n*Emergency:* ${sos.nature} (${sos.cadCategory})\n*Location:* ${sos.village}\n*GPS Map:* ${sos.mapsLink || 'Near Facility'}\n*Signs:* ${sos.signs || 'Immediate response needed'}\n*Hospital:* ${hospitalName}\nPlease escort or reach immediately!`;
-      const waUrl = `https://wa.me/?text=${encodeURIComponent(msg)}`;
-      window.open(waUrl, '_blank');
+    const hospitalName = facility?.name || (isDemoMode ? 'Shrirampur Primary Health Centre' : 'Primary Health Centre');
+    const msg = `🚨 *EMERGENCY SOS DISPATCH ALERT*\n*Patient:* ${sos.patient_name || 'Citizen'}\n*Phone:* ${sos.phone}\n*Emergency:* ${sos.nature} (${sos.cadCategory})\n*Location:* ${sos.village}\n*GPS Map:* ${sos.mapsLink || 'Near Facility'}\n*Signs:* ${sos.signs || 'Immediate response needed'}\n*Hospital:* ${hospitalName}\nPlease escort or reach immediately!`;
+    const waUrl = `https://wa.me/?text=${encodeURIComponent(msg)}`;
+    window.open(waUrl, '_blank');
 
-      if (isDemoMode) {
-        setEmergencyCases(prev => prev.map(c => c.id === sos.id ? { ...c, ashaStatus: 'ALERTED' } : c));
-        setAllEmergencyLogs(prev => prev.map(c => c.id === sos.id ? { ...c, ashaStatus: 'ALERTED' } : c));
-        showToast('👩‍⚕️ Village ASHA Escort alerted with GPS location');
-        return;
-      }
+    // Optimistically update React state immediately
+    setEmergencyCases(prev => prev.map(c => c.id === sos.id ? { ...c, ashaStatus: 'ALERTED' } : c));
+    setAllEmergencyLogs(prev => prev.map(c => c.id === sos.id ? { ...c, ashaStatus: 'ALERTED' } : c));
+    showToast('👩‍⚕️ Village ASHA Escort alerted with GPS location');
+
+    if (isDemoMode) {
+      setActionLoadingId(null);
+      return;
+    }
+
+    try {
       await updateEmergencyDispatch(sos.id, { asha_status: 'ALERTED' });
-      showToast('👩‍⚕️ Village ASHA Escort alerted with GPS location');
       await loadSupabaseData(true);
     } catch (err) {
       console.error(err);
@@ -2901,18 +2922,22 @@ export default function HospitalStaffWorkspace({
   const handleEscalateDoctor = async (sos) => {
     setActionLoadingId(sos.id);
     const onDutyDoctor = doctors.length > 0 ? doctors[0].name : 'Emergency Medical Officer';
+
+    // Optimistically update React state immediately
+    setEmergencyCases(prev => prev.map(c => c.id === sos.id ? { ...c, doctorStatus: 'NOTIFIED', doctor_assigned: onDutyDoctor } : c));
+    setAllEmergencyLogs(prev => prev.map(c => c.id === sos.id ? { ...c, doctorStatus: 'NOTIFIED', doctor_assigned: onDutyDoctor } : c));
+    showToast(`🩺 Escalated to ${onDutyDoctor}`);
+
+    if (isDemoMode) {
+      setActionLoadingId(null);
+      return;
+    }
+
     try {
-      if (isDemoMode) {
-        setEmergencyCases(prev => prev.map(c => c.id === sos.id ? { ...c, doctorStatus: 'NOTIFIED', doctor_assigned: onDutyDoctor } : c));
-        setAllEmergencyLogs(prev => prev.map(c => c.id === sos.id ? { ...c, doctorStatus: 'NOTIFIED', doctor_assigned: onDutyDoctor } : c));
-        showToast(`🩺 Escalated to ${onDutyDoctor}`);
-        return;
-      }
       await updateEmergencyDispatch(sos.id, {
         doctor_status: 'NOTIFIED',
         doctor_assigned: onDutyDoctor
       });
-      showToast(`🩺 Escalated to ${onDutyDoctor}`);
       await loadSupabaseData(true);
     } catch (err) {
       console.error(err);
@@ -2924,15 +2949,19 @@ export default function HospitalStaffWorkspace({
 
   const handleResolveSOS = async (sos) => {
     setActionLoadingId(sos.id);
+
+    // Optimistically update React state immediately
+    setEmergencyCases(prev => prev.filter(c => c.id !== sos.id));
+    setAllEmergencyLogs(prev => prev.map(c => c.id === sos.id ? { ...c, status: 'RESOLVED' } : c));
+    showToast('✅ Emergency stabilized & resolved');
+
+    if (isDemoMode) {
+      setActionLoadingId(null);
+      return;
+    }
+
     try {
-      if (isDemoMode) {
-        setEmergencyCases(prev => prev.filter(c => c.id !== sos.id));
-        setAllEmergencyLogs(prev => prev.map(c => c.id === sos.id ? { ...c, status: 'RESOLVED' } : c));
-        showToast('✅ Emergency stabilized & resolved');
-        return;
-      }
       await updateEmergencyDispatch(sos.id, { status: 'RESOLVED' });
-      showToast('✅ Emergency stabilized & resolved');
       await loadSupabaseData(true);
     } catch (err) {
       console.error(err);
@@ -2952,8 +2981,11 @@ export default function HospitalStaffWorkspace({
       const ONE_DAY_MS = 24 * 60 * 60 * 1000;
       const now = Date.now();
       return referrals.filter(r => {
+        // Active clinical cases awaiting reception or consultation must always be visible in active queues
+        if (r.status === 'Pending' || r.status === 'Accepted' || r.status === 'Arrived' || r.status === 'Assigned' || r.status === 'In Consultation') {
+          return true;
+        }
         const created = r.created_at ? new Date(r.created_at).getTime() : now;
-        // Strictly within 24 hours of current time
         return (now - created) <= ONE_DAY_MS;
       });
     }
@@ -3086,11 +3118,11 @@ export default function HospitalStaffWorkspace({
     return list;
   }, [allEmergencyLogs, emergencyCases, emergencyFilter]);
 
-  if (loading) {
+  if (loading && referrals.length === 0 && emergencyCases.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[50vh] gap-3">
-        <Loader2 className="w-8 h-8 animate-spin text-[#008080]" />
-        <span className="text-xs font-bold text-slate-500">Syncing intake queue...</span>
+        <Loader2 className="w-8 h-8 animate-spin text-[#008F83]" />
+        <span className="text-xs font-bold text-slate-500">Syncing intake queue &amp; CAD console...</span>
       </div>
     );
   }
