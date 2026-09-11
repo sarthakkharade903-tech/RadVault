@@ -22,7 +22,10 @@ import {
   PhoneCall,
   Pill,
   Sparkles,
-  Plus
+  Plus,
+  Calendar,
+  ChevronRight,
+  Zap
 } from 'lucide-react';
 
 import { supabase, ensureRoleAuth } from '../../services/supabase';
@@ -35,6 +38,50 @@ import {
   generateClinicalAiSummary
 } from '../../services/ashaService';
 import { CONNECTED_FACILITIES, calculateHaversineDistance } from '../../services/locationService';
+
+// ─── DATE / SHIFT UTILITIES (Matching Hospital Dashboard) ───
+const getTodayDateStr = () => {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const toLocalDateStr = (isoString) => {
+  if (!isoString) return '';
+  const d = new Date(isoString);
+  if (isNaN(d.getTime())) return '';
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const formatHumanDate = (dateStr) => {
+  if (!dateStr) return '';
+  const parts = dateStr.split('-').map(Number);
+  if (parts.length !== 3) return dateStr;
+  const dateObj = new Date(parts[0], parts[1] - 1, parts[2]);
+  return dateObj.toLocaleDateString('en-IN', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric'
+  });
+};
+
+const shiftDateStr = (dateStr, deltaDays) => {
+  if (!dateStr) return getTodayDateStr();
+  const parts = dateStr.split('-').map(Number);
+  if (parts.length !== 3) return getTodayDateStr();
+  const dateObj = new Date(parts[0], parts[1] - 1, parts[2]);
+  dateObj.setDate(dateObj.getDate() + deltaDays);
+  const year = dateObj.getFullYear();
+  const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const day = String(dateObj.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
 // Reference coordinate: Pune Sassoon General Hospital (Apex Reference)
 const PUNE_SASSOON_COORDS = { lat: 18.5284, lon: 73.8746 };
@@ -226,6 +273,15 @@ export default function DoctorWorkspace({
 
   const [queueViewScope, setQueueViewScope] = useState('MY_CASES'); // 'MY_CASES' | 'ALL_FACILITY'
 
+  // ─── Shift / Date / Calendar Navigator State (Matching Hospital Staff Portal) ───
+  const todayStr = getTodayDateStr();
+  const [selectedDate, setSelectedDate] = useState(todayStr);
+  const [dateViewMode, setDateViewMode] = useState('TODAY_SHIFT'); // 'TODAY_SHIFT' | 'CALENDAR_DATE' | 'ALL_ARCHIVE'
+
+  // ─── Delete Patient Referral Confirmation Modal State ───
+  const [deleteConfirmModal, setDeleteConfirmModal] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
+
   const availableDoctorsForFacility = useMemo(() => {
     if (selectedFacilityId === 'ALL') {
       return availableDoctors;
@@ -267,6 +323,60 @@ export default function DoctorWorkspace({
   const showToast = (msg) => {
     setSuccessMsg(msg);
     setTimeout(() => setSuccessMsg(''), 4000);
+  };
+
+  // Direct Referral / Patient Request Deletion across all linked tables (Matching Hospital Staff)
+  const handleDeleteReferral = async (referral) => {
+    if (!referral || !referral.id) return;
+    setDeletingId(referral.id);
+
+    try {
+      if (!isDemoMode) {
+        // 1. Delete canonical record from public.referrals
+        const { error: delErr } = await supabase
+          .from('referrals')
+          .delete()
+          .eq('id', referral.id);
+
+        if (delErr) {
+          console.error('[RadVault Doctor] Failed to delete referral from Supabase:', delErr);
+          throw new Error(`Database error: ${delErr.message}`);
+        }
+
+        // 2. Best-effort cleanup of matching care_requests
+        try {
+          await supabase
+            .from('care_requests')
+            .delete()
+            .or(`id.eq.${referral.id},and(patient_id.eq.${referral.patient_id},status.neq.COMPLETED)`);
+        } catch (cErr) {
+          console.warn('[RadVault Doctor] care_requests cleanup notice:', cErr?.message);
+        }
+
+        // 3. Best-effort unlinking of encounters
+        try {
+          await supabase
+            .from('encounters')
+            .update({ referral_id: null })
+            .eq('referral_id', referral.id);
+        } catch (eErr) {
+          console.warn('[RadVault Doctor] encounters unlinking notice:', eErr?.message);
+        }
+      }
+
+      // 4. Update React state immediately across all doctor queues and modals
+      setReferrals(prev => prev.filter(r => r.id !== referral.id));
+      if (activeCase?.id === referral.id) {
+        handleCloseCase();
+      }
+      setDeleteConfirmModal(null);
+      showToast(`✓ Referral for ${referral.patient_name || 'patient'} removed from database and queues.`);
+    } catch (err) {
+      console.error('[RadVault Doctor] Delete error:', err);
+      setError(`Could not delete patient referral: ${err.message}`);
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   const handleSelectFacility = (newId) => {
@@ -1000,24 +1110,53 @@ export default function DoctorWorkspace({
     return r.doctor_id === doctorProfile.id;
   }, [doctorProfile]);
 
-  // Referrals scoped to currently selected facility
+  // 1. Scoped referrals based on Selected Date or 24-Hour Active Shift (Matching Hospital Staff Portal)
+  const dateScopedReferrals = useMemo(() => {
+    if (dateViewMode === 'ALL_ARCHIVE') {
+      return referrals;
+    }
+
+    if (dateViewMode === 'TODAY_SHIFT') {
+      const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+      const now = Date.now();
+      return referrals.filter(r => {
+        const createdRaw = r.rawCreatedAt || r.created_at;
+        if (!createdRaw) return false;
+        const created = new Date(createdRaw).getTime();
+        if (isNaN(created)) return false;
+        const diffMs = now - created;
+        // Strictly within 24 hours (allowing 60s clock skew buffer) or created on today's calendar date
+        const isWithin24h = diffMs >= -60000 && diffMs <= ONE_DAY_MS;
+        const isCreatedToday = toLocalDateStr(createdRaw) === todayStr;
+        return isWithin24h || isCreatedToday;
+      });
+    }
+
+    // CALENDAR_DATE mode: strictly matches selectedDate (YYYY-MM-DD)
+    return referrals.filter(r => {
+      const createdRaw = r.rawCreatedAt || r.created_at;
+      return toLocalDateStr(createdRaw) === selectedDate;
+    });
+  }, [referrals, dateViewMode, selectedDate, todayStr]);
+
+  // Referrals scoped to currently selected facility and date filter
   const facilityReferrals = useMemo(() => {
     if (!selectedFacilityId || selectedFacilityId === 'ALL') {
-      return referrals;
+      return dateScopedReferrals;
     }
     const targetFac = SORTED_CONNECTED_FACILITIES.find(f => f.id === selectedFacilityId);
     const prefix = targetFac ? targetFac.name.split(' ')[0].toLowerCase() : '';
-    return referrals.filter(r =>
+    return dateScopedReferrals.filter(r =>
       r.destination_facility_id === selectedFacilityId ||
       (prefix && (r.destination_hospital || '').toLowerCase().includes(prefix))
     );
-  }, [referrals, selectedFacilityId]);
+  }, [dateScopedReferrals, selectedFacilityId]);
 
   // Referrals strictly assigned to this active doctor
   const myAssignedReferrals = useMemo(() => {
     if (!doctorProfile) return [];
-    return referrals.filter(isDoctorAssigned);
-  }, [referrals, isDoctorAssigned, doctorProfile]);
+    return dateScopedReferrals.filter(isDoctorAssigned);
+  }, [dateScopedReferrals, isDoctorAssigned, doctorProfile]);
 
   // Base list depending on Queue View Scope ('MY_CASES' vs 'ALL_FACILITY')
   const baseQueueReferrals = useMemo(() => {
@@ -1287,6 +1426,132 @@ export default function DoctorWorkspace({
             )}
 
 
+            {/* ─── CALENDAR / SHIFT NAVIGATOR (Matching Hospital Staff Dashboard) ─── */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white border border-slate-200 rounded-2xl p-2.5 shadow-2xs">
+              <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-2xl text-xs font-black flex-wrap">
+                
+                {/* Quick Jump: Today's Shift */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDateViewMode('TODAY_SHIFT');
+                    setSelectedDate(todayStr);
+                  }}
+                  className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 ${
+                    dateViewMode === 'TODAY_SHIFT'
+                      ? 'bg-white text-purple-950 shadow-xs ring-1 ring-slate-200'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                  title="Active 24-hour shift queue for today"
+                >
+                  <Zap className="w-3.5 h-3.5 text-amber-500" />
+                  <span>Today's Shift</span>
+                </button>
+
+                {/* Day-by-Day Calendar Stepper */}
+                <div className={`flex items-center bg-white rounded-xl border shadow-2xs px-1 py-0.5 transition-all ${
+                  dateViewMode === 'CALENDAR_DATE'
+                    ? 'border-[#7C3AED] ring-2 ring-[#7C3AED]/20 shadow-xs'
+                    : 'border-slate-200'
+                }`}>
+                  {/* Prev Day Button */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const prev = shiftDateStr(selectedDate, -1);
+                      setSelectedDate(prev);
+                      setDateViewMode('CALENDAR_DATE');
+                    }}
+                    title="Previous Day"
+                    className="p-1 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg cursor-pointer"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+
+                  {/* Calendar Date Input & Label */}
+                  <label className="relative flex items-center gap-1.5 px-2 py-0.5 cursor-pointer text-[11px] font-black text-slate-800 hover:text-[#7C3AED] select-none">
+                    <Calendar className="w-3.5 h-3.5 text-[#7C3AED]" />
+                    <span>{formatHumanDate(selectedDate)}</span>
+                    {selectedDate === todayStr && (
+                      <span className="text-[9px] bg-purple-50 text-[#7C3AED] border border-purple-200 px-1 rounded-sm ml-0.5">
+                        Today
+                      </span>
+                    )}
+                    {/* Native date input overlay for instant calendar popup on click */}
+                    <input
+                      type="date"
+                      value={selectedDate}
+                      max={todayStr}
+                      onChange={(e) => {
+                        if (e.target.value) {
+                          setSelectedDate(e.target.value);
+                          setDateViewMode('CALENDAR_DATE');
+                        }
+                      }}
+                      className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                      title="Click to pick specific date"
+                    />
+                  </label>
+
+                  {/* Next Day Button */}
+                  <button
+                    type="button"
+                    disabled={selectedDate >= todayStr}
+                    onClick={() => {
+                      if (selectedDate < todayStr) {
+                        const next = shiftDateStr(selectedDate, 1);
+                        setSelectedDate(next);
+                        setDateViewMode('CALENDAR_DATE');
+                      }
+                    }}
+                    title={selectedDate >= todayStr ? "Today is the latest date" : "Next Day"}
+                    className="p-1 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* All Archive Toggle */}
+                <button
+                  type="button"
+                  onClick={() => setDateViewMode('ALL_ARCHIVE')}
+                  className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1 ${
+                    dateViewMode === 'ALL_ARCHIVE'
+                      ? 'bg-white text-slate-900 shadow-xs ring-1 ring-slate-200'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                  title="Search all historical referrals"
+                >
+                  <span>All Archive ({referrals.length})</span>
+                </button>
+
+              </div>
+
+              {/* Scope Contextual Subtitle */}
+              <div className="flex items-center gap-1.5 text-[11px] text-slate-500 px-1">
+                {dateViewMode === 'TODAY_SHIFT' ? (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="text-slate-700 font-bold">Live Shift Desk</span>
+                    <span className="text-slate-400">· Active referrals from last 24h ({dateScopedReferrals.length} active)</span>
+                  </>
+                ) : dateViewMode === 'CALENDAR_DATE' ? (
+                  <>
+                    <Calendar className="w-3.5 h-3.5 text-[#7C3AED]" />
+                    <span className="text-slate-700 font-bold">
+                      {selectedDate === todayStr ? 'Calendar Day Record for Today' : `Historical Record for ${formatHumanDate(selectedDate)}`}
+                    </span>
+                    <span className="text-slate-400">· {dateScopedReferrals.length} patient{dateScopedReferrals.length === 1 ? '' : 's'} registered</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-slate-700 font-bold">Comprehensive Archive</span>
+                    <span className="text-slate-400">· All {referrals.length} referrals across facility history</span>
+                  </>
+                )}
+              </div>
+            </div>
+
             <div className="flex items-center gap-2 border-b border-slate-200 pb-1 text-xs">
               {[
                 { key: 'home', label: 'Home Overview' },
@@ -1473,7 +1738,19 @@ export default function DoctorWorkspace({
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-3 shrink-0 relative z-10">
+                    <div className="flex items-center gap-2 shrink-0 relative z-10">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeleteConfirmModal(attentionCase.ref);
+                        }}
+                        disabled={deletingId === attentionCase.ref.id}
+                        className="min-h-[44px] min-w-[44px] p-2.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-500/40 rounded-2xl transition-colors cursor-pointer flex items-center justify-center disabled:opacity-50"
+                        title="Delete patient intake request"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                       <button
                         data-referral-id={attentionCase.ref.id}
                         data-action="open-case"
@@ -1584,6 +1861,19 @@ export default function DoctorWorkspace({
                             </div>
 
                             <div className="flex items-center gap-2 shrink-0">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setDeleteConfirmModal(ref);
+                                }}
+                                disabled={deletingId === ref.id}
+                                className="min-h-[44px] min-w-[44px] p-2 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 hover:border-rose-300 rounded-xl transition-colors cursor-pointer flex items-center justify-center disabled:opacity-50"
+                                title="Delete patient intake record"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+
                               {ref.status !== 'Completed' ? (
                                 <>
                                   {ref.doctor_id && ref.doctor_id !== doctorProfile?.id && (
@@ -1787,35 +2077,50 @@ export default function DoctorWorkspace({
                               Referred on {new Date(ref.created_at).toLocaleDateString('en-IN')} by {ref.created_by || 'ASHA'}
                             </div>
 
-                            {ref.status !== 'Completed' ? (
-                              <div className="flex items-center gap-2 ml-auto">
-                                {ref.doctor_id && ref.doctor_id !== doctorProfile?.id && (
+                            <div className="flex items-center gap-2 ml-auto">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setDeleteConfirmModal(ref);
+                                }}
+                                disabled={deletingId === ref.id}
+                                className="min-h-[44px] min-w-[44px] p-2 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 hover:border-rose-300 rounded-xl transition-colors cursor-pointer flex items-center justify-center disabled:opacity-50"
+                                title="Delete patient referral from database"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+
+                              {ref.status !== 'Completed' ? (
+                                <>
+                                  {ref.doctor_id && ref.doctor_id !== doctorProfile?.id && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleTakeOverCase(ref);
+                                      }}
+                                      className="min-h-[44px] px-3.5 py-2 bg-purple-50 hover:bg-purple-100 text-[#7C3AED] border border-[#7C3AED]/30 font-bold text-xs rounded-xl transition-colors cursor-pointer"
+                                      title="Assume attending clinician responsibilities"
+                                    >
+                                      Assume Care
+                                    </button>
+                                  )}
                                   <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleTakeOverCase(ref);
-                                    }}
-                                    className="min-h-[44px] px-3.5 py-2 bg-purple-50 hover:bg-purple-100 text-[#7C3AED] border border-[#7C3AED]/30 font-bold text-xs rounded-xl transition-colors cursor-pointer"
-                                    title="Assume attending clinician responsibilities"
+                                    data-referral-id={ref.id}
+                                    data-action="open-case"
+                                    onClick={() => handleOpenCase(ref)}
+                                    className="min-h-[44px] px-5 py-2.5 bg-[#7C3AED] hover:bg-[#6D28D9] text-white font-black text-xs rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
                                   >
-                                    Assume Care
+                                    <Stethoscope className="w-3.5 h-3.5" />
+                                    <span>Open Clinical Case</span>
                                   </button>
-                                )}
-                                <button
-                                  data-referral-id={ref.id}
-                                  data-action="open-case"
-                                  onClick={() => handleOpenCase(ref)}
-                                  className="min-h-[44px] px-5 py-2.5 bg-[#7C3AED] hover:bg-[#6D28D9] text-white font-black text-xs rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
-                                >
-                                  <Stethoscope className="w-3.5 h-3.5" />
-                                  <span>Open Clinical Case</span>
-                                </button>
-                              </div>
-                            ) : (
-                              <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded border border-emerald-100 flex items-center gap-1 ml-auto">
-                                <CheckCircle className="w-3.5 h-3.5" /> Consultation Signed
-                              </span>
-                            )}
+                                </>
+                              ) : (
+                                <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded border border-emerald-100 flex items-center gap-1">
+                                  <CheckCircle className="w-3.5 h-3.5" /> Consultation Signed
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
                       );
@@ -1988,6 +2293,17 @@ export default function DoctorWorkspace({
               </div>
 
               <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setDeleteConfirmModal(activeCase)}
+                  disabled={deletingId === activeCase.id}
+                  className="min-h-[44px] px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 hover:border-rose-300 transition-colors cursor-pointer flex items-center gap-1.5 font-bold text-xs disabled:opacity-50"
+                  title="Delete Patient Referral"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span className="hidden sm:inline">Delete</span>
+                </button>
+
                 {activeCase.status !== 'In Consultation' && activeCase.status !== 'Completed' && (
                   <button
                     onClick={handleStartConsultation}
@@ -3117,6 +3433,76 @@ export default function DoctorWorkspace({
               </div>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* ─── MODAL: DELETE PATIENT INTAKE REQUEST CONFIRMATION (Matching Hospital Staff Portal) ─── */}
+      {deleteConfirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 border border-slate-200 shadow-2xl space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-rose-50 border border-rose-200 text-rose-600 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-black text-sm text-slate-900">Delete Patient Intake Request</h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Permanently remove this intake request and unlink across all queues?
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmModal(null)}
+                className="p-1 rounded-full text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Patient details card */}
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-1 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="font-black text-slate-900">{deleteConfirmModal.patient_name || 'Unknown Patient'}</span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">
+                  {deleteConfirmModal.status || 'Pending'}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500 font-mono">
+                {deleteConfirmModal.patient_unified_id || deleteConfirmModal.patient_id}
+              </p>
+              <p className="text-[11px] text-slate-600 font-medium line-clamp-2 pt-1 border-t border-slate-200">
+                {deleteConfirmModal.symptoms || deleteConfirmModal.clinical_summary || 'General referral'}
+              </p>
+            </div>
+
+            <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-[11px] leading-relaxed">
+              ⚠️ <strong>Logical Links Impact:</strong> Deleting this intake request will remove the patient from the Hospital Waiting Room, Doctor consultation queue, and unbind linked records in Supabase. (Frontline demographic records in Patient register remain preserved).
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                disabled={deletingId === deleteConfirmModal.id}
+                onClick={() => setDeleteConfirmModal(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deletingId === deleteConfirmModal.id}
+                onClick={() => handleDeleteReferral(deleteConfirmModal)}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-black text-xs rounded-xl shadow-md flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {deletingId === deleteConfirmModal.id ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Trash2 className="w-3.5 h-3.5" />
+                )}
+                <span>Delete From All Queues</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
