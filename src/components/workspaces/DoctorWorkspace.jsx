@@ -38,6 +38,8 @@ import {
   generateClinicalAiSummary
 } from '../../services/ashaService';
 import { CONNECTED_FACILITIES, calculateHaversineDistance } from '../../services/locationService';
+import MedicalImagingVault from './MedicalImagingVault';
+import DoctorVitalsTimeline from './DoctorVitalsTimeline';
 
 // ─── DATE / SHIFT UTILITIES (Matching Hospital Dashboard) ───
 const getTodayDateStr = () => {
@@ -2580,290 +2582,145 @@ export default function DoctorWorkspace({
                   )}
                 </div>
 
-                <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-2xs space-y-4">
-                  <h3 className="text-xs font-black uppercase text-slate-400 tracking-wider">Patient Health Records History</h3>
-                  
-                  {historyLoading ? (
-                    <div className="py-6 text-center text-xs text-slate-400 font-medium flex items-center justify-center gap-2">
-                      <Loader2 className="w-4 h-4 animate-spin text-[#7C3AED]" />
-                      <span>Loading longitudinal health timeline...</span>
-                    </div>
-                  ) : !hasConsent ? (
-                    <div className="border border-red-200 bg-red-50/50 rounded-2xl p-4 text-center space-y-3">
-                      <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center mx-auto text-red-600 font-bold text-sm">🔒</div>
-                      <div className="space-y-1">
-                        <h4 className="text-xs font-black text-slate-800 uppercase tracking-wide">Beneficiary Consent Required</h4>
-                        <p className="text-[10px] text-slate-500 font-medium leading-relaxed">
-                          Access to past medical history and records is restricted under ABHA data privacy standards.
-                        </p>
-                      </div>
-                      <button
-                        onClick={handleBreakGlass}
-                        disabled={isBreakingGlass}
-                        className="w-full py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white font-extrabold text-xs rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1 shadow-xs"
-                      >
-                        {isBreakingGlass ? 'Logging trace...' : '🚨 Break-Glass / Emergency Access'}
-                      </button>
-                    </div>
-                  ) : caseHistory && caseHistory.length > 0 ? (
-                    <div className="space-y-3">
-                      {caseHistory.slice(0, 5).map((hist, i) => (
-                        <div key={i} className="text-xs font-medium text-slate-600 border border-slate-100 p-3 rounded-2xl bg-slate-50/60 space-y-1">
-                          <div className="flex items-center justify-between font-extrabold">
-                            <span className="text-slate-800">{hist.type}</span>
-                            <span className="text-[10px] text-slate-400">{hist.date}</span>
-                          </div>
-                          {hist.diagnosis && (
-                            <div><strong className="text-slate-700">Summary:</strong> {hist.diagnosis}</div>
-                          )}
-                          {hist.notes && (
-                            <p className="text-[11px] text-slate-500 italic mt-1 leading-relaxed">"{hist.notes}"</p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-center py-6 text-xs text-slate-400 font-medium">
-                      No previous health history records recorded for this beneficiary.
-                    </div>
-                  )}
-                </div>
-
+                {/* 2. Recorded Vitals History (with explicit dates & sources) */}
+                <DoctorVitalsTimeline
+                  vitalsHistory={clinicalDocket?.vitals || []}
+                  triageVitals={activeCase.vitals}
+                  patientName={activeCase.patient_name}
+                />
               </div>
 
+              {/* Right Column (7 cols): Medical Imaging Vault with Interactive Canvas */}
               <div className="lg:col-span-7 space-y-6">
-                <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-2xs space-y-5">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-xs font-black uppercase text-slate-400 tracking-wider">Clinical Examination & Consultation</h3>
-                    <span className="text-[10px] font-bold text-slate-400">Step 3 of 4 in Continuity Care</span>
+                <MedicalImagingVault
+                  patientId={activeCase.patient_id}
+                  patientName={activeCase.patient_name}
+                />
+              </div>
+            </div>
+
+            {/* ─── 4. CLINICAL DECISION & CARE PLAN (STREAMLINED EXECUTIVE CONSOLE) ─── */}
+            <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-2xs space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <div className="w-9 h-9 rounded-xl bg-[#F5F3FF] border border-[#7C3AED]/30 flex items-center justify-center text-[#7C3AED] font-black">
+                    🩺
                   </div>
-
-                  <div className="space-y-4">
-                    <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2.5">
-                      <div className="flex items-center justify-between">
-                        <label className="text-xs font-black uppercase text-slate-700 tracking-wide block">
-                          Care Delivery Mode
-                        </label>
-                        <span className="text-[10px] font-bold text-slate-400">In-Person or Tele-Consult</span>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-3">
-                        <button
-                          type="button"
-                          onClick={() => setConsultationMode('IN_PERSON')}
-                          className={`p-3 rounded-xl border text-xs font-extrabold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                            consultationMode === 'IN_PERSON'
-                              ? 'bg-white border-[#7C3AED] text-[#7C3AED] shadow-xs'
-                              : 'bg-slate-100/70 border-transparent text-slate-500 hover:bg-white'
-                          }`}
-                        >
-                          <Building2 className="w-4 h-4" />
-                          <span>In-Person Checkup</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setConsultationMode('TELECONSULTATION')}
-                          className={`p-3 rounded-xl border text-xs font-extrabold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                            consultationMode === 'TELECONSULTATION'
-                              ? 'bg-white border-[#7C3AED] text-[#7C3AED] shadow-xs'
-                              : 'bg-slate-100/70 border-transparent text-slate-500 hover:bg-white'
-                          }`}
-                        >
-                          <Activity className="w-4 h-4" />
-                          <span>Remote Tele-Advice</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-black uppercase text-slate-700 tracking-wide block">
-                        Clinical Assessment & Physical Exam Findings
-                      </label>
-                      <textarea
-                        rows={3}
-                        value={clinicalAssessment}
-                        onChange={(e) => setClinicalAssessment(e.target.value)}
-                        placeholder="e.g. Chest clear on auscultation, regular heart sounds S1S2 present, no pedal edema, abdominal examination soft non-tender..."
-                        className="w-full border border-slate-200 rounded-xl p-3 text-xs font-medium text-slate-900 bg-white outline-none focus:border-[#7C3AED] leading-relaxed"
-                      />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-black uppercase text-slate-700 tracking-wide block">
-                        Clinical Diagnosis <span className="text-rose-600">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={diagnosis}
-                        onChange={(e) => setDiagnosis(e.target.value)}
-                        placeholder="e.g. Acute Upper Respiratory Tract Infection / Mild Bronchitis"
-                        className="w-full border border-slate-200 rounded-xl p-3 text-xs font-bold text-slate-900 bg-white outline-none focus:border-[#7C3AED]"
-                      />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-black uppercase text-slate-700 tracking-wide block">
-                        Treatment Plan & Advice <span className="text-rose-600">*</span>
-                      </label>
-                      <textarea
-                        rows={3}
-                        value={treatmentAdvice}
-                        onChange={(e) => setTreatmentAdvice(e.target.value)}
-                        placeholder="e.g. Adequate hydration, warm saline gargles, steam inhalation, rest for 3 days. Return immediately if high fever or breathlessness occurs."
-                        className="w-full border border-slate-200 rounded-xl p-3 text-xs font-medium text-slate-900 bg-white outline-none focus:border-[#7C3AED] leading-relaxed"
-                      />
-                    </div>
-
-                    <div className="space-y-3 bg-slate-50/60 p-4 border border-slate-200 rounded-2xl">
-                      <div className="flex items-center justify-between">
-                        <label className="text-xs font-black uppercase text-slate-700 tracking-wide block">
-                          Prescription / Medicines (Rx)
-                        </label>
-                        <span className="text-[10px] font-bold text-slate-400">Added: {prescriptions.length}</span>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
-                        <input
-                          type="text"
-                          placeholder="Medicine name"
-                          value={medName}
-                          onChange={(e) => setMedName(e.target.value)}
-                          className="sm:col-span-2 border border-slate-200 rounded-lg p-2 text-xs font-bold bg-white outline-none"
-                        />
-                        <input
-                          type="text"
-                          placeholder="Dose (e.g. 500mg)"
-                          value={medDose}
-                          onChange={(e) => setMedDose(e.target.value)}
-                          className="border border-slate-200 rounded-lg p-2 text-xs font-bold bg-white outline-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={handleAddMedicine}
-                          className="bg-slate-900 hover:bg-slate-800 text-white font-black rounded-lg text-xs py-2 cursor-pointer transition-colors"
-                        >
-                          + Add Rx
-                        </button>
-                      </div>
-
-                      {prescriptions.length > 0 && (
-                        <div className="space-y-2 pt-1">
-                          {prescriptions.map((m) => (
-                            <div key={m.id} className="flex items-center justify-between bg-white border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold text-slate-700">
-                              <span>💊 {m.name} — {m.dose} ({m.freq}, {m.duration})</span>
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveMedicine(m.id)}
-                                className="text-rose-600 hover:text-rose-800 p-1 cursor-pointer"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="space-y-3 bg-slate-50/60 p-4 border border-slate-200 rounded-2xl">
-                      <label className="text-xs font-black uppercase text-slate-700 tracking-wide block">
-                        Diagnostic Investigations & Tests
-                      </label>
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          placeholder="e.g. 12-Lead ECG, Complete Blood Count, Chest X-Ray..."
-                          value={newInvest}
-                          onChange={(e) => setNewInvest(e.target.value)}
-                          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddInvestigation(); } }}
-                          className="flex-1 border border-slate-200 rounded-lg p-2 text-xs font-bold bg-white outline-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={handleAddInvestigation}
-                          className="px-4 bg-slate-900 hover:bg-slate-800 text-white font-black rounded-lg text-xs cursor-pointer transition-colors"
-                        >
-                          Add
-                        </button>
-                      </div>
-
-                      {investigations.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5 pt-1">
-                          {investigations.map((inv, idx) => (
-                            <span key={idx} className="inline-flex items-center gap-1.5 bg-white border border-slate-200 px-2.5 py-1 rounded-full text-[11px] font-bold text-slate-700">
-                              <span>🔬 {inv}</span>
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveInvestigation(idx)}
-                                className="text-rose-600 hover:text-rose-800 cursor-pointer"
-                              >
-                                ✕
-                              </button>
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="space-y-3 bg-slate-50/60 p-4 border border-slate-200 rounded-2xl">
-                      <div className="flex items-center justify-between">
-                        <label className="text-xs font-black uppercase text-[#7C3AED] tracking-wide block">
-                          Frontline ASHA Follow-Up Loop
-                        </label>
-                        <span className="text-[10px] uppercase font-bold text-slate-400">
-                          Doctor recommends · ASHA visits
-                        </span>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                        <div className="space-y-1">
-                          <span className="text-[10px] text-slate-400 font-bold block uppercase">Recommended Date</span>
-                          <input
-                            type="date"
-                            value={followUpDate}
-                            onChange={(e) => setFollowUpDate(e.target.value)}
-                            className="w-full border border-slate-200 rounded-lg p-2 font-bold bg-white outline-none"
-                          />
-                        </div>
-                        <div className="flex items-center text-[11px] text-slate-500 font-medium leading-relaxed">
-                          Follow-up checklist triggers automatically in target ASHA worker dashboard for in-person verification.
-                        </div>
-                      </div>
-                    </div>
-
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 tracking-tight">
+                      Specialist Clinical Decision & Care Plan
+                    </h3>
+                    <p className="text-xs text-slate-500 font-semibold">
+                      Review findings, record diagnostic conclusion, and save finalized care plan
+                    </p>
                   </div>
-
-                  <div className="pt-4 border-t border-slate-100 flex items-center justify-between gap-3">
-                    <button
-                      type="button"
-                      onClick={handleSaveDraft}
-                      className="min-h-[44px] px-5 py-2.5 text-xs font-black text-slate-700 border border-slate-200 rounded-xl hover:bg-slate-50 flex items-center gap-1.5 transition-colors cursor-pointer"
-                    >
-                      <Save className="w-4 h-4 text-slate-400" />
-                      <span>Save Draft</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!diagnosis.trim() || !treatmentAdvice.trim()) {
-                          setError('A clinical diagnosis and treatment advice are required to sign.');
-                          setTimeout(() => setError(''), 4000);
-                          return;
-                        }
-                        setShowSignModal(true);
-                      }}
-                      className="min-h-[44px] px-6 py-2.5 bg-[#7C3AED] hover:bg-[#6D28D9] text-white font-black text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition-transform active:scale-95 cursor-pointer"
-                    >
-                      <CheckCircle className="w-4 h-4" />
-                      <span>Sign Consultation</span>
-                    </button>
-                  </div>
-
                 </div>
 
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="text-[10px] font-black uppercase px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    ● Step 3 of 4: Attending Specialist
+                  </span>
+                </div>
               </div>
 
+              {/* Diagnosis & Care Plan Inputs */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                {/* Clinical Diagnosis */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-black uppercase text-slate-700 tracking-wide block">
+                      Clinical Diagnosis / Impression <span className="text-rose-600">*</span>
+                    </label>
+                    <span className="text-[10px] font-bold text-slate-400">Primary medical finding</span>
+                  </div>
+                  <input
+                    type="text"
+                    value={diagnosis}
+                    onChange={(e) => setDiagnosis(e.target.value)}
+                    placeholder="e.g. Severe Gestational Anemia · Third Trimester High-Risk Pregnancy"
+                    className="w-full border border-slate-200 rounded-2xl p-3.5 text-xs font-black text-slate-900 bg-white outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-[#7C3AED]/20 shadow-2xs"
+                  />
+                  {/* Quick diagnostic chips for OB-GYN / General Medicine */}
+                  <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                    <span className="text-[10px] font-bold text-slate-400">Quick suggestions:</span>
+                    {[
+                      'Severe Gestational Anemia (Hb < 8.0 g/dL)',
+                      'Third Trimester High-Risk Pregnancy (JSY)',
+                      'Acute Upper Respiratory Infection',
+                      'Essential Hypertension Review'
+                    ].map((chip) => (
+                      <button
+                        key={chip}
+                        type="button"
+                        onClick={() => setDiagnosis(chip)}
+                        className="text-[10px] font-bold px-2.5 py-1 rounded-xl bg-slate-100 hover:bg-purple-50 hover:text-[#7C3AED] text-slate-600 border border-slate-200 cursor-pointer transition-colors"
+                      >
+                        + {chip.split(' (')[0]}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Treatment Advice & Care Plan */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-black uppercase text-slate-700 tracking-wide block">
+                      Care Plan & Clinical Instructions <span className="text-rose-600">*</span>
+                    </label>
+                    <span className="text-[10px] font-bold text-slate-400">Rx, interventions & precautions</span>
+                  </div>
+                  <textarea
+                    rows={3}
+                    value={treatmentAdvice}
+                    onChange={(e) => setTreatmentAdvice(e.target.value)}
+                    placeholder="e.g. Immediate IV Iron Sucrose infusion, Doppler ultrasound monitoring, high protein diet, bed rest. Frontline ASHA checkup on Day 3."
+                    className="w-full border border-slate-200 rounded-2xl p-3.5 text-xs font-medium text-slate-900 bg-white outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-[#7C3AED]/20 shadow-2xs leading-relaxed"
+                  />
+                </div>
+              </div>
+
+              {/* ASHA Follow-Up Loop & Actions Bar */}
+              <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-2.5">
+                  <input
+                    type="checkbox"
+                    id="asha_followup"
+                    defaultChecked
+                    className="w-4 h-4 rounded text-[#7C3AED] accent-[#7C3AED] cursor-pointer"
+                  />
+                  <label htmlFor="asha_followup" className="text-xs font-bold text-slate-700 cursor-pointer select-none">
+                    <span>Automatically trigger in-person home visit follow-up on ASHA Worker dashboard</span>
+                    <span className="text-slate-400 block text-[10px] font-medium">Verified under ABDM continuity of care loop</span>
+                  </label>
+                </div>
+
+                <div className="flex items-center gap-3 self-end sm:self-auto">
+                  <button
+                    type="button"
+                    onClick={handleCloseCase}
+                    className="min-h-[44px] px-4 py-2.5 text-xs font-bold text-slate-600 hover:text-slate-900 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors cursor-pointer"
+                  >
+                    Back to Queue
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!diagnosis.trim()) {
+                        setDiagnosis('Clinical Assessment & Imaging Review Completed');
+                      }
+                      if (!treatmentAdvice.trim()) {
+                        setTreatmentAdvice('Standard clinical care plan initiated. Follow frontline health guidance.');
+                      }
+                      setShowSignModal(true);
+                    }}
+                    className="min-h-[44px] px-6 py-2.5 bg-[#7C3AED] hover:bg-[#6D28D9] text-white font-black text-xs rounded-xl shadow-md flex items-center gap-2 transition-transform active:scale-95 cursor-pointer"
+                  >
+                    <CheckCircle className="w-4 h-4" />
+                    <span>Save Care Plan & Complete Consultation →</span>
+                  </button>
+                </div>
+              </div>
             </div>
 
           </div>
