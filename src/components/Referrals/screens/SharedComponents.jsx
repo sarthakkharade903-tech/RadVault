@@ -395,21 +395,114 @@ export function ClinicalVoiceScribe({
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
 
+  const isRecordingRef = useRef(false);
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
   const timerIntervalRef = useRef(null);
   const recognitionRef = useRef(null);
-  const initialNotesRef = useRef('');
+
+  // Multi-tier speech accumulators to ensure zero word loss across pauses:
+  // baseNotesRef: text present in the textarea before current recording session started
+  const baseNotesRef = useRef('');
+  // sessionFinalTextRef: all finalized chunks from previous speech-recognition cycles in this session
+  const sessionFinalTextRef = useRef('');
+  // currentRunFinalRef: finalized chunks from the currently running speech-recognition instance
+  const currentRunFinalRef = useRef('');
 
   useEffect(() => {
     return () => {
+      isRecordingRef.current = false;
       if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
       if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
         mediaRecorderRef.current.stop();
       }
-      if (recognitionRef.current) recognitionRef.current.stop();
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.onend = null;
+          recognitionRef.current.stop();
+        } catch (_) {}
+      }
     };
   }, []);
+
+  // Helper to construct a clean SpeechRecognition instance
+  const initSpeechRecognition = (lang) => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) return null;
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = lang;
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
+
+    recognition.onresult = (e) => {
+      let currentRunFinal = '';
+      let currentRunInterim = '';
+
+      for (let i = 0; i < e.results.length; i++) {
+        const piece = e.results[i][0].transcript;
+        if (e.results[i].isFinal) {
+          currentRunFinal += piece + ' ';
+        } else {
+          currentRunInterim += piece + ' ';
+        }
+      }
+
+      currentRunFinalRef.current = currentRunFinal;
+
+      const finalizedSoFar = [sessionFinalTextRef.current, currentRunFinal]
+        .filter(Boolean)
+        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      const combined = [
+        baseNotesRef.current,
+        finalizedSoFar,
+        currentRunInterim.trim()
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      if (onChangeNotes && combined) {
+        onChangeNotes(combined);
+      }
+    };
+
+    recognition.onerror = (err) => {
+      // Benign pause/silence events in Web Speech API
+      if (err.error === 'no-speech' || err.error === 'aborted') {
+        return;
+      }
+      console.warn('[ClinicalVoiceScribe] Speech recognition notice:', err.error);
+    };
+
+    recognition.onend = () => {
+      // Commit finalized text from this run so far into the session accumulator
+      if (currentRunFinalRef.current) {
+        sessionFinalTextRef.current = [sessionFinalTextRef.current, currentRunFinalRef.current]
+          .filter(Boolean)
+          .join(' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+        currentRunFinalRef.current = '';
+      }
+
+      // If user is still recording, seamlessly restart (auto-reconnect on silence timeout)
+      if (isRecordingRef.current) {
+        try {
+          recognition.start();
+        } catch (_) {
+          // Ignore if already starting or active
+        }
+      }
+    };
+
+    return recognition;
+  };
 
   const startRecording = async () => {
     try {
@@ -431,30 +524,15 @@ export function ClinicalVoiceScribe({
       recorder.start();
       mediaRecorderRef.current = recorder;
 
-      // Real-time Speech-to-Text via Web Speech API
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (SpeechRecognition) {
-        const recognition = new SpeechRecognition();
-        recognition.lang = speechLang;
-        recognition.continuous = true;
-        recognition.interimResults = true;
+      // Initialize text state for this session
+      baseNotesRef.current = notes ? notes.trim() : '';
+      sessionFinalTextRef.current = '';
+      currentRunFinalRef.current = '';
+      isRecordingRef.current = true;
 
-        initialNotesRef.current = notes ? notes.trim() + ' ' : '';
-
-        recognition.onresult = (e) => {
-          let transcript = '';
-          for (let i = e.resultIndex; i < e.results.length; i++) {
-            transcript += e.results[i][0].transcript;
-          }
-          if (transcript.trim() && onChangeNotes) {
-            onChangeNotes(initialNotesRef.current + transcript.trim());
-          }
-        };
-
-        recognition.onerror = (err) => {
-          console.warn('[ClinicalVoiceScribe] Speech recognition notice:', err.error);
-        };
-
+      // Start Web Speech Recognition
+      const recognition = initSpeechRecognition(speechLang);
+      if (recognition) {
         recognition.start();
         recognitionRef.current = recognition;
       }
@@ -471,12 +549,48 @@ export function ClinicalVoiceScribe({
   };
 
   const stopRecording = () => {
+    isRecordingRef.current = false;
+
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
       mediaRecorderRef.current.stop();
     }
-    if (recognitionRef.current) recognitionRef.current.stop();
+
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.onend = null; // Detach onend before stopping to avoid auto-restart
+        recognitionRef.current.stop();
+      } catch (_) {}
+    }
+
     if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
     setIsRecording(false);
+  };
+
+  const handleLanguageChange = (newLang) => {
+    setSpeechLang(newLang);
+    // If actively recording, switch language on-the-fly without losing text
+    if (isRecordingRef.current && recognitionRef.current) {
+      try {
+        if (currentRunFinalRef.current) {
+          sessionFinalTextRef.current = [sessionFinalTextRef.current, currentRunFinalRef.current]
+            .filter(Boolean)
+            .join(' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+          currentRunFinalRef.current = '';
+        }
+        recognitionRef.current.onend = null;
+        recognitionRef.current.stop();
+
+        const newRec = initSpeechRecognition(newLang);
+        if (newRec) {
+          newRec.start();
+          recognitionRef.current = newRec;
+        }
+      } catch (err) {
+        console.warn('[ClinicalVoiceScribe] Language hot-reload notice:', err);
+      }
+    }
   };
 
   return (
@@ -503,7 +617,7 @@ export function ClinicalVoiceScribe({
           <Globe className="w-3.5 h-3.5 text-indigo-700" />
           <select
             value={speechLang}
-            onChange={(e) => setSpeechLang(e.target.value)}
+            onChange={(e) => handleLanguageChange(e.target.value)}
             className="text-xs font-bold bg-white text-indigo-950 border border-indigo-200 rounded-xl px-2.5 py-1.5 shadow-2xs focus:outline-none focus:border-indigo-500 cursor-pointer"
           >
             <option value="mr-IN">मराठी (Marathi)</option>
