@@ -2465,7 +2465,7 @@ export default function HospitalStaffWorkspace({
       if (selectedFacilityId !== 'ALL' && targetFac) {
         docQuery = docQuery.eq('facility_id', targetFac.id);
       }
-      const { data: doctorsData, error: docErr } = await docQuery.catch(() => ({ data: null, error: null }));
+      const { data: doctorsData, error: docErr } = await docQuery;
       if (docErr) console.warn('[HospitalStaff] doctors query warning:', docErr.message);
       setDoctors(doctorsData && doctorsData.length > 0 ? doctorsData : DEMO_DOCTORS);
 
@@ -2480,7 +2480,7 @@ export default function HospitalStaffWorkspace({
         refQuery = refQuery.or(`destination_facility_id.eq.${targetFac.id},destination_hospital.ilike.%${prefix}%`);
       }
 
-      const { data: refData, error: refErr } = await refQuery.catch(err => ({ data: null, error: err }));
+      const { data: refData, error: refErr } = await refQuery;
       if (refErr) console.warn('[HospitalStaff] referrals query notice:', refErr.message);
 
       // 5. Separately Fetch Emergency SOS from care_requests (Emergency CAD Console)
