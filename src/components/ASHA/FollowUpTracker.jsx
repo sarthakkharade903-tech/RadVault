@@ -152,224 +152,12 @@ function NHMLogo() {
 }
 
 function getUrgencyBand(item) {
-  if (item.urgencyDays <= 0) {
-    if (item.urgencyDays === 0) return "dueToday";
-    return "overdue";
-  }
-  if (item.urgencyDays <= 1) return "dueToday";
+  if (item.urgencyDays < 0) return "overdue";
+  if (item.urgencyDays === 0) return "dueToday";
   return "upcoming";
 }
 
-// ─── Routine Health Visit Derivations ─────────────────────────────────────────
-function buildRoutineItems(patients, t) {
-  if (!patients || !patients.length) return [];
-  const today = new Date();
-  const items = [];
 
-  patients.forEach(p => {
-    const village = p.families?.village || p.village || "Shirwal";
-    const mobile  = p.mobile || "";
-    const lastVisitDays = p.last_visit_date
-      ? Math.floor((today - new Date(p.last_visit_date)) / 86400000)
-      : null;
-
-    // ANC Milestone
-    if (p.is_pregnant && p.lmp_date) {
-      const weeks = Math.floor((today - new Date(p.lmp_date)) / (7 * 24 * 60 * 60 * 1000));
-      const expectedAnc = weeks >= 36 ? 4 : weeks >= 28 ? 3 : weeks >= 16 ? 2 : 1;
-      const doneAnc = p.anc_visits_done || 0;
-      if (doneAnc < expectedAnc) {
-        items.push({
-          id: `anc-${p.id}`,
-          patientId: p.id,
-          patientName: p.name,
-          gender: "Female",
-          age: p.age ? `${p.age} years` : "26 years",
-          patientCode: p.abha_id || `ANC${String(p.id).slice(0, 6).toUpperCase()}`,
-          mobile, village,
-          type: "anc",
-          label: t.ancDue,
-          category: "Antenatal Care",
-          hospital: "Shirwal Primary Health Centre",
-          detail: `ANC-${doneAnc + 1} • ${weeks} ${t.weeks} pregnancy milestone checkup.`,
-          conditionNote: "Check vitals, IFA tablets & maternal nutrition.",
-          urgencyDays: weeks >= 36 ? -1 : weeks >= 28 ? 0 : 3,
-        });
-      }
-    }
-
-    // Child Immunization
-    if (p.is_child) {
-      const missing = ["bcg","opv","dpt","hep_b","measles","mr"].filter(v => !p[`vaccine_${v}`]);
-      if (missing.length) {
-        items.push({
-          id: `vac-${p.id}`,
-          patientId: p.id,
-          patientName: p.name,
-          gender: p.gender || "Child",
-          age: p.age ? `${p.age} years` : "18 months",
-          patientCode: p.abha_id || `VAC${String(p.id).slice(0, 6).toUpperCase()}`,
-          mobile, village,
-          type: "vaccine",
-          label: t.vaccineDue,
-          category: "Immunization",
-          hospital: "Shirwal Health Sub-Centre",
-          detail: `${missing[0].toUpperCase()} vaccine due • ${missing.length} doses pending.`,
-          conditionNote: "Verify immunization card & schedule vaccination session.",
-          urgencyDays: 1,
-        });
-      }
-    }
-
-    // High Risk / Red status
-    if (p.status === "red") {
-      const daysWithoutVisit = lastVisitDays !== null ? lastVisitDays : 10;
-      if (daysWithoutVisit >= 7) {
-        items.push({
-          id: `hr-${p.id}`,
-          patientId: p.id,
-          patientName: p.name,
-          gender: p.gender || "Male",
-          age: p.age ? `${p.age} years` : "55 years",
-          patientCode: p.abha_id || `HR${String(p.id).slice(0, 6).toUpperCase()}`,
-          mobile, village,
-          type: "followup",
-          label: t.highRisk,
-          category: "High-Risk Monitor",
-          hospital: "Bhor Sub-District Hospital",
-          detail: lastVisitDays !== null
-            ? `${t.lastVisit}: ${lastVisitDays} ${t.daysAgo}`
-            : t.neverVisited,
-          conditionNote: "Critical blood pressure and sugar level monitoring.",
-          urgencyDays: daysWithoutVisit >= 14 ? -3 : 0,
-        });
-      }
-    }
-
-    // TB / DOTS
-    if (p.tb_symptoms) {
-      const daysWithoutVisit = lastVisitDays !== null ? lastVisitDays : 8;
-      if (daysWithoutVisit >= 7) {
-        items.push({
-          id: `tb-${p.id}`,
-          patientId: p.id,
-          patientName: p.name,
-          gender: p.gender || "Male",
-          age: p.age ? `${p.age} years` : "48 years",
-          patientCode: p.abha_id || `TB${String(p.id).slice(0, 6).toUpperCase()}`,
-          mobile, village,
-          type: "tb",
-          label: t.tbDots,
-          category: "TB Surveillance",
-          hospital: "Satara Civil Hospital",
-          detail: lastVisitDays !== null
-            ? `${t.lastVisit}: ${lastVisitDays} ${t.daysAgo}`
-            : t.neverVisited,
-          conditionNote: "DOTS medication adherence & sputum test follow-up.",
-          urgencyDays: 0,
-        });
-      }
-    }
-
-    // NCD Chronic (Monthly BP/Sugar)
-    if (p.has_chronic && lastVisitDays !== null && lastVisitDays >= 28) {
-      items.push({
-        id: `ncd-${p.id}`,
-        patientId: p.id,
-        patientName: p.name,
-        gender: p.gender || "Female",
-        age: p.age ? `${p.age} years` : "62 years",
-        patientCode: p.abha_id || `NCD${String(p.id).slice(0, 6).toUpperCase()}`,
-        mobile, village,
-        type: "ncd",
-        label: t.ncdMonitor,
-        category: "Chronic Care NCD",
-        hospital: "Shirwal PHC",
-        detail: `${t.lastVisit}: ${lastVisitDays} ${t.daysAgo}`,
-        conditionNote: "Monthly hypertension & diabetes medication refill.",
-        urgencyDays: lastVisitDays >= 40 ? -2 : 1,
-      });
-    }
-  });
-
-  return items;
-}
-
-// ─── Referral Pipeline Follow-Up Derivations ─────────────────────────────────
-function buildReferralItems(careRequests, t) {
-  if (!careRequests || !careRequests.length) return [];
-  const today = new Date();
-  const items = [];
-
-  careRequests.forEach(req => {
-    const daysSinceReferral = req.created_at
-      ? Math.floor((today - new Date(req.created_at)) / 86400000)
-      : 0;
-
-    const hospital = req.facility || "Pune Sassoon General Hospital";
-    const patientName = req.patient_name || "Village Resident";
-    const mobile = req.mobile || req.patient_mobile || "";
-    const status = (req.status || "").toUpperCase();
-
-    // 1. Referral Arrival Verification (Referred 2+ days ago and still pending)
-    if (
-      daysSinceReferral >= 2 &&
-      (status === "SUBMITTED" || status === "PENDING" || status === "PENDING_PHC")
-    ) {
-      items.push({
-        id: `ref-check-${req.id}`,
-        patientId: req.patient_id,
-        patientCode: req.patient_id ? String(req.patient_id).slice(0, 8).toUpperCase() : `REF${Math.abs(req.id.length * 17).toString(16).toUpperCase()}`,
-        patientName,
-        gender: req.gender || "Male",
-        age: req.age ? `${req.age} years` : "50 years",
-        mobile,
-        village: req.village || "Shirwal",
-        type: "referralCheck",
-        label: t.referralCheck,
-        category: "Referral Arrival Check",
-        detail: t.referralCheckDetail.replace("{n}", daysSinceReferral),
-        conditionNote: "Verify patient arrived at PHC and completed doctor intake.",
-        urgencyDays: daysSinceReferral >= 5 ? -2 : daysSinceReferral >= 3 ? 0 : 1,
-        actionLabel: t.checkRecovery,
-        referralId: req.id,
-        hospital,
-      });
-    }
-
-    // 2. Post-Treatment Home Recovery (Hospital completed care)
-    if (status === "COMPLETED" || status === "ACCEPTED") {
-      const completedAt = req.completed_at || req.updated_at;
-      const daysSinceCompletion = completedAt
-        ? Math.floor((today - new Date(completedAt)) / 86400000)
-        : 1;
-
-      if (daysSinceCompletion <= 14 && daysSinceCompletion >= 0) {
-        items.push({
-          id: `post-treat-${req.id}`,
-          patientId: req.patient_id,
-          patientCode: req.patient_id ? String(req.patient_id).slice(0, 8).toUpperCase() : `POST${Math.abs(req.id.length * 29).toString(16).toUpperCase()}`,
-          patientName,
-          gender: req.gender || "Male",
-          age: req.age ? `${req.age} years` : "52 years",
-          mobile,
-          village: req.village || "Shirwal",
-          type: "postTreatment",
-          label: t.postTreatment,
-          category: "Post-Discharge Care",
-          detail: t.postTreatmentDetail,
-          conditionNote: "Hypertension & post-discharge medication adherence.",
-          urgencyDays: daysSinceCompletion <= 1 ? 0 : daysSinceCompletion >= 4 ? -2 : 2,
-          actionLabel: t.checkRecovery,
-          referralId: req.id,
-          hospital,
-        });
-      }
-    }
-  });
-
-  return items;
-}
 
 // ─── Default Mockup Baseline (Matching Provided Design Photo) ────────────────
 function getDemoItems(t) {
@@ -458,14 +246,26 @@ const getTodayDateStr = () => {
   return `${year}-${month}-${day}`;
 };
 
-const toLocalDateStr = (isoString) => {
-  if (!isoString) return '';
-  const d = new Date(isoString);
+const toLocalDateStr = (val) => {
+  if (!val) return '';
+  if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(val)) {
+    return val;
+  }
+  const d = new Date(val);
   if (isNaN(d.getTime())) return '';
   const year = d.getFullYear();
   const month = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+};
+
+const calcDaysDiffFromToday = (dateStr) => {
+  if (!dateStr) return 0;
+  const todayParts = getTodayDateStr().split('-').map(Number);
+  const targetParts = dateStr.split('-').map(Number);
+  const todayUtc = Date.UTC(todayParts[0], todayParts[1] - 1, todayParts[2]);
+  const targetUtc = Date.UTC(targetParts[0], targetParts[1] - 1, targetParts[2]);
+  return Math.round((targetUtc - todayUtc) / (24 * 60 * 60 * 1000));
 };
 
 const formatHumanDate = (dateStr) => {
@@ -555,33 +355,10 @@ export default function FollowUpTracker({ patients, onLogVisit, onEditPatient, d
   const fetchCareRequests = async () => {
     try {
       setLoadingReferrals(true);
-      const [careRes, docRes, refRes] = await Promise.allSettled([
-        supabase.from("care_requests").select("*").order("created_at", { ascending: false }),
-        getDoctorFollowUps(),
-        supabase.from("referrals").select("*").order("created_at", { ascending: false })
-      ]);
+      const docRes = await getDoctorFollowUps();
 
-      let combined = [];
-      if (careRes.status === 'fulfilled' && careRes.value.data) {
-        combined = combined.concat(careRes.value.data);
-      }
-      if (refRes.status === 'fulfilled' && refRes.value.data) {
-        const mappedRefs = refRes.value.data.map(r => ({
-          id: r.id,
-          patient_id: r.patient_id,
-          patient_name: r.patient_name,
-          facility: r.destination_hospital,
-          created_at: r.created_at,
-          updated_at: r.created_at,
-          status: r.status === 'Completed' ? 'COMPLETED' : r.status,
-          is_physical_referral: true
-        }));
-        combined = combined.concat(mappedRefs);
-      }
-      setCareRequests(combined);
-
-      if (docRes.status === 'fulfilled' && docRes.value?.data) {
-        setDoctorFollowUps(docRes.value.data);
+      if (docRes && docRes.data) {
+        setDoctorFollowUps(docRes.data);
       }
       const now = new Date();
       setLastSyncTime(now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
@@ -597,13 +374,10 @@ export default function FollowUpTracker({ patients, onLogVisit, onEditPatient, d
 
     const channel = supabase
       .channel("followup_sync_live")
-      .on("postgres_changes", { event: "*", schema: "public", table: "referrals" }, () => {
-        fetchCareRequests();
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "care_requests" }, () => {
-        fetchCareRequests();
-      })
       .on("postgres_changes", { event: "*", schema: "public", table: "consultations" }, () => {
+        fetchCareRequests();
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "referrals" }, () => {
         fetchCareRequests();
       })
       .subscribe();
@@ -612,99 +386,57 @@ export default function FollowUpTracker({ patients, onLogVisit, onEditPatient, d
   }, []);
 
   const allItems = useMemo(() => {
-    const routine  = buildRoutineItems(patients || [], t);
-    const referral = buildReferralItems(careRequests, t);
-
     const docItems = (doctorFollowUps || []).map(item => {
-      const followUpDate = item.follow_up_date ? new Date(item.follow_up_date) : new Date();
-      const daysDiff = Math.floor((followUpDate - new Date()) / 86400000);
       const itemDateStr = toLocalDateStr(item.follow_up_date || item.created_at) || todayStr;
+      const daysDiff = calcDaysDiffFromToday(itemDateStr);
+
       return {
         id: `doc-followup-${item.id}`,
         encounterId: item.encounterId || item.id,
         patientId: item.patientId || item.patient_id,
-        patientCode: `DOC${String(item.id).slice(0, 6).toUpperCase()}`,
+        patientCode: item.patientCode || `DOC${String(item.id).slice(0, 6).toUpperCase()}`,
         patientName: item.patientName || "Village Patient",
         gender: item.gender || "Female",
-        age: item.age ? `${item.age} years` : "22 years",
+        age: item.age ? `${item.age}` : "22 years",
         mobile: item.mobile || "",
-        village: item.village || "Shirwal",
+        village: item.village || "Vadgaon",
         type: "doctorFollowUp",
         label: "Specialist Follow-Up",
         category: "Hospital Specialist Review",
         detail: item.follow_up_reason || "Doctor specialist recommended home follow-up visit.",
         conditionNote: item.treatmentAdvice || "Verify prescribed medications and check symptom progression.",
-        urgencyDays: daysDiff <= 0 ? (daysDiff < 0 ? -2 : 0) : 1,
+        urgencyDays: daysDiff,
         actionLabel: t.checkRecovery,
         hospital: item.hospital || "Pune Sassoon General Hospital",
         isDoctorFollowUp: true,
-        doctorName: item.doctorName || "Dr. Neha Joshi",
-        specialty: item.specialty || "Consultant Obstetrician",
-        diagnosis: item.diagnosis || "Severe Gestational Anemia (Hb < 8.0 g/dL)",
+        doctorName: item.doctorName || "Dr. Arvind Kulkarni",
+        specialty: item.specialty || "Consultant Physician",
+        diagnosis: item.diagnosis || "Clinical Review Completed",
         treatmentAdvice: item.treatmentAdvice,
         prescriptions: item.prescriptions,
+        follow_up_completed: Boolean(item.follow_up_completed),
         itemDateStr,
       };
     });
 
-    const combined = [...referral, ...docItems, ...routine];
+    if (docItems.length === 0 && demoMode) return getDemoItems(t);
 
-    if (combined.length === 0) return demoMode ? getDemoItems(t) : [];
+    docItems.sort((a, b) => a.urgencyDays - b.urgencyDays);
+    return docItems;
+  }, [doctorFollowUps, lang, demoMode, todayStr]);
 
-    // Enrich existing items with fallback fields
-    const patientMap = new Map();
-    (patients || []).forEach(p => patientMap.set(p.id, p));
-
-    const enriched = combined.map(it => {
-      const pt = patientMap.get(it.patientId);
-      const patientCode = it.patientCode || pt?.abha_id || (it.patientId ? String(it.patientId).slice(0, 8).toUpperCase() : `PT${Math.abs(it.id.length * 13).toString(16).toUpperCase()}`);
-      const gender = it.gender || pt?.gender || (it.type === 'anc' ? 'Female' : 'Male');
-      const age = it.age || (pt?.age ? `${pt.age} years` : (it.type === 'anc' ? '28 years' : '52 years'));
-      const mobile = it.mobile || pt?.mobile || "+91 98765 43210";
-      const hospital = it.hospital || "Pune Sassoon General Hospital";
-      const category = it.category || it.label || "Post-Discharge Care";
-
-      let conditionNote = it.conditionNote;
-      if (!conditionNote) {
-        if (it.type === "postTreatment") conditionNote = "Hypertension. Continue prescribed medication.";
-        else if (it.type === "anc") conditionNote = "Routine antenatal checkup & IFA nutrition counseling.";
-        else if (it.type === "vaccine") conditionNote = "Immunization schedule tracking.";
-        else if (it.type === "tb") conditionNote = "DOTS adherence & symptom check.";
-        else if (it.type === "ncd") conditionNote = "Chronic hypertension & glucose monitoring.";
-        else conditionNote = "Check recovery symptoms and medication adherence.";
-      }
-
-      return {
-        ...it,
-        patientCode,
-        gender,
-        age,
-        mobile,
-        hospital,
-        category,
-        conditionNote,
-        doctorName: it.doctorName,
-        specialty: it.specialty,
-        diagnosis: it.diagnosis,
-        treatmentAdvice: it.treatmentAdvice,
-        prescriptions: it.prescriptions,
-        isDoctorFollowUp: it.isDoctorFollowUp,
-        itemDateStr: it.itemDateStr || toLocalDateStr(it.created_at) || todayStr,
-      };
-    });
-
-    enriched.sort((a, b) => a.urgencyDays - b.urgencyDays);
-    return enriched;
-  }, [patients, careRequests, doctorFollowUps, lang, demoMode, todayStr]);
+  const isItemDone = (it) => {
+    return it.follow_up_completed || completedSet.has(it.id) || completedSet.has(it.encounterId);
+  };
 
   const visibleItems = useMemo(() => {
     let list = allItems;
 
     // Filter by Tab
     if (activeFilter === "done") {
-      list = list.filter(it => completedSet.has(it.id));
+      list = list.filter(it => isItemDone(it));
     } else {
-      list = list.filter(it => !completedSet.has(it.id));
+      list = list.filter(it => !isItemDone(it));
       if (activeFilter !== "all") {
         list = list.filter(it => getUrgencyBand(it) === activeFilter);
       }
@@ -712,24 +444,21 @@ export default function FollowUpTracker({ patients, onLogVisit, onEditPatient, d
 
     // Filter by Date View Mode (Matching Hospital Dashboard)
     if (dateViewMode === 'TODAY') {
-      list = list.filter(it => it.itemDateStr === todayStr || getUrgencyBand(it) === 'dueToday');
+      list = list.filter(it => it.itemDateStr === todayStr);
     } else if (dateViewMode === 'CALENDAR_DATE') {
-      list = list.filter(it => it.itemDateStr === selectedDate || (selectedDate === todayStr && getUrgencyBand(it) === 'dueToday'));
+      list = list.filter(it => it.itemDateStr === selectedDate);
     }
 
     return list;
   }, [allItems, activeFilter, completedSet, dateViewMode, selectedDate, todayStr]);
 
   const counts = useMemo(() => ({
-    all:      allItems.filter(it => !completedSet.has(it.id)).length,
-    overdue:  allItems.filter(it => !completedSet.has(it.id) && getUrgencyBand(it) === "overdue").length,
-    dueToday: allItems.filter(it => !completedSet.has(it.id) && getUrgencyBand(it) === "dueToday").length,
-    upcoming: allItems.filter(it => !completedSet.has(it.id) && getUrgencyBand(it) === "upcoming").length,
-    done:     completedSet.size,
-    referralPending: allItems.filter(it =>
-      !completedSet.has(it.id) &&
-      (it.type === "referralCheck" || it.type === "postTreatment" || it.type === "doctorFollowUp")
-    ).length,
+    all:      allItems.filter(it => !isItemDone(it)).length,
+    overdue:  allItems.filter(it => !isItemDone(it) && getUrgencyBand(it) === "overdue").length,
+    dueToday: allItems.filter(it => !isItemDone(it) && getUrgencyBand(it) === "dueToday").length,
+    upcoming: allItems.filter(it => !isItemDone(it) && getUrgencyBand(it) === "upcoming").length,
+    done:     allItems.filter(it => isItemDone(it)).length,
+    referralPending: allItems.filter(it => !isItemDone(it)).length,
   }), [allItems, completedSet]);
 
   const markDone = async (id) => {
@@ -738,8 +467,8 @@ export default function FollowUpTracker({ patients, onLogVisit, onEditPatient, d
       const checks = checkedTasks[id] || {};
       const verifiedItems = [];
       if (checks.meds) verifiedItems.push("Medication adherence verified");
+      if (checks.recovery || checks.symptoms) verifiedItems.push("Home recovery check conducted");
       if (checks.vitals) verifiedItems.push("Home recovery vitals stable");
-      if (checks.symptoms) verifiedItems.push("No danger signs reported");
 
       const note = verifiedItems.length > 0 
         ? `Doctor follow-up checkoff: ${verifiedItems.join(", ")}.`
@@ -762,8 +491,9 @@ export default function FollowUpTracker({ patients, onLogVisit, onEditPatient, d
       } else if (res && res.success && res.persisted) {
         setSyncNotice({
           type: 'success',
-          message: 'Doctor consultation follow-up completed and durably synced to Supabase!'
+          message: `Doctor consultation follow-up completed for ${it.patientName} and saved to Supabase!`
         });
+        setTimeout(() => setSyncNotice(null), 3000);
       }
     }
     setCompletedSet(prev => {
@@ -1094,7 +824,7 @@ export default function FollowUpTracker({ patients, onLogVisit, onEditPatient, d
           </div>
         ) : (
           visibleItems.map(item => {
-            const isDone = completedSet.has(item.id);
+            const isDone = isItemDone(item);
             const band   = getUrgencyBand(item);
 
             // Calculate Due Pill Label and Classes
