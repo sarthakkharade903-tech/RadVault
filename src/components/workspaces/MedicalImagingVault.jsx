@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { getDocuments, getDocumentById } from '../../services/vaultService';
 
-// Built-in clinical imaging assets for immediate demo resilience
+// Built-in clinical imaging assets for offline demonstration resilience (strictly scoped to maternal patient Rekha Bai)
 const DEMO_FALLBACK_DOCS = [
   {
     id: 'demo-obstetric-scan',
@@ -31,17 +31,6 @@ const DEMO_FALLBACK_DOCS = [
     source: 'Hospital Radiology',
     created_at: '2026-09-11T18:30:00Z',
     notes: 'Gestational Age 32w 4d · Umbilical artery flow normal · Fetal profile and cardiac rhythm verified'
-  },
-  {
-    id: 'demo-chest-xray',
-    title: 'Diagnostic Chest Radiograph (PA View)',
-    category: 'Scans',
-    file_name: 'chest_xray.jpg',
-    file_type: 'image/jpeg',
-    file_path: '/assets/chest_xray.jpg',
-    source: 'Civil Hospital OPD',
-    created_at: '2026-09-04T10:15:00Z',
-    notes: 'Bilateral lung fields clear · Normal cardiothoracic ratio · Costophrenic angles sharp'
   }
 ];
 
@@ -66,44 +55,72 @@ export default function MedicalImagingVault({ patientId, patientName }) {
   const dragStartRef = useRef({ x: 0, y: 0 });
   const panStartRef = useRef({ x: 0, y: 0 });
 
-  // Fetch patient medical records
+  // Fetch patient medical records strictly isolated by patientId
   useEffect(() => {
     let isMounted = true;
     async function loadDocs() {
+      const isRekha = patientId === 'b6f81101-46d0-4b4d-8df0-9d9ce11a6a70' || (typeof patientName === 'string' && /rekha/i.test(patientName));
+
       if (!patientId) {
-        setDocuments(DEMO_FALLBACK_DOCS);
-        setSelectedDoc(DEMO_FALLBACK_DOCS[0]);
+        if (isRekha) {
+          setDocuments(DEMO_FALLBACK_DOCS);
+          setSelectedDoc(DEMO_FALLBACK_DOCS[0]);
+        } else {
+          setDocuments([]);
+          setSelectedDoc(null);
+          setFullDocData(null);
+        }
         setLoading(false);
         return;
       }
+
       setLoading(true);
       try {
         const { data, error } = await getDocuments(patientId);
         if (!isMounted) return;
 
         let docsList = data && data.length > 0 ? [...data] : [];
-        // Ensure clinical demonstration scans are always accessible alongside patient records
-        DEMO_FALLBACK_DOCS.forEach(fallback => {
-          if (!docsList.some(d => d.file_name === fallback.file_name || d.title === fallback.title)) {
-            docsList.push(fallback);
-          }
-        });
+
+        // STRICT ISOLATION: Only inject demo fallback scans if this is Rekha Bai AND no records exist in DB
+        if (isRekha && docsList.length === 0) {
+          docsList = [...DEMO_FALLBACK_DOCS];
+        }
 
         setDocuments(docsList);
-        // Default to the first scan or image if available
-        const firstScan = docsList.find(d => d.category === 'Scans' || d.file_type?.startsWith('image/')) || docsList[0];
-        setSelectedDoc(firstScan);
+        if (docsList.length > 0) {
+          // Default to the first scan or image if available
+          const firstScan = docsList.find(d => d.category === 'Scans' || d.file_type?.startsWith('image/')) || docsList[0];
+          setSelectedDoc(firstScan);
+        } else {
+          setSelectedDoc(null);
+          setFullDocData(null);
+        }
       } catch (err) {
         console.warn('[MedicalImagingVault] Load error:', err);
-        setDocuments(DEMO_FALLBACK_DOCS);
-        setSelectedDoc(DEMO_FALLBACK_DOCS[0]);
+        if (isRekha) {
+          setDocuments(DEMO_FALLBACK_DOCS);
+          setSelectedDoc(DEMO_FALLBACK_DOCS[0]);
+        } else {
+          setDocuments([]);
+          setSelectedDoc(null);
+          setFullDocData(null);
+        }
       } finally {
         if (isMounted) setLoading(false);
       }
     }
     loadDocs();
     return () => { isMounted = false; };
-  }, [patientId]);
+  }, [patientId, patientName]);
+
+  const handleCategoryChange = (cat) => {
+    setActiveCategory(cat);
+    const matching = cat === 'All' ? documents : documents.filter(d => d.category === cat);
+    if (matching.length > 0 && !matching.some(d => d.id === selectedDoc?.id)) {
+      const firstScan = matching.find(d => d.category === 'Scans' || d.file_type?.startsWith('image/')) || matching[0];
+      setSelectedDoc(firstScan);
+    }
+  };
 
   // When selected document changes, fetch full doc (for base64 data) and reset viewer transform
   useEffect(() => {
@@ -223,7 +240,11 @@ export default function MedicalImagingVault({ patientId, patientName }) {
               <h3 className={`text-sm font-black tracking-tight ${isFullscreen ? 'text-white' : 'text-slate-900'}`}>
                 Medical Imaging Vault
               </h3>
-              <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-mono">
+              <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full font-mono ${
+                documents.length > 0
+                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                  : 'bg-slate-100 text-slate-500 border border-slate-200'
+              }`}>
                 {documents.length} Records Connected
               </span>
             </div>
@@ -235,11 +256,11 @@ export default function MedicalImagingVault({ patientId, patientName }) {
 
         {/* Category Tabs */}
         <div className="flex items-center gap-1.5 overflow-x-auto text-[11px] font-bold">
-          {['All', 'Scans', 'Lab Reports', 'Prescriptions'].map(cat => (
+          {documents.length > 0 && ['All', 'Scans', 'Lab Reports', 'Prescriptions'].map(cat => (
             <button
               key={cat}
               type="button"
-              onClick={() => setActiveCategory(cat)}
+              onClick={() => handleCategoryChange(cat)}
               className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer shrink-0 ${
                 activeCategory === cat
                   ? 'bg-[#7C3AED] text-white font-black shadow-2xs'
@@ -264,8 +285,45 @@ export default function MedicalImagingVault({ patientId, patientName }) {
         </div>
       </div>
 
-      {/* ── DOCUMENT SELECTOR STRIP ── */}
-      <div className="flex items-center gap-2.5 overflow-x-auto pb-1.5 scrollbar-thin">
+      {loading ? (
+        <div className="min-h-[350px] bg-slate-50 rounded-3xl border border-slate-200 flex flex-col items-center justify-center p-8 text-center space-y-3">
+          <Loader2 className="w-8 h-8 animate-spin text-[#7C3AED]" />
+          <span className="text-xs font-bold text-slate-500">Retrieving patient medical vault records...</span>
+        </div>
+      ) : documents.length === 0 ? (
+        /* Clean Empty State when Patient Has No Scans or Records */
+        <div className="min-h-[350px] bg-slate-50/70 border-2 border-dashed border-slate-200 rounded-3xl flex flex-col items-center justify-center p-8 text-center space-y-3.5">
+          <div className="w-14 h-14 rounded-2xl bg-purple-50 border border-purple-100 flex items-center justify-center text-[#7C3AED] shadow-2xs">
+            <ImageIcon className="w-7 h-7 text-purple-400" />
+          </div>
+          <div className="max-w-md space-y-1.5">
+            <h4 className="text-sm font-black text-slate-800">
+              No Medical Scans or Records in Vault
+            </h4>
+            <p className="text-xs font-semibold text-slate-500 leading-relaxed">
+              No diagnostic scans, Doppler ultrasounds, or clinical documents have been uploaded to the Medical Vault for <strong className="text-slate-700">{patientName || 'this patient'}</strong>.
+            </p>
+            <p className="text-[11px] text-slate-400 pt-1">
+              Any diagnostic scans, prescriptions, or lab reports uploaded in the Patient Health Vault or by the frontline ASHA will automatically synchronize here.
+            </p>
+          </div>
+        </div>
+      ) : filteredDocs.length === 0 ? (
+        <div className="min-h-[300px] bg-slate-50/60 rounded-3xl border border-dashed border-slate-200 flex flex-col items-center justify-center p-8 text-center space-y-2">
+          <FileText className="w-8 h-8 text-slate-300" />
+          <p className="text-xs font-bold text-slate-600">No records found under "{activeCategory}"</p>
+          <button
+            type="button"
+            onClick={() => handleCategoryChange('All')}
+            className="text-xs font-black text-[#7C3AED] hover:underline cursor-pointer"
+          >
+            Show all {documents.length} records
+          </button>
+        </div>
+      ) : (
+        <>
+          {/* ── DOCUMENT SELECTOR STRIP ── */}
+          <div className="flex items-center gap-2.5 overflow-x-auto pb-1.5 scrollbar-thin">
         {filteredDocs.map(doc => {
           const isSelected = selectedDoc?.id === doc.id;
           const isScan = doc.category === 'Scans' || doc.file_type?.startsWith('image/');
@@ -349,7 +407,7 @@ export default function MedicalImagingVault({ patientId, patientName }) {
             >
               {/* Radiologist Scale & HUD Overlays */}
               <div className="absolute top-3 left-3 z-20 pointer-events-none flex flex-col gap-1 text-[10px] font-mono text-emerald-400 font-bold bg-slate-900/80 backdrop-blur-xs px-2.5 py-1.5 rounded-xl border border-slate-700/60 shadow-xs">
-                <span>PATIENT: {patientName?.toUpperCase() || 'REKHA BAI'}</span>
+                <span>PATIENT: {patientName?.toUpperCase() || 'PATIENT'}</span>
                 <span>ZOOM: {Math.round(zoom * 100)}% · CONTRAST: {contrast}%</span>
                 <span>FILTER: {isInverted ? 'INVERTED (NEGATIVE)' : 'STANDARD RADIOLOGY'}</span>
               </div>
@@ -544,7 +602,9 @@ export default function MedicalImagingVault({ patientId, patientName }) {
           </div>
         )}
       </div>
+    </>
+  )}
 
-    </div>
-  );
+</div>
+);
 }
