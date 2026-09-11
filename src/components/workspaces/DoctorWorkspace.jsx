@@ -34,18 +34,66 @@ import {
   getFullPatientClinicalDocket,
   generateClinicalAiSummary
 } from '../../services/ashaService';
-import { CONNECTED_FACILITIES } from '../../services/locationService';
+import { CONNECTED_FACILITIES, calculateHaversineDistance } from '../../services/locationService';
 
+// Reference coordinate: Pune Sassoon General Hospital (Apex Reference)
+const PUNE_SASSOON_COORDS = { lat: 18.5284, lon: 73.8746 };
 
+// Connected facilities sorted by proximity (Pune Sassoon first as Apex Center)
+export const SORTED_CONNECTED_FACILITIES = CONNECTED_FACILITIES.map(f => {
+  const dist = calculateHaversineDistance(PUNE_SASSOON_COORDS.lat, PUNE_SASSOON_COORDS.lon, f.lat, f.lon) ?? 0;
+  return { ...f, dist, rawDist: dist };
+}).sort((a, b) => {
+  if (a.id === 'f2222222-2222-2222-2222-222222222222' || a.name.toLowerCase().includes('sassoon')) return -1;
+  if (b.id === 'f2222222-2222-2222-2222-222222222222' || b.name.toLowerCase().includes('sassoon')) return 1;
+  return a.rawDist - b.rawDist;
+});
 
+// Canonical Multi-Doctor Registry across connected facilities
+export const ALL_CANONICAL_DOCTORS = [
+  {
+    id: 'd3333333-3333-3333-3333-333333333333',
+    name: 'Dr. Arvind Kulkarni',
+    specialty: 'Cardiology / General Medicine',
+    facility_id: 'f2222222-2222-2222-2222-222222222222',
+    facility_name: 'Pune Sassoon General Hospital',
+    room: 'OPD Room 4 · Cardiology'
+  },
+  {
+    id: 'e770b79a-b116-4505-a2b0-5ad9d3bd987f',
+    name: 'Dr. Neha Joshi',
+    specialty: 'General Medicine & OB-GYN',
+    facility_id: 'f2222222-2222-2222-2222-222222222222',
+    facility_name: 'Pune Sassoon General Hospital',
+    room: 'OPD Room 2 · Maternal & Medicine'
+  },
+  {
+    id: '593e99c2-c7bc-4c33-9eab-44de15c5d118',
+    name: 'Dr. Rohan Mehta',
+    specialty: 'General Medicine',
+    facility_id: 'f3333333-3333-3333-3333-333333333333',
+    facility_name: 'Aundh District Hospital, Pune',
+    room: 'Room 1 · Civil OPD'
+  },
+  {
+    id: 'bc89dabf-4fe0-45ba-9fb9-fdd0743510d7',
+    name: 'Dr. Pooja Patil',
+    specialty: 'Primary Care Physician',
+    facility_id: 'f4444444-4444-4444-4444-444444444444',
+    facility_name: 'Shirwal Primary Health Centre',
+    room: 'Consultation Desk A'
+  },
+  {
+    id: 'f1111111-d001-4444-8888-111111111111',
+    name: 'Dr. Rajesh Shinde',
+    specialty: 'Medical Officer (In-Charge)',
+    facility_id: 'f1111111-1111-1111-1111-111111111111',
+    facility_name: 'Shrirampur Primary Health Centre',
+    room: 'Consultation Desk 1'
+  }
+];
 
-const DEMO_DOCTOR_PROFILE = {
-  id: 'd3333333-3333-3333-3333-333333333333',
-  name: 'Dr. Arvind Kulkarni',
-  specialty: 'General Medicine',
-  facility_id: 'f2222222-2222-2222-2222-222222222222',
-  facility_name: 'Pune Sassoon General Hospital'
-};
+const DEMO_DOCTOR_PROFILE = ALL_CANONICAL_DOCTORS[0];
 
 const INITIAL_DEMO_REFERRALS = [
   {
@@ -74,8 +122,8 @@ const INITIAL_DEMO_REFERRALS = [
     destination_hospital: 'Pune Sassoon General Hospital',
     destination_facility_id: 'f2222222-2222-2222-2222-222222222222',
     destination_department: 'General Medicine',
-    doctor_id: 'd3333333-3333-3333-3333-333333333333',
-    doctor_assigned: 'Dr. Arvind Kulkarni',
+    doctor_id: 'e770b79a-b116-4505-a2b0-5ad9d3bd987f',
+    doctor_assigned: 'Dr. Neha Joshi',
     priority: 'ORANGE',
     priority_label: '🟡 Frontline Priority: Medium (Within 24 Hours Recommended)',
     status: 'Assigned',
@@ -101,6 +149,42 @@ const INITIAL_DEMO_REFERRALS = [
     vitals: { bp: '118/76', pulse: '78', spo2: '99', temp: '99.4', respRate: '16', weight: '64' },
     danger_signs: [],
     created_at: new Date().toISOString()
+  },
+  {
+    id: 'REF-DEMO-004',
+    patient_id: 'pat-demo-4',
+    patient_name: 'Ganesh More',
+    created_by: 'ASHA Worker: Rekha Shinde',
+    destination_hospital: 'Aundh District Hospital, Pune',
+    destination_facility_id: 'f3333333-3333-3333-3333-333333333333',
+    destination_department: 'General Medicine',
+    doctor_id: '593e99c2-c7bc-4c33-9eab-44de15c5d118',
+    doctor_assigned: 'Dr. Rohan Mehta',
+    priority: 'HIGH',
+    priority_label: '🔴 Frontline Priority: High (Immediate Attention Recommended)',
+    status: 'Arrived',
+    symptoms: 'Acute abdominal tenderness, fever and vomiting for 24 hours.',
+    vitals: { bp: '130/85', pulse: '92', spo2: '97', temp: '100.2', respRate: '22', weight: '60' },
+    danger_signs: ['Severe abdominal pain'],
+    created_at: new Date().toISOString()
+  },
+  {
+    id: 'REF-DEMO-005',
+    patient_id: 'pat-demo-5',
+    patient_name: 'Anjali Gaikwad',
+    created_by: 'ASHA Worker: Meena Kale',
+    destination_hospital: 'Shirwal Primary Health Centre',
+    destination_facility_id: 'f4444444-4444-4444-4444-444444444444',
+    destination_department: 'General Medicine',
+    doctor_id: 'bc89dabf-4fe0-45ba-9fb9-fdd0743510d7',
+    doctor_assigned: 'Dr. Pooja Patil',
+    priority: 'GREEN',
+    priority_label: '🟢 Frontline Priority: Routine / Local Care',
+    status: 'Arrived',
+    symptoms: 'Mild respiratory infection and fatigue. Routine follow-up.',
+    vitals: { bp: '110/70', pulse: '72', spo2: '99', temp: '98.4', respRate: '16', weight: '52' },
+    danger_signs: [],
+    created_at: new Date().toISOString()
   }
 ];
 
@@ -117,11 +201,39 @@ export default function DoctorWorkspace({
   const [queueFilter, setQueueFilter] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
 
-  const [doctorProfile, setDoctorProfile] = useState(() => isDemoMode ? DEMO_DOCTOR_PROFILE : null);
+  const [selectedFacilityId, setSelectedFacilityId] = useState(() => {
+    const saved = localStorage.getItem('radvault_doctor_facility_id');
+    const hospitalSaved = localStorage.getItem('radvault_reception_facility_id');
+    if (saved && saved !== 'f1111111-1111-1111-1111-111111111111') return saved;
+    if (hospitalSaved && hospitalSaved !== 'f1111111-1111-1111-1111-111111111111') return hospitalSaved;
+    return 'f2222222-2222-2222-2222-222222222222'; // Default to Pune Sassoon General Hospital
+  });
+
+  const [availableDoctors, setAvailableDoctors] = useState(ALL_CANONICAL_DOCTORS);
+  const [selectedDoctorId, setSelectedDoctorId] = useState(() => {
+    return localStorage.getItem('radvault_active_doctor_id') || ALL_CANONICAL_DOCTORS[0].id;
+  });
+
+  const [doctorProfile, setDoctorProfile] = useState(() => {
+    const savedId = localStorage.getItem('radvault_active_doctor_id');
+    const matched = ALL_CANONICAL_DOCTORS.find(d => d.id === savedId);
+    return matched || ALL_CANONICAL_DOCTORS[0];
+  });
   const doctorProfileRef = useRef(doctorProfile);
   useEffect(() => {
     doctorProfileRef.current = doctorProfile;
   }, [doctorProfile]);
+
+  const [queueViewScope, setQueueViewScope] = useState('MY_CASES'); // 'MY_CASES' | 'ALL_FACILITY'
+
+  const availableDoctorsForFacility = useMemo(() => {
+    if (selectedFacilityId === 'ALL') {
+      return availableDoctors;
+    }
+    const filtered = availableDoctors.filter(d => d.facility_id === selectedFacilityId);
+    return filtered.length > 0 ? filtered : availableDoctors;
+  }, [availableDoctors, selectedFacilityId]);
+
   const [referrals, setReferrals] = useState([]);
   const [loading, setLoading] = useState(() => !isDemoMode);
   const [error, setError] = useState('');
@@ -157,13 +269,38 @@ export default function DoctorWorkspace({
     setTimeout(() => setSuccessMsg(''), 4000);
   };
 
-  const [selectedFacilityId, setSelectedFacilityId] = useState(() => {
-    return localStorage.getItem('radvault_doctor_facility_id') || 'ALL';
-  });
-
   const handleSelectFacility = (newId) => {
     setSelectedFacilityId(newId);
     localStorage.setItem('radvault_doctor_facility_id', newId);
+
+    // Auto-align active doctor if current doctor doesn't belong to the newly selected facility
+    if (newId !== 'ALL') {
+      const docsInNewFac = availableDoctors.filter(d => d.facility_id === newId);
+      if (docsInNewFac.length > 0 && !docsInNewFac.some(d => d.id === doctorProfile?.id)) {
+        const nextDoc = docsInNewFac[0];
+        setDoctorProfile(nextDoc);
+        doctorProfileRef.current = nextDoc;
+        setSelectedDoctorId(nextDoc.id);
+        localStorage.setItem('radvault_active_doctor_id', nextDoc.id);
+        showToast(`🏥 Switched to ${nextDoc.facility_name} · Active: ${nextDoc.name}`);
+      }
+    }
+  };
+
+  const handleSwitchDoctor = (newDocId) => {
+    const doc = availableDoctors.find(d => d.id === newDocId) || ALL_CANONICAL_DOCTORS.find(d => d.id === newDocId);
+    if (!doc) return;
+    setDoctorProfile(doc);
+    doctorProfileRef.current = doc;
+    setSelectedDoctorId(doc.id);
+    localStorage.setItem('radvault_active_doctor_id', doc.id);
+
+    // If active facility is not ALL and differs from doctor's facility, update facility context too
+    if (selectedFacilityId !== 'ALL' && selectedFacilityId !== doc.facility_id) {
+      setSelectedFacilityId(doc.facility_id);
+      localStorage.setItem('radvault_doctor_facility_id', doc.facility_id);
+    }
+    showToast(`🩺 Active clinician: ${doc.name} (${doc.specialty})`);
   };
 
   // ─── Live Teleconsultation Desk State ───
@@ -212,8 +349,14 @@ export default function DoctorWorkspace({
       setError('');
 
       if (isDemoMode) {
-        setDoctorProfile(DEMO_DOCTOR_PROFILE);
-        doctorProfileRef.current = DEMO_DOCTOR_PROFILE;
+        setAvailableDoctors(ALL_CANONICAL_DOCTORS);
+        const savedDocId = localStorage.getItem('radvault_active_doctor_id');
+        const activeDoc = ALL_CANONICAL_DOCTORS.find(d => d.id === savedDocId) ||
+          (selectedFacilityId !== 'ALL' ? ALL_CANONICAL_DOCTORS.find(d => d.facility_id === selectedFacilityId) : null) ||
+          ALL_CANONICAL_DOCTORS[0];
+        setDoctorProfile(activeDoc);
+        doctorProfileRef.current = activeDoc;
+        setSelectedDoctorId(activeDoc.id);
         setReferrals(demoDataEnabled ? INITIAL_DEMO_REFERRALS : []);
         setLoading(false);
         return;
@@ -224,55 +367,50 @@ export default function DoctorWorkspace({
       if (authErr || !authUser) {
         throw new Error(`Authentication failed for Doctor portal: ${authErr?.message || 'Check credentials'}`);
       }
-      const activeUser = authUser;
 
-      // Reuse cached doctor profile if available for active session
-      let resolvedDoctor = doctorProfileRef.current;
-      if (!resolvedDoctor || resolvedDoctor.user_id !== activeUser.id) {
-        const { data: docData, error: docErr } = await supabase
-          .from('doctors')
-          .select('id, name, specialty, facility_id, facilities(name)')
-          .eq('user_id', activeUser.id)
-          .maybeSingle();
+      // Load all registered doctors from Supabase
+      const { data: dbDocs } = await supabase
+        .from('doctors')
+        .select('id, user_id, name, specialty, facility_id, facilities(id, name, district)')
+        .order('name');
 
-        if (docErr) {
-          console.error('[RadVault Doctor] Doctor profile fetch error:', docErr.message);
-        }
-
-        if (!isDemoMode && (!docData || !docData.id)) {
-          throw new Error(`Doctor clinical profile not found in database for user ${activeUser.id}. Please contact facility administrator.`);
-        }
-
-        resolvedDoctor = docData ? {
-          id: docData.id,
-          user_id: activeUser.id,
-          name: docData.name,
-          specialty: docData.specialty,
-          facility_id: docData.facility_id,
-          facility_name: docData.facilities?.name || 'Pune Sassoon General Hospital'
-        } : (isDemoMode ? DEMO_DOCTOR_PROFILE : null);
-
-        if (!resolvedDoctor) {
-          throw new Error(`Doctor clinical profile not found in database for user ${activeUser.id}. Please contact facility administrator.`);
-        }
-
-        setDoctorProfile(resolvedDoctor);
-        doctorProfileRef.current = resolvedDoctor;
+      let mergedDoctors = ALL_CANONICAL_DOCTORS;
+      if (dbDocs && dbDocs.length > 0) {
+        const dbMapped = dbDocs.map(d => ({
+          id: d.id,
+          user_id: d.user_id,
+          name: d.name,
+          specialty: d.specialty,
+          facility_id: d.facility_id,
+          facility_name: d.facilities?.name || 'Pune Sassoon General Hospital'
+        }));
+        const ids = new Set(dbMapped.map(d => d.id));
+        mergedDoctors = [...dbMapped, ...ALL_CANONICAL_DOCTORS.filter(c => !ids.has(c.id))];
       }
+      setAvailableDoctors(mergedDoctors);
+
+      // Determine active doctor: keep current ref, or saved in localStorage, or matching facility
+      const savedDocId = localStorage.getItem('radvault_active_doctor_id');
+      const activeDoc = (doctorProfileRef.current && mergedDoctors.find(d => d.id === doctorProfileRef.current.id)) ||
+        mergedDoctors.find(d => d.id === savedDocId) ||
+        (selectedFacilityId !== 'ALL' ? mergedDoctors.find(d => d.facility_id === selectedFacilityId) : null) ||
+        mergedDoctors[0];
+
+      setDoctorProfile(activeDoc);
+      doctorProfileRef.current = activeDoc;
+      setSelectedDoctorId(activeDoc.id);
 
       // Multi-Facility & Doctor Scoping
-      const targetFac = CONNECTED_FACILITIES.find(f => f.id === selectedFacilityId);
-      const activeFacilityName = targetFac ? targetFac.name : resolvedDoctor.facility_name;
+      const targetFac = SORTED_CONNECTED_FACILITIES.find(f => f.id === selectedFacilityId);
+      const activeFacilityName = targetFac ? targetFac.name : activeDoc.facility_name;
 
       let referralQuery = supabase
         .from('referrals')
         .select('*')
         .order('created_at', { ascending: false })
-        .limit(50);
+        .limit(100);
 
-      if (selectedFacilityId === 'MY_ASSIGNED' && resolvedDoctor.id) {
-        referralQuery = referralQuery.eq('doctor_id', resolvedDoctor.id);
-      } else if (selectedFacilityId !== 'ALL' && targetFac) {
+      if (selectedFacilityId !== 'ALL' && targetFac) {
         const prefix = targetFac.name.split(' ')[0];
         referralQuery = referralQuery.or(`destination_facility_id.eq.${targetFac.id},destination_hospital.ilike.%${prefix}%`);
       }
@@ -657,6 +795,41 @@ export default function DoctorWorkspace({
     }
   };
 
+  const handleTakeOverCase = async (targetRef = activeCase) => {
+    if (!targetRef?.id || !doctorProfile?.id) return;
+    try {
+      const isUuid = (val) => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+      if (!isDemoMode && isUuid(targetRef.id)) {
+        const { error: reassignErr } = await supabase
+          .from('referrals')
+          .update({
+            doctor_id: doctorProfile.id,
+            doctor_assigned: doctorProfile.name,
+            status: targetRef.status === 'Pending' ? 'Assigned' : targetRef.status
+          })
+          .eq('id', targetRef.id);
+
+        if (reassignErr) throw reassignErr;
+      }
+
+      const updated = {
+        ...targetRef,
+        doctor_id: doctorProfile.id,
+        doctor_assigned: doctorProfile.name,
+        status: targetRef.status === 'Pending' ? 'Assigned' : targetRef.status
+      };
+
+      setReferrals(prev => prev.map(r => r.id === targetRef.id ? { ...r, ...updated } : r));
+      if (activeCase && activeCase.id === targetRef.id) {
+        setActiveCase(prev => ({ ...prev, ...updated }));
+      }
+      showToast(`👨‍⚕️ Assumed attending care as ${doctorProfile.name}.`);
+    } catch (err) {
+      console.error('[RadVault Doctor] Takeover error:', err.message);
+      setError(`Failed to take over case: ${err.message}`);
+    }
+  };
+
   const handleAddMedicine = () => {
     if (!medName.trim()) return;
     const newMed = {
@@ -725,8 +898,18 @@ export default function DoctorWorkspace({
         setShowSignModal(false);
         return;
       }
-      if (activeCase.doctor_id && activeCase.doctor_id !== doctorProfile.id) {
-        setError(`Doctor identity mismatch: referral is assigned to doctor UUID "${activeCase.doctor_id}", but authenticated doctor is "${doctorProfile.id}". Cannot sign consultation.`);
+      if (!activeCase.doctor_id) {
+        // Auto-assign to current doctor if case was unassigned in facility waiting room
+        activeCase.doctor_id = doctorProfile.id;
+        activeCase.doctor_assigned = doctorProfile.name;
+        if (isUuid(activeCase.id)) {
+          await supabase.from('referrals').update({
+            doctor_id: doctorProfile.id,
+            doctor_assigned: doctorProfile.name
+          }).eq('id', activeCase.id);
+        }
+      } else if (activeCase.doctor_id !== doctorProfile.id) {
+        setError(`Doctor identity mismatch: referral is assigned to "${activeCase.doctor_assigned || activeCase.doctor_id}". Please click "Assume Attending Clinician" or switch doctor before signing.`);
         setShowSignModal(false);
         return;
       }
@@ -817,20 +1000,45 @@ export default function DoctorWorkspace({
     return r.doctor_id === doctorProfile.id;
   }, [doctorProfile]);
 
-  const doctorReferrals = useMemo(() => {
+  // Referrals scoped to currently selected facility
+  const facilityReferrals = useMemo(() => {
+    if (!selectedFacilityId || selectedFacilityId === 'ALL') {
+      return referrals;
+    }
+    const targetFac = SORTED_CONNECTED_FACILITIES.find(f => f.id === selectedFacilityId);
+    const prefix = targetFac ? targetFac.name.split(' ')[0].toLowerCase() : '';
+    return referrals.filter(r =>
+      r.destination_facility_id === selectedFacilityId ||
+      (prefix && (r.destination_hospital || '').toLowerCase().includes(prefix))
+    );
+  }, [referrals, selectedFacilityId]);
+
+  // Referrals strictly assigned to this active doctor
+  const myAssignedReferrals = useMemo(() => {
     if (!doctorProfile) return [];
     return referrals.filter(isDoctorAssigned);
   }, [referrals, isDoctorAssigned, doctorProfile]);
 
+  // Base list depending on Queue View Scope ('MY_CASES' vs 'ALL_FACILITY')
+  const baseQueueReferrals = useMemo(() => {
+    if (queueViewScope === 'ALL_FACILITY') {
+      return facilityReferrals;
+    }
+    return myAssignedReferrals;
+  }, [queueViewScope, facilityReferrals, myAssignedReferrals]);
+
   const counts = useMemo(() => {
-    const waiting = doctorReferrals.filter(r => r.status === 'Arrived' || r.status === 'Accepted' || r.status === 'Assigned' || r.status === 'In Consultation').length;
-    const completed = doctorReferrals.filter(r => r.status === 'Completed').length;
-    const urgent = doctorReferrals.filter(r => (r.status !== 'Completed') && (r.priority === 'HIGH' || r.priority === 'RED')).length;
-    return { waiting, completed, urgent };
-  }, [doctorReferrals]);
+    const isWaitingStatus = (r) => r.status === 'Arrived' || r.status === 'Accepted' || r.status === 'Assigned' || r.status === 'In Consultation';
+    const waiting = myAssignedReferrals.filter(isWaitingStatus).length;
+    const completed = myAssignedReferrals.filter(r => r.status === 'Completed').length;
+    const urgent = myAssignedReferrals.filter(r => (r.status !== 'Completed') && (r.priority === 'HIGH' || r.priority === 'RED')).length;
+    const facilityWaiting = facilityReferrals.filter(isWaitingStatus).length;
+    const facilityCompleted = facilityReferrals.filter(r => r.status === 'Completed').length;
+    return { waiting, completed, urgent, facilityWaiting, facilityCompleted };
+  }, [myAssignedReferrals, facilityReferrals]);
 
   const filteredReferrals = useMemo(() => {
-    let list = [...doctorReferrals];
+    let list = [...baseQueueReferrals];
 
     list.sort((a, b) => {
       const pA = a.priority === 'HIGH' || a.priority === 'RED' ? 3 : a.priority === 'ORANGE' ? 2 : 1;
@@ -851,27 +1059,30 @@ export default function DoctorWorkspace({
       list = list.filter(r => 
         (r.patient_name || '').toLowerCase().includes(q) ||
         (r.patient_id || '').toLowerCase().includes(q) ||
-        (r.symptoms || '').toLowerCase().includes(q)
+        (r.symptoms || '').toLowerCase().includes(q) ||
+        (r.doctor_assigned || '').toLowerCase().includes(q)
       );
     }
 
     return list;
-  }, [doctorReferrals, activeTab, queueFilter, searchQuery]);
+  }, [baseQueueReferrals, activeTab, queueFilter, searchQuery]);
 
   const activeConsultation = useMemo(() => {
-    return doctorReferrals.find(r => r.status === 'In Consultation') || null;
-  }, [doctorReferrals]);
+    return myAssignedReferrals.find(r => r.status === 'In Consultation') || 
+           (queueViewScope === 'ALL_FACILITY' ? facilityReferrals.find(r => r.status === 'In Consultation') : null);
+  }, [myAssignedReferrals, facilityReferrals, queueViewScope]);
 
   const newlyAssignedCases = useMemo(() => {
-    return doctorReferrals
+    return myAssignedReferrals
       .filter(r => r.status === 'Assigned')
       .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
-  }, [doctorReferrals]);
+  }, [myAssignedReferrals]);
 
   const newestAssignment = newlyAssignedCases[0] || null;
 
   const nextPatient = useMemo(() => {
-    return doctorReferrals
+    const candidateList = myAssignedReferrals.length > 0 ? myAssignedReferrals : facilityReferrals;
+    return candidateList
       .filter(r => r.status === 'Arrived' || r.status === 'Assigned' || r.status === 'In Consultation')
       .sort((a, b) => {
         if (a.status === 'In Consultation' && b.status !== 'In Consultation') return -1;
@@ -880,7 +1091,7 @@ export default function DoctorWorkspace({
         const pB = b.priority === 'HIGH' || b.priority === 'RED' ? 3 : b.priority === 'ORANGE' ? 2 : 1;
         return pB - pA;
       })[0] || null;
-  }, [doctorReferrals]);
+  }, [myAssignedReferrals, facilityReferrals]);
 
   // Unified Attention Hierarchy:
   // 1. Active In-Progress Consultation (top urgency to resume/complete)
@@ -896,7 +1107,7 @@ export default function DoctorWorkspace({
   return (
     <div className="min-h-screen bg-[#FAFCFB] pb-16 font-sans">
       <header className="bg-white border-b border-slate-200 sticky top-0 z-40 px-4 sm:px-8 py-3 shadow-2xs">
-        <div className="max-w-6xl mx-auto flex items-center justify-between gap-4">
+        <div className="max-w-6xl mx-auto flex items-center justify-between gap-4 flex-wrap sm:flex-nowrap">
           <div className="flex items-center gap-3">
             {handleBack && (
               <button
@@ -919,32 +1130,44 @@ export default function DoctorWorkspace({
             </div>
           </div>
 
-          <div className="flex items-center gap-2 sm:gap-3">
-            {/* Facility Context Selector for Doctor */}
+          <div className="flex items-center gap-2 sm:gap-3 flex-wrap justify-end">
+            {/* Proximity Facility Selector */}
             <div className="flex items-center gap-1.5 bg-[#F5F3FF] border border-[#7C3AED]/30 px-2.5 py-1.5 rounded-xl shadow-2xs">
               <Building2 className="w-3.5 h-3.5 text-[#7C3AED] shrink-0" />
               <select
                 value={selectedFacilityId}
                 onChange={(e) => handleSelectFacility(e.target.value)}
-                className="bg-transparent text-xs font-black text-slate-800 focus:outline-none cursor-pointer pr-1 max-w-[180px] sm:max-w-none truncate"
-                title="Filter doctor queue by facility"
+                className="bg-transparent text-xs font-black text-slate-800 focus:outline-none cursor-pointer pr-1 max-w-[190px] sm:max-w-none truncate"
+                title="Filter doctor workspace by facility proximity"
               >
                 <option value="ALL">🌐 All Network Facilities</option>
-                <option value="MY_ASSIGNED">👨‍⚕️ My Assigned Cases Only</option>
-                {CONNECTED_FACILITIES.map(f => (
+                {SORTED_CONNECTED_FACILITIES.map(f => (
                   <option key={f.id} value={f.id}>
-                    🏥 {f.name}
+                    🏥 {f.name} ({f.district || 'Pune'} · {f.dist != null ? `${f.dist} km` : '0 km'})
                   </option>
                 ))}
               </select>
             </div>
 
-            <div className="hidden md:flex flex-col text-right">
-              <span className="text-xs font-black text-slate-900">{doctorProfile?.name || 'Dr. Arvind Kulkarni'}</span>
-              <span className="text-[10px] font-bold text-[#7C3AED]">{doctorProfile?.specialty || 'General Medicine'}</span>
+            {/* Clinician / Doctor Switcher */}
+            <div className="flex items-center gap-1.5 bg-white border border-slate-200 hover:border-[#7C3AED]/50 px-2.5 py-1.5 rounded-xl shadow-2xs transition-colors">
+              <Stethoscope className="w-3.5 h-3.5 text-[#7C3AED] shrink-0" />
+              <select
+                value={selectedDoctorId}
+                onChange={(e) => handleSwitchDoctor(e.target.value)}
+                className="bg-transparent text-xs font-black text-slate-800 focus:outline-none cursor-pointer pr-1 max-w-[180px] sm:max-w-none truncate"
+                title="Switch active clinician identity"
+              >
+                {availableDoctorsForFacility.map(doc => (
+                  <option key={doc.id} value={doc.id}>
+                    👨‍⚕️ {doc.name} ({doc.specialty})
+                  </option>
+                ))}
+              </select>
             </div>
+
             <button
-              onClick={loadDoctorDbData}
+              onClick={() => loadDoctorDbData(false)}
               className="p-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-slate-600 transition-colors cursor-pointer"
               title="Refresh Clinical Queue"
             >
@@ -980,18 +1203,35 @@ export default function DoctorWorkspace({
                   <p className="text-xs text-slate-500 font-bold mt-1 flex items-center gap-2 flex-wrap">
                     <span>📍 {doctorProfile?.facility_name || 'Pune Sassoon General Hospital'}</span>
                     <span>·</span>
-                    <span className="text-[#7C3AED]">{doctorProfile?.specialty || 'General Medicine'}</span>
+                    <span className="text-[#7C3AED] font-extrabold">{doctorProfile?.room || doctorProfile?.specialty || 'General Medicine'}</span>
                   </p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <button
-                  onClick={() => { setActiveTab('cases'); setQueueFilter('Active'); }}
-                  className="px-4 py-2 bg-[#7C3AED] hover:bg-[#6D28D9] text-white font-black text-xs rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
+                  onClick={() => { setQueueViewScope('MY_CASES'); setActiveTab('cases'); setQueueFilter('Active'); }}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+                    queueViewScope === 'MY_CASES'
+                      ? 'bg-[#7C3AED] text-white shadow-xs'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                  }`}
+                  title="View your assigned patients"
                 >
                   <Inbox className="w-4 h-4" />
-                  <span>Assigned Cases ({counts.waiting})</span>
+                  <span>My Cases ({counts.waiting})</span>
+                </button>
+                <button
+                  onClick={() => { setQueueViewScope('ALL_FACILITY'); setActiveTab('cases'); setQueueFilter('Active'); }}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+                    queueViewScope === 'ALL_FACILITY'
+                      ? 'bg-slate-900 text-white shadow-xs'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                  }`}
+                  title="View all patients waiting in hospital facility"
+                >
+                  <Building2 className="w-4 h-4" />
+                  <span>Facility Waiting Room ({counts.facilityWaiting})</span>
                 </button>
               </div>
             </div>
@@ -1278,9 +1518,9 @@ export default function DoctorWorkspace({
                       <Loader2 className="w-4 h-4 animate-spin text-[#7C3AED]" />
                       <span>Loading queue...</span>
                     </div>
-                  ) : doctorReferrals.length > 0 ? (
+                  ) : baseQueueReferrals.length > 0 ? (
                     <div className="divide-y divide-slate-100">
-                      {doctorReferrals.slice(0, 6).map(ref => {
+                      {baseQueueReferrals.slice(0, 6).map(ref => {
                         const isHigh = ref.priority === 'HIGH' || ref.priority === 'RED';
                         const isUrgent = ref.priority === 'ORANGE';
                         const labelClass = isHigh ? 'bg-rose-50 text-rose-800 border-rose-200' : isUrgent ? 'bg-amber-50 text-amber-900 border-amber-200' : 'bg-slate-100 text-slate-700 border-slate-200';
@@ -1335,21 +1575,39 @@ export default function DoctorWorkspace({
                                 })()}
                               </div>
                               <p className="text-xs text-slate-500 font-medium truncate mt-0.5">
-                                {ref.destination_department} · Status: <strong>{ref.status}</strong> · Assigned: {doctorProfile?.name || 'Specialist'}
+                                {ref.destination_department} · Status: <strong>{ref.status}</strong> · {ref.doctor_assigned ? (
+                                  <span>Assigned: <strong className={ref.doctor_id === doctorProfile?.id ? 'text-[#7C3AED]' : 'text-slate-700'}>{ref.doctor_assigned} {ref.doctor_id === doctorProfile?.id ? '(You)' : ''}</strong></span>
+                                ) : (
+                                  <span className="text-amber-600 font-bold">Unassigned Facility Pool</span>
+                                )}
                               </p>
                             </div>
 
                             <div className="flex items-center gap-2 shrink-0">
                               {ref.status !== 'Completed' ? (
-                                <button
-                                  data-referral-id={ref.id}
-                                  data-action="open-case"
-                                  onClick={() => handleOpenCase(ref)}
-                                  className="min-h-[44px] px-4 py-2 bg-[#7C3AED] hover:bg-[#6D28D9] text-white font-black text-xs rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
-                                >
-                                  <Stethoscope className="w-3.5 h-3.5" />
-                                  <span>Open Case</span>
-                                </button>
+                                <>
+                                  {ref.doctor_id && ref.doctor_id !== doctorProfile?.id && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleTakeOverCase(ref);
+                                      }}
+                                      className="min-h-[44px] px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-[#7C3AED] border border-[#7C3AED]/30 font-bold text-xs rounded-xl transition-colors cursor-pointer"
+                                      title="Assume attending clinician responsibilities"
+                                    >
+                                      Assume Care
+                                    </button>
+                                  )}
+                                  <button
+                                    data-referral-id={ref.id}
+                                    data-action="open-case"
+                                    onClick={() => handleOpenCase(ref)}
+                                    className="min-h-[44px] px-4 py-2 bg-[#7C3AED] hover:bg-[#6D28D9] text-white font-black text-xs rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
+                                  >
+                                    <Stethoscope className="w-3.5 h-3.5" />
+                                    <span>Open Case</span>
+                                  </button>
+                                </>
                               ) : (
                                 <span className="text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-xl border border-emerald-100 flex items-center gap-1">
                                   <CheckCircle className="w-3.5 h-3.5" /> Consultation Signed
@@ -1370,17 +1628,41 @@ export default function DoctorWorkspace({
 
             {activeTab === 'cases' && (
               <div className="space-y-5 animate-in fade-in duration-150">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                  {/* Queue Scope Pill Switcher */}
+                  <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl w-fit">
+                    <button
+                      onClick={() => setQueueViewScope('MY_CASES')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                        queueViewScope === 'MY_CASES'
+                          ? 'bg-white text-[#7C3AED] shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      👨‍⚕️ My Cases ({counts.waiting})
+                    </button>
+                    <button
+                      onClick={() => setQueueViewScope('ALL_FACILITY')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                        queueViewScope === 'ALL_FACILITY'
+                          ? 'bg-white text-slate-900 shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      🏥 Facility Waiting Room ({counts.facilityWaiting})
+                    </button>
+                  </div>
+
                   <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
                     {[
-                      { key: 'ALL', label: 'All Cases' },
-                      { key: 'Active', label: `Active Queue (${counts.waiting})` },
-                      { key: 'Completed', label: `Completed (${counts.completed})` }
+                      { key: 'ALL', label: `All (${queueViewScope === 'ALL_FACILITY' ? facilityReferrals.length : myAssignedReferrals.length})` },
+                      { key: 'Active', label: `Active (${queueViewScope === 'ALL_FACILITY' ? counts.facilityWaiting : counts.waiting})` },
+                      { key: 'Completed', label: `Completed (${queueViewScope === 'ALL_FACILITY' ? counts.facilityCompleted : counts.completed})` }
                     ].map(btn => (
                       <button
                         key={btn.key}
                         onClick={() => setQueueFilter(btn.key)}
-                        className={`px-3.5 py-1.5 rounded-xl font-extrabold text-xs shrink-0 transition-colors cursor-pointer ${
+                        className={`px-3 py-1.5 rounded-xl font-extrabold text-xs shrink-0 transition-colors cursor-pointer ${
                           queueFilter === btn.key
                             ? 'bg-[#7C3AED] text-white shadow-xs'
                             : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
@@ -1391,13 +1673,13 @@ export default function DoctorWorkspace({
                     ))}
                   </div>
 
-                  <div className="relative shrink-0 w-full sm:w-[260px]">
+                  <div className="relative shrink-0 w-full sm:w-[240px]">
                     <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                     <input
                       type="text"
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="Search by patient, ID, doctor..."
+                      placeholder="Search patient, ID, doctor..."
                       className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 outline-none focus:border-[#7C3AED]"
                     />
                   </div>
@@ -1432,9 +1714,17 @@ export default function DoctorWorkspace({
                               <span className={`text-[10px] font-black px-2.5 py-0.5 rounded border ${labelClass}`}>
                                 {ref.priority_label || ref.priority}
                               </span>
-                              {doctorProfile?.name && (
-                                <span className="text-[10px] font-bold text-[#7C3AED] bg-[#F5F3FF] px-2 py-0.5 rounded border border-[#7C3AED]/20">
-                                  🩺 {doctorProfile.name}
+                              {ref.doctor_assigned ? (
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
+                                  ref.doctor_id === doctorProfile?.id
+                                    ? 'bg-[#F5F3FF] text-[#7C3AED] border-[#7C3AED]/20 font-black'
+                                    : 'bg-slate-100 text-slate-700 border-slate-200'
+                                }`}>
+                                  🩺 {ref.doctor_assigned} {ref.doctor_id === doctorProfile?.id ? '(You)' : ''}
+                                </span>
+                              ) : (
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200">
+                                  ⚠️ Unassigned (Facility Pool)
                                 </span>
                               )}
                               {(ref.slot_preference || ref.ai_note?.includes('TOKEN:')) && (
@@ -1498,15 +1788,29 @@ export default function DoctorWorkspace({
                             </div>
 
                             {ref.status !== 'Completed' ? (
-                              <button
-                                data-referral-id={ref.id}
-                                data-action="open-case"
-                                onClick={() => handleOpenCase(ref)}
-                                className="min-h-[44px] px-5 py-2.5 bg-[#7C3AED] hover:bg-[#6D28D9] text-white font-black text-xs rounded-xl transition-colors cursor-pointer ml-auto flex items-center gap-1.5 shadow-xs"
-                              >
-                                <Stethoscope className="w-3.5 h-3.5" />
-                                <span>Open Clinical Case</span>
-                              </button>
+                              <div className="flex items-center gap-2 ml-auto">
+                                {ref.doctor_id && ref.doctor_id !== doctorProfile?.id && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleTakeOverCase(ref);
+                                    }}
+                                    className="min-h-[44px] px-3.5 py-2 bg-purple-50 hover:bg-purple-100 text-[#7C3AED] border border-[#7C3AED]/30 font-bold text-xs rounded-xl transition-colors cursor-pointer"
+                                    title="Assume attending clinician responsibilities"
+                                  >
+                                    Assume Care
+                                  </button>
+                                )}
+                                <button
+                                  data-referral-id={ref.id}
+                                  data-action="open-case"
+                                  onClick={() => handleOpenCase(ref)}
+                                  className="min-h-[44px] px-5 py-2.5 bg-[#7C3AED] hover:bg-[#6D28D9] text-white font-black text-xs rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
+                                >
+                                  <Stethoscope className="w-3.5 h-3.5" />
+                                  <span>Open Clinical Case</span>
+                                </button>
+                              </div>
                             ) : (
                               <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded border border-emerald-100 flex items-center gap-1 ml-auto">
                                 <CheckCircle className="w-3.5 h-3.5" /> Consultation Signed
@@ -1642,12 +1946,48 @@ export default function DoctorWorkspace({
                   })()}
                 </div>
                 <h2 className="text-lg font-black text-slate-900 mt-1.5">{activeCase.patient_name}</h2>
-                <p className="text-xs text-[#7C3AED] font-bold mt-0.5">
-                  {activeCase.destination_department} Specialist Consultation · Assigned: {doctorProfile?.name || 'Specialist'}
+                <p className="text-xs font-bold mt-0.5 flex items-center gap-2 flex-wrap">
+                  <span className="text-[#7C3AED]">{activeCase.destination_department || 'General Medicine'} Specialist Desk</span>
+                  <span className="text-slate-300">·</span>
+                  {activeCase.doctor_assigned ? (
+                    <span className={activeCase.doctor_id === doctorProfile?.id ? 'text-emerald-700' : 'text-slate-600'}>
+                      Attending Clinician: <strong>{activeCase.doctor_assigned} {activeCase.doctor_id === doctorProfile?.id ? '(You)' : ''}</strong>
+                    </span>
+                  ) : (
+                    <span className="text-amber-600 font-bold">Unassigned Facility Patient</span>
+                  )}
                 </p>
+
+                {/* Take-Over / Clinician Alignment Banner */}
+                {activeCase.doctor_id && activeCase.doctor_id !== doctorProfile?.id && (
+                  <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                    <div className="flex items-center gap-2 text-amber-900 font-bold">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span>
+                        Assigned to <strong>{activeCase.doctor_assigned || 'another clinician'}</strong>. You are currently logged in as <strong>{doctorProfile?.name}</strong>.
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={() => handleTakeOverCase(activeCase)}
+                        className="px-3.5 py-1.5 bg-[#7C3AED] hover:bg-[#6D28D9] text-white font-black text-xs rounded-xl shadow-xs transition-colors cursor-pointer"
+                      >
+                        Assume Attending Clinician
+                      </button>
+                      {availableDoctors.some(d => d.id === activeCase.doctor_id) && (
+                        <button
+                          onClick={() => handleSwitchDoctor(activeCase.doctor_id)}
+                          className="px-3.5 py-1.5 bg-white border border-amber-300 hover:bg-amber-100 text-amber-900 font-bold text-xs rounded-xl transition-colors cursor-pointer"
+                        >
+                          Switch Identity to {activeCase.doctor_assigned?.split(' ')[1] || 'Assigned Doctor'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 shrink-0">
                 {activeCase.status !== 'In Consultation' && activeCase.status !== 'Completed' && (
                   <button
                     onClick={handleStartConsultation}
