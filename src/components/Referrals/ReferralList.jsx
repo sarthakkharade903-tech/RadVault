@@ -1122,8 +1122,13 @@ export default function ReferralList({ referrals = [], onCreateNew, onDeleteRefe
       const now = Date.now();
       return referrals.filter(r => {
         const createdRaw = r.rawCreatedAt || r.created_at;
-        const created = createdRaw ? new Date(createdRaw).getTime() : now;
-        return (now - created) <= ONE_DAY_MS;
+        if (!createdRaw) return false;
+        const created = new Date(createdRaw).getTime();
+        if (isNaN(created)) return false;
+        const diffMs = now - created;
+        const isWithin24h = diffMs >= -60000 && diffMs <= ONE_DAY_MS;
+        const isCreatedToday = toLocalDateStr(createdRaw) === todayStr;
+        return isWithin24h || isCreatedToday;
       });
     }
 
@@ -1132,7 +1137,7 @@ export default function ReferralList({ referrals = [], onCreateNew, onDeleteRefe
       const createdRaw = r.rawCreatedAt || r.created_at;
       return toLocalDateStr(createdRaw) === selectedDate;
     });
-  }, [referrals, dateViewMode, selectedDate]);
+  }, [referrals, dateViewMode, selectedDate, todayStr]);
 
   // STRICTLY ACTIVE NON-COMPLETED REFERRALS FROM SCOPED DATA
   const activeReferrals = useMemo(() => {

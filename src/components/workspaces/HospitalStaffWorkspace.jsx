@@ -3084,18 +3084,24 @@ export default function HospitalStaffWorkspace({
       const ONE_DAY_MS = 24 * 60 * 60 * 1000;
       const now = Date.now();
       return referrals.filter(r => {
-        // Active clinical cases awaiting reception or consultation must always be visible in active queues
-        if (r.status === 'Pending' || r.status === 'Accepted' || r.status === 'Arrived' || r.status === 'Assigned' || r.status === 'In Consultation') {
-          return true;
-        }
-        const created = r.created_at ? new Date(r.created_at).getTime() : now;
-        return (now - created) <= ONE_DAY_MS;
+        const createdRaw = r.rawCreatedAt || r.created_at;
+        if (!createdRaw) return false;
+        const created = new Date(createdRaw).getTime();
+        if (isNaN(created)) return false;
+        const diffMs = now - created;
+        // Strictly within 24 hours (allowing 60s clock skew buffer) or created on today's calendar date
+        const isWithin24h = diffMs >= -60000 && diffMs <= ONE_DAY_MS;
+        const isCreatedToday = toLocalDateStr(createdRaw) === todayStr;
+        return isWithin24h || isCreatedToday;
       });
     }
 
     // CALENDAR_DATE mode: strictly matches selectedDate (YYYY-MM-DD)
-    return referrals.filter(r => toLocalDateStr(r.created_at) === selectedDate);
-  }, [referrals, dateViewMode, selectedDate]);
+    return referrals.filter(r => {
+      const createdRaw = r.rawCreatedAt || r.created_at;
+      return toLocalDateStr(createdRaw) === selectedDate;
+    });
+  }, [referrals, dateViewMode, selectedDate, todayStr]);
 
   // 2. Dynamic metrics computed strictly from dateScopedReferrals
   const counts = useMemo(() => {
@@ -3322,7 +3328,11 @@ export default function HospitalStaffWorkspace({
               </button>
 
               {/* Day-by-Day Calendar Stepper */}
-              <div className="flex items-center bg-white rounded-xl border border-slate-200 shadow-2xs px-1 py-0.5">
+              <div className={`flex items-center bg-white rounded-xl border shadow-2xs px-1 py-0.5 transition-all ${
+                dateViewMode === 'CALENDAR_DATE'
+                  ? 'border-teal-500 ring-2 ring-teal-500/20 shadow-xs'
+                  : 'border-slate-200'
+              }`}>
                 {/* Prev Day Button */}
                 <button
                   type="button"
@@ -3354,7 +3364,7 @@ export default function HospitalStaffWorkspace({
                     onChange={(e) => {
                       if (e.target.value) {
                         setSelectedDate(e.target.value);
-                        setDateViewMode(e.target.value === todayStr ? 'TODAY_SHIFT' : 'CALENDAR_DATE');
+                        setDateViewMode('CALENDAR_DATE');
                       }
                     }}
                     className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
@@ -3370,7 +3380,7 @@ export default function HospitalStaffWorkspace({
                     if (selectedDate < todayStr) {
                       const next = shiftDateStr(selectedDate, 1);
                       setSelectedDate(next);
-                      setDateViewMode(next === todayStr ? 'TODAY_SHIFT' : 'CALENDAR_DATE');
+                      setDateViewMode('CALENDAR_DATE');
                     }
                   }}
                   title={selectedDate >= todayStr ? "Today is the latest date" : "Next Day"}
@@ -3432,9 +3442,11 @@ export default function HospitalStaffWorkspace({
               </>
             ) : dateViewMode === 'CALENDAR_DATE' ? (
               <>
-                <Calendar className="w-3.5 h-3.5 text-teal-600" />
-                <span className="text-slate-700 font-bold">Historical Record for {formatHumanDate(selectedDate)}</span>
-                <span className="text-slate-400">· {dateScopedReferrals.length} patients registered on this date</span>
+                <Calendar className="w-3.5 h-3.5 text-[#008F83]" />
+                <span className="text-slate-700 font-bold">
+                  {selectedDate === todayStr ? 'Calendar Day Record for Today' : `Historical Record for ${formatHumanDate(selectedDate)}`}
+                </span>
+                <span className="text-slate-400">· {dateScopedReferrals.length} patient{dateScopedReferrals.length === 1 ? '' : 's'} registered on this date</span>
               </>
             ) : (
               <>
@@ -4122,12 +4134,27 @@ export default function HospitalStaffWorkspace({
               <div className="w-14 h-14 rounded-2xl bg-teal-50/80 border border-teal-100/80 text-[#008F83] flex items-center justify-center mb-1">
                 <Inbox className="w-7 h-7 text-[#008F83]/80" />
               </div>
-              <h4 className="text-base font-black text-[#16324F]">No referrals currently require attention</h4>
+              <h4 className="text-base font-black text-[#16324F]">
+                {dateViewMode === 'CALENDAR_DATE'
+                  ? `No referrals recorded for ${selectedDate === todayStr ? 'Today' : formatHumanDate(selectedDate)}`
+                  : 'No referrals currently require attention'}
+              </h4>
               <p className="text-xs text-slate-500 font-medium max-w-sm">
                 {searchQuery
                   ? 'No referrals matched your search keywords. Try searching by another name, ID, or department.'
+                  : dateViewMode === 'CALENDAR_DATE'
+                  ? 'There are no patient referrals registered on this specific calendar date.'
                   : 'Incoming referrals from frontline workers and outpatient desks will appear here automatically.'}
               </p>
+              {dateViewMode !== 'ALL_ARCHIVE' && referrals.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setDateViewMode('ALL_ARCHIVE')}
+                  className="mt-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-colors cursor-pointer"
+                >
+                  View All Archive ({referrals.length} records)
+                </button>
+              )}
             </div>
           )}
         </div>
