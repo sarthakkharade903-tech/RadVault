@@ -309,17 +309,21 @@ export default function MedicalImagingVault({ patientId, patientName }) {
           isFullscreen ? 'bg-slate-800 border-slate-700 text-slate-200' : 'bg-slate-50 border-slate-200 text-slate-700'
         }`}>
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-slate-900 dark:text-white font-extrabold">{selectedDoc?.title || selectedDoc?.file_name}</span>
-            <span className="text-[10px] uppercase px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 font-black">
+            <span className={`font-extrabold text-sm ${isFullscreen ? 'text-white' : 'text-slate-900'}`}>
+              {selectedDoc?.title || selectedDoc?.file_name}
+            </span>
+            <span className={`text-[10px] uppercase px-2.5 py-0.5 rounded-full font-black ${
+              isFullscreen ? 'bg-slate-700 text-purple-300' : 'bg-purple-100 text-purple-800 border border-purple-200'
+            }`}>
               {selectedDoc?.category || 'Document'}
             </span>
-            <span className="text-[11px] text-slate-500">
-              Source: <strong>{selectedDoc?.source || 'Hospital Record'}</strong>
+            <span className={`text-[11px] ${isFullscreen ? 'text-slate-400' : 'text-slate-500'}`}>
+              Source: <strong className={isFullscreen ? 'text-slate-200' : 'text-slate-700'}>{selectedDoc?.source || 'Hospital Record'}</strong>
             </span>
           </div>
 
           {selectedDoc?.notes && (
-            <span className="text-[11px] text-[#7C3AED] font-medium italic truncate max-w-md">
+            <span className="text-[11px] text-[#7C3AED] font-semibold italic truncate max-w-md bg-purple-50/90 px-2.5 py-1 rounded-lg border border-purple-200">
               "{selectedDoc.notes}"
             </span>
           )}
@@ -373,11 +377,15 @@ export default function MedicalImagingVault({ patientId, patientName }) {
             }`}>
               {/* Zoom Tools */}
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Zoom:</span>
+                <span className={`text-[10px] font-black uppercase tracking-wider ${isFullscreen ? 'text-slate-400' : 'text-slate-500'}`}>Zoom:</span>
                 <button
                   type="button"
                   onClick={handleZoomIn}
-                  className="p-1.5 bg-white hover:bg-slate-100 dark:bg-slate-700 dark:hover:bg-slate-600 rounded-xl border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-white cursor-pointer transition-colors shadow-2xs"
+                  className={`p-1.5 rounded-xl border cursor-pointer transition-colors shadow-2xs ${
+                    isFullscreen
+                      ? 'bg-slate-700 hover:bg-slate-600 border-slate-600 text-white'
+                      : 'bg-white hover:bg-slate-100 border-slate-300 text-slate-800'
+                  }`}
                   title="Zoom In (+)"
                 >
                   <ZoomIn className="w-4 h-4" />
@@ -385,7 +393,11 @@ export default function MedicalImagingVault({ patientId, patientName }) {
                 <button
                   type="button"
                   onClick={handleZoomOut}
-                  className="p-1.5 bg-white hover:bg-slate-100 dark:bg-slate-700 dark:hover:bg-slate-600 rounded-xl border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-white cursor-pointer transition-colors shadow-2xs"
+                  className={`p-1.5 rounded-xl border cursor-pointer transition-colors shadow-2xs ${
+                    isFullscreen
+                      ? 'bg-slate-700 hover:bg-slate-600 border-slate-600 text-white'
+                      : 'bg-white hover:bg-slate-100 border-slate-300 text-slate-800'
+                  }`}
                   title="Zoom Out (-)"
                 >
                   <ZoomOut className="w-4 h-4" />
@@ -393,13 +405,21 @@ export default function MedicalImagingVault({ patientId, patientName }) {
                 <button
                   type="button"
                   onClick={resetViewer}
-                  className="px-2.5 py-1.5 bg-white hover:bg-slate-100 dark:bg-slate-700 dark:hover:bg-slate-600 rounded-xl border border-slate-200 dark:border-slate-600 text-[11px] font-black text-slate-700 dark:text-white cursor-pointer transition-colors shadow-2xs flex items-center gap-1"
+                  className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-black cursor-pointer transition-colors shadow-2xs flex items-center gap-1.5 ${
+                    isFullscreen
+                      ? 'bg-slate-700 hover:bg-slate-600 border-slate-600 text-white'
+                      : 'bg-white hover:bg-slate-100 border-slate-300 text-slate-800'
+                  }`}
                   title="Reset View (100%)"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
                   <span>Reset (100%)</span>
                 </button>
-                <span className="text-xs font-mono font-black text-[#7C3AED] bg-purple-50 dark:bg-purple-900/40 px-2 py-1 rounded-lg border border-[#7C3AED]/20">
+                <span className={`text-xs font-mono font-black px-2.5 py-1 rounded-lg border ${
+                  isFullscreen
+                    ? 'bg-purple-900/50 text-purple-300 border-purple-700'
+                    : 'bg-purple-50 text-[#7C3AED] border-purple-200'
+                }`}>
                   {Math.round(zoom * 100)}%
                 </span>
               </div>
@@ -407,7 +427,7 @@ export default function MedicalImagingVault({ patientId, patientName }) {
               {/* Contrast & Brightness Sliders */}
               <div className="flex items-center gap-3 flex-wrap">
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] font-black uppercase text-slate-400">Contrast:</span>
+                  <span className={`text-[10px] font-black uppercase tracking-wider ${isFullscreen ? 'text-slate-400' : 'text-slate-500'}`}>Contrast:</span>
                   <input
                     type="range"
                     min="50"
@@ -417,11 +437,11 @@ export default function MedicalImagingVault({ patientId, patientName }) {
                     className="w-24 h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-[#7C3AED]"
                     title={`Contrast: ${contrast}%`}
                   />
-                  <span className="text-[10px] font-mono font-bold text-slate-500 w-8">{contrast}%</span>
+                  <span className={`text-[10px] font-mono font-bold w-8 ${isFullscreen ? 'text-slate-300' : 'text-slate-600'}`}>{contrast}%</span>
                 </div>
 
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] font-black uppercase text-slate-400">Brightness:</span>
+                  <span className={`text-[10px] font-black uppercase tracking-wider ${isFullscreen ? 'text-slate-400' : 'text-slate-500'}`}>Brightness:</span>
                   <input
                     type="range"
                     min="50"
@@ -431,24 +451,32 @@ export default function MedicalImagingVault({ patientId, patientName }) {
                     className="w-20 h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-[#7C3AED]"
                     title={`Brightness: ${brightness}%`}
                   />
-                  <span className="text-[10px] font-mono font-bold text-slate-500 w-8">{brightness}%</span>
+                  <span className={`text-[10px] font-mono font-bold w-8 ${isFullscreen ? 'text-slate-300' : 'text-slate-600'}`}>{brightness}%</span>
                 </div>
               </div>
 
               {/* Filter Presets */}
               <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="text-[10px] font-black uppercase text-slate-400">Presets:</span>
+                <span className={`text-[10px] font-black uppercase tracking-wider ${isFullscreen ? 'text-slate-400' : 'text-slate-500'}`}>Presets:</span>
                 <button
                   type="button"
                   onClick={() => applyPreset('NORMAL')}
-                  className="px-2 py-1 rounded-lg text-[10px] font-bold bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 hover:bg-slate-100 cursor-pointer"
+                  className={`px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-colors shadow-2xs cursor-pointer ${
+                    isFullscreen
+                      ? 'bg-slate-700 hover:bg-slate-600 border-slate-600 text-white'
+                      : 'bg-white hover:bg-slate-100 border-slate-300 text-slate-800'
+                  }`}
                 >
                   Normal
                 </button>
                 <button
                   type="button"
                   onClick={() => applyPreset('HIGH_BONE')}
-                  className="px-2 py-1 rounded-lg text-[10px] font-bold bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 hover:bg-slate-100 cursor-pointer"
+                  className={`px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-colors shadow-2xs cursor-pointer ${
+                    isFullscreen
+                      ? 'bg-slate-700 hover:bg-slate-600 border-slate-600 text-white'
+                      : 'bg-white hover:bg-slate-100 border-slate-300 text-slate-800'
+                  }`}
                   title="High-contrast bone edge enhancement"
                 >
                   Bone Detail
@@ -456,7 +484,11 @@ export default function MedicalImagingVault({ patientId, patientName }) {
                 <button
                   type="button"
                   onClick={() => applyPreset('SOFT_TISSUE')}
-                  className="px-2 py-1 rounded-lg text-[10px] font-bold bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 hover:bg-slate-100 cursor-pointer"
+                  className={`px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-colors shadow-2xs cursor-pointer ${
+                    isFullscreen
+                      ? 'bg-slate-700 hover:bg-slate-600 border-slate-600 text-white'
+                      : 'bg-white hover:bg-slate-100 border-slate-300 text-slate-800'
+                  }`}
                   title="Soft tissue contrast enhancement"
                 >
                   Tissue
@@ -464,10 +496,12 @@ export default function MedicalImagingVault({ patientId, patientName }) {
                 <button
                   type="button"
                   onClick={() => setIsInverted(!isInverted)}
-                  className={`px-2 py-1 rounded-lg text-[10px] font-black cursor-pointer transition-colors ${
+                  className={`px-2.5 py-1.5 rounded-xl text-xs font-black transition-colors cursor-pointer ${
                     isInverted
-                      ? 'bg-[#7C3AED] text-white shadow-2xs'
-                      : 'bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-white hover:bg-slate-100'
+                      ? 'bg-[#7C3AED] text-white shadow-xs'
+                      : isFullscreen
+                      ? 'bg-slate-700 hover:bg-slate-600 border border-slate-600 text-white'
+                      : 'bg-white hover:bg-slate-100 border border-slate-300 text-slate-800 shadow-2xs'
                   }`}
                   title="Toggle inverted negative radiograph film view"
                 >

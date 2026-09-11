@@ -2417,114 +2417,6 @@ export default function DoctorWorkspace({
                     </div>
                   )}
                 </div>
-
-                {/* Vitals Trend (from vitals_history) */}
-                {clinicalDocket.vitals?.length > 0 && (
-                  <div className="bg-white border border-slate-200 rounded-2xl p-3.5 space-y-2">
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Recent Vitals History ({clinicalDocket.vitals.length} readings)</p>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-[10px] font-bold text-slate-700">
-                        <thead>
-                          <tr className="text-slate-400 border-b border-slate-100">
-                            <td className="pb-1 pr-3">Date</td>
-                            <td className="pb-1 pr-3">BP</td>
-                            <td className="pb-1 pr-3">Pulse</td>
-                            <td className="pb-1 pr-3">SpO₂</td>
-                            <td className="pb-1">Temp</td>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {clinicalDocket.vitals.slice(0, 3).map((v, i) => (
-                            <tr key={i} className={i === 0 ? 'text-[#007A70] font-extrabold' : 'text-slate-600'}>
-                              <td className="py-0.5 pr-3">{new Date(v.recorded_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</td>
-                              <td className="py-0.5 pr-3">{v.bp_systolic && v.bp_diastolic ? `${v.bp_systolic}/${v.bp_diastolic}` : v.bp_systolic || '—'}</td>
-                              <td className="py-0.5 pr-3">{v.pulse_bpm ? `${v.pulse_bpm} bpm` : '—'}</td>
-                              <td className="py-0.5 pr-3">{v.spo2_pct ? `${v.spo2_pct}%` : '—'}</td>
-                              <td className="py-0.5">{v.temperature_c ? `${((v.temperature_c * 9/5) + 32).toFixed(1)}°F` : '—'}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-
-                {/* AI Clinical Copilot */}
-                <div className="bg-gradient-to-br from-indigo-50 to-white border border-indigo-200 rounded-2xl p-4 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Sparkles className="w-4 h-4 text-indigo-600" />
-                      <span className="text-[10px] font-black text-indigo-700 uppercase tracking-wider">⚡ AI Clinical Copilot (Groq / RAG)</span>
-                    </div>
-                    {!aiSummary && (
-                      <button
-                        type="button"
-                        onClick={handleLoadAiSummary}
-                        disabled={aiSummaryLoading}
-                        className="text-[10px] font-black bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg cursor-pointer disabled:opacity-60 flex items-center gap-1.5 transition-colors"
-                      >
-                        {aiSummaryLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
-                        {aiSummaryLoading ? 'Analyzing...' : 'Generate 3-sec Briefing'}
-                      </button>
-                    )}
-                  </div>
-
-                  {aiSummaryError && (
-                    <p className="text-[10px] text-rose-600 font-bold bg-rose-50 px-3 py-1.5 rounded-lg">{aiSummaryError}</p>
-                  )}
-
-                  {aiSummary ? (
-                    <div className="space-y-2 text-xs">
-                      {aiSummary.critical_alerts && aiSummary.critical_alerts !== 'NONE' && (
-                        <div className="flex gap-2">
-                          <span className="text-red-500 shrink-0">🚨</span>
-                          <div>
-                            <span className="font-black text-red-700">Safety: </span>
-                            <span className="text-red-800 font-semibold">{aiSummary.critical_alerts}</span>
-                          </div>
-                        </div>
-                      )}
-                      {aiSummary.active_regimen && aiSummary.active_regimen !== 'NONE' && (
-                        <div className="flex gap-2">
-                          <span className="text-amber-500 shrink-0">💊</span>
-                          <div>
-                            <span className="font-black text-amber-700">Medications: </span>
-                            <span className="text-amber-900 font-semibold">{aiSummary.active_regimen}</span>
-                          </div>
-                        </div>
-                      )}
-                      {aiSummary.clinical_trajectory && (
-                        <div className="flex gap-2">
-                          <span className="text-indigo-500 shrink-0">📋</span>
-                          <div>
-                            <span className="font-black text-indigo-700">Trajectory: </span>
-                            <span className="text-indigo-800 font-semibold">{aiSummary.clinical_trajectory}</span>
-                          </div>
-                        </div>
-                      )}
-                      {aiSummary.suggested_guardrails && aiSummary.suggested_guardrails !== 'NONE' && (
-                        <div className="flex gap-2">
-                          <span className="text-slate-500 shrink-0">🛡️</span>
-                          <div>
-                            <span className="font-black text-slate-700">Avoid: </span>
-                            <span className="text-slate-700 font-semibold">{aiSummary.suggested_guardrails}</span>
-                          </div>
-                        </div>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => setAiSummary(null)}
-                        className="text-[10px] text-indigo-400 hover:text-indigo-600 font-bold cursor-pointer mt-1"
-                      >
-                        Regenerate →
-                      </button>
-                    </div>
-                  ) : !aiSummaryLoading && !aiSummaryError && (
-                    <p className="text-[10px] text-indigo-400 font-medium">
-                      Click "Generate 3-sec Briefing" to get an AI-synthesized clinical summary of this patient's history, disease trajectory, and prescribing guardrails.
-                    </p>
-                  )}
-                </div>
               </div>
             ) : null}
 
@@ -3176,7 +3068,7 @@ export default function DoctorWorkspace({
                     <div className="flex items-center gap-1.5">
                       <Sparkles className="w-4 h-4 text-indigo-600" />
                       <span className="text-[10px] font-black text-indigo-700 uppercase tracking-wider">
-                        ⚡ AI Clinical Copilot (Groq / RAG Briefing)
+                        ⚡ AI Clinical Copilot (Groq / RAG)
                       </span>
                     </div>
                     {!aiSummary && (
@@ -3187,7 +3079,7 @@ export default function DoctorWorkspace({
                         className="text-[10px] font-black bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1 rounded-lg cursor-pointer disabled:opacity-60 flex items-center gap-1 transition-colors"
                       >
                         {aiSummaryLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
-                        {aiSummaryLoading ? 'Analyzing...' : '3-sec Briefing'}
+                        {aiSummaryLoading ? 'Analyzing...' : 'Clinical Summary'}
                       </button>
                     )}
                   </div>
@@ -3244,7 +3136,7 @@ export default function DoctorWorkspace({
                     </div>
                   ) : !aiSummaryLoading && !aiSummaryError && (
                     <p className="text-[10px] text-indigo-500 font-medium">
-                      Click "3-sec Briefing" to run AI synthesis of this patient's medical history, allergies, and prescribing guardrails.
+                      Click "Clinical Summary" to run AI synthesis of this patient's medical history, allergies, and prescribing guardrails.
                     </p>
                   )}
                 </div>
