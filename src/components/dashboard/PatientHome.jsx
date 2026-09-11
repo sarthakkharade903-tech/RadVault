@@ -77,7 +77,7 @@ function VitalCard({ icon: Icon, iconColor, bgShapeColor, label, value, unit, so
   );
 }
 
-export default function PatientHome({ member, onNavigateTab, onOpenHealthPassport }) {
+export default function PatientHome({ member, onNavigateTab, onOpenHealthPassport, onAvatarUpdate }) {
   const [latestVitals, setLatestVitals] = useState({});
   const [loadingVitals, setLoadingVitals] = useState(true);
   const [updateMetric, setUpdateMetric] = useState(null);
@@ -102,13 +102,17 @@ export default function PatientHome({ member, onNavigateTab, onOpenHealthPasspor
 
   useEffect(() => { fetchVitals(); }, [fetchVitals]);
 
-  const [avatarStr, setAvatarStr] = useState(member?.avatar_url || null);
+  const [avatarStr, setAvatarStr] = useState(() => {
+    if (member?.avatar_url !== undefined) return member.avatar_url;
+    return (member?.id && localStorage.getItem(`radvault_avatar_${member.id}`)) || null;
+  });
   const [imgError, setImgError] = useState(false);
 
   useEffect(() => {
     const stored = (member?.id && localStorage.getItem(`radvault_abha_${member.id}`)) || member?.abha_id || "";
     setCurrentAbha(stored);
-    setAvatarStr(member?.avatar_url || null);
+    const av = member?.avatar_url !== undefined ? member.avatar_url : (member?.id && localStorage.getItem(`radvault_avatar_${member.id}`));
+    setAvatarStr(av || null);
     setImgError(false);
   }, [member]);
 
@@ -165,30 +169,64 @@ export default function PatientHome({ member, onNavigateTab, onOpenHealthPasspor
         img.onload = async () => {
           try {
             const canvas = document.createElement('canvas');
-            const MAX_SIZE = 200;
-            let width = img.width;
-            let height = img.height;
-            if (width > height) {
-              if (width > MAX_SIZE) {
-                height *= MAX_SIZE / width;
-                width = MAX_SIZE;
-              }
-            } else {
-              if (height > MAX_SIZE) {
-                width *= MAX_SIZE / height;
-                height = MAX_SIZE;
-              }
-            }
-            canvas.width = width;
-            canvas.height = height;
+            const TARGET_SIZE = 320;
+            canvas.width = TARGET_SIZE;
+            canvas.height = TARGET_SIZE;
             const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0, width, height);
-            const base64Data = canvas.toDataURL('image/jpeg', 0.8);
             
-            setAvatarStr(base64Data);
-            setUploadingAvatar(false);
+            // Center square crop
+            const minDim = Math.min(img.width, img.height);
+            const sx = (img.width - minDim) / 2;
+            const sy = (img.height - minDim) / 2;
+            ctx.drawImage(img, sx, sy, minDim, minDim, 0, 0, TARGET_SIZE, TARGET_SIZE);
+
+            const base64Data = canvas.toDataURL('image/jpeg', 0.85);
+            let finalAvatarUrl = base64Data;
+
+            // 1. Upload to Supabase Storage 'avatars' bucket
+            try {
+              const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.85));
+              if (blob) {
+                const fileName = `avatar_${member.id}_${Date.now()}.jpg`;
+                const { error: uploadErr } = await supabase.storage
+                  .from('avatars')
+                  .upload(fileName, blob, { contentType: 'image/jpeg', upsert: true });
+
+                if (!uploadErr) {
+                  const { data: pubData } = supabase.storage
+                    .from('avatars')
+                    .getPublicUrl(fileName);
+                  if (pubData?.publicUrl) {
+                    finalAvatarUrl = pubData.publicUrl;
+                  }
+                } else {
+                  console.warn("Storage upload notice (falling back to base64):", uploadErr.message);
+                }
+              }
+            } catch (storageErr) {
+              console.warn("Storage upload exception, using direct payload:", storageErr);
+            }
+
+            // 2. Persist to database (village_patients)
+            try {
+              await supabase
+                .from("village_patients")
+                .update({ avatar_url: finalAvatarUrl })
+                .eq("id", member.id);
+            } catch (dbErr) {
+              console.warn("Database avatar sync notice:", dbErr);
+            }
+
+            // 3. Update localStorage and notify parent
+            localStorage.setItem(`radvault_avatar_${member.id}`, finalAvatarUrl);
+            setAvatarStr(finalAvatarUrl);
+            setImgError(false);
+            if (onAvatarUpdate) {
+              onAvatarUpdate(member.id, finalAvatarUrl);
+            }
           } catch (err) {
-            console.error("Avatar compression failed:", err);
+            console.error("Avatar compression/upload failed:", err);
+          } finally {
             setUploadingAvatar(false);
           }
         };
@@ -196,7 +234,29 @@ export default function PatientHome({ member, onNavigateTab, onOpenHealthPasspor
       };
       reader.readAsDataURL(file);
     } catch (err) {
-      console.error(err);
+      console.error("File selection error:", err);
+      setUploadingAvatar(false);
+    }
+  };
+
+  const handleRemoveAvatar = async (e) => {
+    e?.stopPropagation();
+    if (!member?.id) return;
+    setUploadingAvatar(true);
+    try {
+      await supabase
+        .from("village_patients")
+        .update({ avatar_url: null })
+        .eq("id", member.id);
+      localStorage.removeItem(`radvault_avatar_${member.id}`);
+      setAvatarStr(null);
+      setImgError(false);
+      if (onAvatarUpdate) {
+        onAvatarUpdate(member.id, null);
+      }
+    } catch (err) {
+      console.error("Failed to remove avatar:", err);
+    } finally {
       setUploadingAvatar(false);
     }
   };
@@ -279,23 +339,50 @@ export default function PatientHome({ member, onNavigateTab, onOpenHealthPasspor
             <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5 text-center sm:text-left">
               
               {/* Avatar with Camera Icon & 3D Specular Ring */}
-              <div 
-                onClick={() => fileInputRef.current?.click()}
-                className="w-24 h-24 sm:w-28 sm:h-28 rounded-full bg-gradient-to-br from-amber-300 via-amber-400 to-amber-600 shadow-[0_12px_30px_rgba(245,158,11,0.4)] flex flex-col items-center justify-center text-white relative cursor-pointer group shrink-0 overflow-hidden border-4 border-white hover:scale-105 transition-transform"
-              >
-                 {(avatarStr && !imgError) ? (
-                   <img src={avatarStr} alt={member.name} className="w-full h-full object-cover" onError={() => setImgError(true)} />
-                 ) : (
-                   <span className="text-4xl font-black">{member.name.charAt(0).toUpperCase()}</span>
-                 )}
-                 
-                 <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                    {uploadingAvatar ? <Loader2 className="w-6 h-6 animate-spin" /> : <Camera className="w-6 h-6" />}
-                 </div>
+              <div className="flex flex-col items-center sm:items-start gap-2">
+                <div 
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-24 h-24 sm:w-28 sm:h-28 rounded-full bg-gradient-to-br from-amber-300 via-amber-400 to-amber-600 shadow-[0_12px_30px_rgba(245,158,11,0.4)] flex flex-col items-center justify-center text-white relative cursor-pointer group shrink-0 overflow-hidden border-4 border-white hover:scale-105 transition-transform"
+                  title="Click to change profile photo"
+                >
+                   {(avatarStr && !imgError) ? (
+                     <img src={avatarStr} alt={member.name} className="w-full h-full object-cover" onError={() => setImgError(true)} />
+                   ) : (
+                     <span className="text-4xl font-black">{member.name.charAt(0).toUpperCase()}</span>
+                   )}
+                   
+                   <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                      {uploadingAvatar ? <Loader2 className="w-6 h-6 animate-spin text-white" /> : <Camera className="w-6 h-6 text-white" />}
+                      <span className="text-[9px] font-black uppercase text-white mt-1">Change</span>
+                   </div>
 
-                 <div className="absolute -top-1 -right-1 w-6 h-6 bg-white rounded-full flex items-center justify-center shadow-xs">
-                   <div className="w-3.5 h-3.5 bg-amber-400 rounded-full animate-pulse" />
-                 </div>
+                   <div className="absolute -top-1 -right-1 w-6 h-6 bg-white rounded-full flex items-center justify-center shadow-xs">
+                     <div className="w-3.5 h-3.5 bg-amber-400 rounded-full animate-pulse" />
+                   </div>
+                </div>
+
+                {/* Quick Photo Actions */}
+                <div className="flex items-center gap-1.5 text-[10px] font-black">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploadingAvatar}
+                    className="flex items-center gap-1 text-amber-800 bg-amber-100/90 hover:bg-amber-200 px-2.5 py-1 rounded-lg transition-colors cursor-pointer shadow-2xs border border-amber-200"
+                  >
+                    <Camera className="w-3 h-3 text-amber-700" />
+                    <span>{uploadingAvatar ? "Uploading..." : "Change Photo"}</span>
+                  </button>
+                  {avatarStr && (
+                    <button
+                      type="button"
+                      onClick={handleRemoveAvatar}
+                      disabled={uploadingAvatar}
+                      className="text-rose-700 hover:text-rose-900 bg-rose-50 hover:bg-rose-100 border border-rose-200 px-2 py-1 rounded-lg transition-colors cursor-pointer"
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div className="pt-1">
@@ -315,6 +402,14 @@ export default function PatientHome({ member, onNavigateTab, onOpenHealthPasspor
                       <span className="text-amber-700 font-black">{member.blood_group}</span>
                     </>
                   )}
+                  <button
+                    type="button"
+                    onClick={() => onOpenHealthPassport?.()}
+                    className="ml-1 text-[10px] font-black uppercase tracking-wider text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 px-2.5 py-0.5 rounded-full inline-flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
+                  >
+                    <Siren className="w-3 h-3 text-rose-600" />
+                    <span>⚡ Emergency QR</span>
+                  </button>
                 </div>
 
                 {/* 3D ABHA Number Badge */}
@@ -548,41 +643,6 @@ export default function PatientHome({ member, onNavigateTab, onOpenHealthPasspor
       </div>
 
       <div className="max-w-7xl mx-auto px-4 mt-8">
-
-        {/* ── Emergency Health Passport Action Banner (Pitch Script Feature) ── */}
-        <div className="mb-8 rounded-[28px] p-6 sm:p-7 bg-gradient-to-r from-red-600 via-rose-600 to-amber-600 text-white shadow-[0_16px_35px_-6px_rgba(225,29,72,0.3)] relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-6 border-2 border-white/20">
-          <div className="relative z-10 flex items-start gap-4">
-            <div className="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur-md border border-white/40 flex items-center justify-center shrink-0 shadow-inner">
-              <Siren className="w-7 h-7 text-white animate-pulse" />
-            </div>
-            <div>
-              <div className="flex flex-wrap items-center gap-2 mb-1.5">
-                <span className="text-[10px] font-black uppercase tracking-[0.2em] bg-white/25 px-2.5 py-0.5 rounded-full border border-white/30">
-                  Critical Safeguard · First Responders
-                </span>
-                <span className="text-[10px] font-bold text-amber-200">
-                  ⚡ Scannable Offline QR Payload
-                </span>
-              </div>
-              <h3 className="text-xl sm:text-2xl font-black tracking-tight leading-tight">
-                Emergency Health Passport
-              </h3>
-              <p className="text-xs sm:text-sm text-rose-50/95 font-medium max-w-2xl mt-1.5 leading-relaxed">
-                In an emergency, a patient may not be able to unlock their phone or recite their medical history. Paramedics and doctors can scan the high-contrast offline QR to instantly inspect blood group, drug allergies (NKDA), and dialable family contacts.
-              </p>
-            </div>
-          </div>
-          <div className="relative z-10 shrink-0">
-            <button
-              onClick={() => onOpenHealthPassport?.()}
-              className="w-full sm:w-auto px-6 py-3.5 bg-white hover:bg-rose-50 text-rose-700 hover:text-rose-800 font-black text-xs uppercase tracking-wider rounded-2xl shadow-xl transition-all transform hover:scale-105 active:scale-95 flex items-center justify-center gap-2.5 cursor-pointer"
-            >
-              <Shield className="w-4 h-4 text-rose-600" />
-              <span>Open Health Passport</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        </div>
 
         {/* ── Biometric Provenance & Source Attribution Explainer Bar ── */}
         <div className="mb-8 p-4 sm:p-5 rounded-2xl bg-white border border-amber-200/70 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">

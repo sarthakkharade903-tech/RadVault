@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import {
   HeartPulse, LogOut, FileText, Calendar, Home, Users, ChevronLeft,
   Plus, Stethoscope, Pill, FileImage, Droplet, Sparkles, Loader2,
-  Globe, Shield, ArrowRight, Search, Siren
+  Globe, Shield, ArrowRight, Search, Siren, QrCode
 } from "lucide-react";
 import PatientHome from "../dashboard/PatientHome";
 import CareHub from "./CareHub";
@@ -87,7 +87,22 @@ const PORTAL_TRANSLATIONS = {
   }
 };
 
-export default function FamilyDashboard({ family, members, onLogout, onBack, onOpenEmergencySOS }) {
+export default function FamilyDashboard({ family, members: initialMembers = [], onLogout, onBack, onOpenEmergencySOS }) {
+  const [membersList, setMembersList] = useState(initialMembers);
+
+  useEffect(() => {
+    setMembersList(initialMembers);
+  }, [initialMembers]);
+
+  const handleAvatarUpdate = (memberId, newAvatarUrl) => {
+    setMembersList(prev => prev.map(m => m.id === memberId ? { ...m, avatar_url: newAvatarUrl } : m));
+    if (newAvatarUrl) {
+      localStorage.setItem(`radvault_avatar_${memberId}`, newAvatarUrl);
+    } else {
+      localStorage.removeItem(`radvault_avatar_${memberId}`);
+    }
+  };
+
   const [lang, setLang] = useState(() => {
     return localStorage.getItem("radvault_asha_lang") || localStorage.getItem("radvault_patient_lang") || "en";
   });
@@ -131,13 +146,13 @@ export default function FamilyDashboard({ family, members, onLogout, onBack, onO
   const [showUpload, setShowUpload] = useState(false);
   const [showHealthPassport, setShowHealthPassport] = useState(false);
 
-  const selectedMember = members.find(m => m.id === selectedMemberId) || members[0];
+  const selectedMember = membersList.find(m => m.id === selectedMemberId) || membersList[0];
 
   useEffect(() => {
     if (selectedMember) {
       setSelectedMemberId(selectedMember.id);
     }
-  }, [members]);
+  }, [membersList]);
 
   useEffect(() => {
     if (activeTab === "records" && selectedMember) {
@@ -192,11 +207,12 @@ export default function FamilyDashboard({ family, members, onLogout, onBack, onO
         <div className="flex items-center gap-2 sm:gap-3">
           <button
             onClick={() => setShowHealthPassport(true)}
-            className="px-3 py-1 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-black text-xs rounded-full flex items-center gap-1.5 shadow-sm shadow-red-900/20 transition-transform active:scale-95 cursor-pointer"
-            title="Open Emergency Health Passport"
+            className="px-3 sm:px-4 py-1.5 sm:py-2 bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-700 hover:to-rose-700 text-white font-black text-xs sm:text-[13px] rounded-full flex items-center gap-2 shadow-md shadow-red-900/25 border border-red-400/40 transition-all hover:scale-102 active:scale-95 cursor-pointer ring-2 ring-red-500/20"
+            title="Open Emergency Health Passport QR for First Responders"
           >
-            <Shield className="w-3.5 h-3.5 text-white" />
-            <span>Health Passport</span>
+            <div className="w-2 h-2 rounded-full bg-white animate-pulse shrink-0" />
+            <QrCode className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white shrink-0" />
+            <span className="tracking-tight whitespace-nowrap">Emergency Health Passport QR</span>
           </button>
 
           {onOpenEmergencySOS && (
@@ -268,7 +284,7 @@ export default function FamilyDashboard({ family, members, onLogout, onBack, onO
         </div>
 
         <div className="max-w-4xl mx-auto flex gap-3 overflow-x-auto scrollbar-hide pt-0.5">
-          {members.map(m => {
+          {membersList.map(m => {
             const isActive = m.id === selectedMember.id;
             return (
               <button key={m.id} onClick={() => setSelectedMemberId(m.id)}
@@ -310,6 +326,7 @@ export default function FamilyDashboard({ family, members, onLogout, onBack, onO
               member={selectedMember}
               onNavigateTab={(tab) => setActiveTab(tab)}
               onOpenHealthPassport={() => setShowHealthPassport(true)}
+              onAvatarUpdate={handleAvatarUpdate}
             />
           </div>
         )}
@@ -423,13 +440,13 @@ export default function FamilyDashboard({ family, members, onLogout, onBack, onO
                   <h2 className="text-2xl font-black text-[#16324F]">{family?.family_name || t.familyTitle}</h2>
                   <p className="text-xs font-bold text-[#64748B] mt-0.5">
                     {family?.village && `${family.village} • `}
-                    {members.length} {t.membersCount}
+                    {membersList.length} {t.membersCount}
                   </p>
                 </div>
               </div>
 
               <div className="grid gap-3">
-                {members.map(m => {
+                {membersList.map(m => {
                   const isSelected = m.id === selectedMember.id;
                   return (
                     <div
