@@ -309,15 +309,107 @@ export async function getVitalsHistory(patientId) {
 
 /**
  * Save a new vitals reading (any source).
- * @param {Object} payload - { patient_id, source, recorded_by?, bp_systolic, bp_diastolic, blood_glucose, weight_kg, height_cm, temperature_c, spo2_pct, pulse_bpm }
+ * Supports both saveVitalsReading(payloadObject) and saveVitalsReading(patientId, payloadObject, source).
+ * @param {Object|string} arg1 - Either payload object or patient_id string
+ * @param {Object} [arg2] - Vitals values object if arg1 is string
+ * @param {string} [arg3] - Source string if arg1 is string
  */
-export async function saveVitalsReading(payload) {
-  const { data, error } = await supabase
-    .from('vitals_history')
-    .insert([{ ...payload, recorded_at: new Date().toISOString() }])
-    .select()
-    .single();
-  return { data, error };
+export async function saveVitalsReading(arg1, arg2, arg3) {
+  try {
+    let payload = {};
+    if (typeof arg1 === 'string') {
+      payload = {
+        patient_id: arg1,
+        ...(typeof arg2 === 'object' && arg2 !== null ? arg2 : {}),
+        source: typeof arg3 === 'string' ? arg3 : 'SELF-REPORTED'
+      };
+    } else if (typeof arg1 === 'object' && arg1 !== null) {
+      payload = { ...arg1 };
+    } else {
+      return { data: null, error: new Error('Invalid arguments provided to saveVitalsReading.') };
+    }
+
+    if (!payload.patient_id) {
+      return { data: null, error: new Error('Patient ID is required to save health vitals.') };
+    }
+
+    if (!payload.source) {
+      payload.source = 'SELF-REPORTED';
+    }
+
+    const recordedAt = payload.recorded_at || new Date().toISOString();
+
+    const recordToInsert = {
+      patient_id: payload.patient_id,
+      source: payload.source,
+      recorded_at: recordedAt,
+      ...(payload.recorded_by ? { recorded_by: payload.recorded_by } : {}),
+      ...(payload.bp_systolic !== undefined && payload.bp_systolic !== null ? { bp_systolic: parseInt(payload.bp_systolic, 10) } : {}),
+      ...(payload.bp_diastolic !== undefined && payload.bp_diastolic !== null ? { bp_diastolic: parseInt(payload.bp_diastolic, 10) } : {}),
+      ...(payload.blood_glucose !== undefined && payload.blood_glucose !== null ? { blood_glucose: parseFloat(payload.blood_glucose) } : {}),
+      ...(payload.weight_kg !== undefined && payload.weight_kg !== null ? { weight_kg: parseFloat(payload.weight_kg) } : {}),
+      ...(payload.height_cm !== undefined && payload.height_cm !== null ? { height_cm: parseFloat(payload.height_cm) } : {}),
+      ...(payload.temperature_c !== undefined && payload.temperature_c !== null ? { temperature_c: parseFloat(payload.temperature_c) } : {}),
+      ...(payload.spo2_pct !== undefined && payload.spo2_pct !== null ? { spo2_pct: parseInt(payload.spo2_pct, 10) } : {}),
+      ...(payload.pulse_bpm !== undefined && payload.pulse_bpm !== null ? { pulse_bpm: parseInt(payload.pulse_bpm, 10) } : {})
+    };
+
+    const { data, error } = await supabase
+      .from('vitals_history')
+      .insert([recordToInsert])
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[ashaService] saveVitalsReading insert error:', error);
+      return { data: null, error };
+    }
+
+    // Also synchronize latest vitals to village_patients table
+    try {
+      const vpUpdate = {};
+      if (recordToInsert.bp_systolic !== undefined) vpUpdate.bp_systolic = recordToInsert.bp_systolic;
+      if (recordToInsert.bp_diastolic !== undefined) vpUpdate.bp_diastolic = recordToInsert.bp_diastolic;
+      if (recordToInsert.bp_systolic && recordToInsert.bp_diastolic) vpUpdate.last_bp = `${recordToInsert.bp_systolic}/${recordToInsert.bp_diastolic}`;
+      if (recordToInsert.blood_glucose !== undefined) vpUpdate.blood_glucose = recordToInsert.blood_glucose;
+      if (recordToInsert.weight_kg !== undefined) vpUpdate.weight_kg = recordToInsert.weight_kg;
+      if (recordToInsert.height_cm !== undefined) vpUpdate.height_cm = recordToInsert.height_cm;
+      if (recordToInsert.temperature_c !== undefined) vpUpdate.last_temperature = `${recordToInsert.temperature_c}°C`;
+      vpUpdate.last_visit_date = recordedAt;
+
+      if (Object.keys(vpUpdate).length > 0) {
+        await supabase.from('village_patients').update(vpUpdate).eq('id', payload.patient_id);
+      }
+    } catch (vpErr) {
+      console.warn('[ashaService] village_patients vitals sync notice:', vpErr);
+    }
+
+    // Also synchronize to clinical patients.vitals jsonb if record exists
+    try {
+      const { data: ptData } = await supabase.from('patients').select('id, vitals').eq('id', payload.patient_id).maybeSingle();
+      if (ptData) {
+        const mergedVitals = {
+          ...(ptData.vitals || {}),
+          ...(recordToInsert.bp_systolic && recordToInsert.bp_diastolic ? { bp: `${recordToInsert.bp_systolic}/${recordToInsert.bp_diastolic}` } : {}),
+          ...(recordToInsert.blood_glucose ? { sugar: String(recordToInsert.blood_glucose) } : {}),
+          ...(recordToInsert.spo2_pct ? { spo2: String(recordToInsert.spo2_pct) } : {}),
+          ...(recordToInsert.pulse_bpm ? { pulse: String(recordToInsert.pulse_bpm) } : {}),
+          ...(recordToInsert.temperature_c ? { temp: String(recordToInsert.temperature_c) } : {}),
+          ...(recordToInsert.weight_kg ? { weight: String(recordToInsert.weight_kg) } : {}),
+          source: payload.source,
+          recorded_at: recordedAt
+        };
+        await supabase.from('patients').update({ vitals: mergedVitals }).eq('id', payload.patient_id);
+      }
+    } catch (ptErr) {
+      console.warn('[ashaService] patients vitals sync notice:', ptErr);
+    }
+
+    return { data, error: null };
+  } catch (err) {
+    console.error('[ashaService] saveVitalsReading unexpected error:', err);
+    return { data: null, error: err };
+  }
 }
 
 /**
