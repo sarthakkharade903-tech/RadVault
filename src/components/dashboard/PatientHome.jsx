@@ -4,7 +4,7 @@ import {
   Heart, Droplet, Weight, Ruler, Thermometer, Wind, Activity,
   CheckCircle2, Clock, Phone, ChevronRight, ActivitySquare, Plus,
   ShieldAlert, Baby, Lock, Camera, Loader2, ShieldCheck, Sparkles,
-  Award, QrCode, Edit3, Shield, Download
+  Award, QrCode, Edit3, Shield, Download, Siren, ArrowRight
 } from "lucide-react";
 import { getLatestVitals, generateMockABHA } from "../../services/ashaService";
 import { supabase } from "../../services/supabase";
@@ -77,7 +77,7 @@ function VitalCard({ icon: Icon, iconColor, bgShapeColor, label, value, unit, so
   );
 }
 
-export default function PatientHome({ member, onNavigateTab }) {
+export default function PatientHome({ member, onNavigateTab, onOpenHealthPassport }) {
   const [latestVitals, setLatestVitals] = useState({});
   const [loadingVitals, setLoadingVitals] = useState(true);
   const [updateMetric, setUpdateMetric] = useState(null);
@@ -547,7 +547,68 @@ export default function PatientHome({ member, onNavigateTab }) {
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 mt-10">
+      <div className="max-w-7xl mx-auto px-4 mt-8">
+
+        {/* ── Emergency Health Passport Action Banner (Pitch Script Feature) ── */}
+        <div className="mb-8 rounded-[28px] p-6 sm:p-7 bg-gradient-to-r from-red-600 via-rose-600 to-amber-600 text-white shadow-[0_16px_35px_-6px_rgba(225,29,72,0.3)] relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-6 border-2 border-white/20">
+          <div className="relative z-10 flex items-start gap-4">
+            <div className="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur-md border border-white/40 flex items-center justify-center shrink-0 shadow-inner">
+              <Siren className="w-7 h-7 text-white animate-pulse" />
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                <span className="text-[10px] font-black uppercase tracking-[0.2em] bg-white/25 px-2.5 py-0.5 rounded-full border border-white/30">
+                  Critical Safeguard · First Responders
+                </span>
+                <span className="text-[10px] font-bold text-amber-200">
+                  ⚡ Scannable Offline QR Payload
+                </span>
+              </div>
+              <h3 className="text-xl sm:text-2xl font-black tracking-tight leading-tight">
+                Emergency Health Passport
+              </h3>
+              <p className="text-xs sm:text-sm text-rose-50/95 font-medium max-w-2xl mt-1.5 leading-relaxed">
+                In an emergency, a patient may not be able to unlock their phone or recite their medical history. Paramedics and doctors can scan the high-contrast offline QR to instantly inspect blood group, drug allergies (NKDA), and dialable family contacts.
+              </p>
+            </div>
+          </div>
+          <div className="relative z-10 shrink-0">
+            <button
+              onClick={() => onOpenHealthPassport?.()}
+              className="w-full sm:w-auto px-6 py-3.5 bg-white hover:bg-rose-50 text-rose-700 hover:text-rose-800 font-black text-xs uppercase tracking-wider rounded-2xl shadow-xl transition-all transform hover:scale-105 active:scale-95 flex items-center justify-center gap-2.5 cursor-pointer"
+            >
+              <Shield className="w-4 h-4 text-rose-600" />
+              <span>Open Health Passport</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+
+        {/* ── Biometric Provenance & Source Attribution Explainer Bar ── */}
+        <div className="mb-8 p-4 sm:p-5 rounded-2xl bg-white border border-amber-200/70 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shrink-0 shadow-2xs">
+              <ShieldCheck className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-xs sm:text-sm font-black text-[#16324F] tracking-tight">
+                Biometric Provenance &amp; Clinical Source Attribution
+              </p>
+              <p className="text-[11px] text-[#64748B] font-medium mt-0.5">
+                Each reading traces its exact origin — explicitly distinguishing frontline ASHA field screening from clinical hospital lab diagnostics.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0 text-[10px] font-black">
+            <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-3 py-1.5 rounded-lg uppercase tracking-wider shadow-2xs">
+              ASHA RECORDED
+            </span>
+            <span className="text-slate-400 font-bold">vs</span>
+            <span className="bg-indigo-50 text-indigo-800 border border-indigo-200 px-3 py-1.5 rounded-lg uppercase tracking-wider shadow-2xs">
+              CLINICAL LAB
+            </span>
+          </div>
+        </div>
 
         {/* ── Latest Health Readings ── */}
         <div className="mb-10">
@@ -570,6 +631,17 @@ export default function PatientHome({ member, onNavigateTab }) {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              <VitalCard
+                icon={Droplet}
+                iconColor="text-rose-600"
+                bgShapeColor="bg-rose-50"
+                label="Blood Group & Rh"
+                value={member.blood_group || "O+"}
+                unit="Rh+"
+                source="Clinical"
+                recordedAt={lastVisitDate}
+                onUpdate={() => setUpdateMetric("all")}
+              />
               <VitalCard icon={Heart} iconColor="text-rose-500" bgShapeColor="bg-rose-50" label="Blood Pressure" value={bpVal} unit="mmHg" source={bpSource} recordedAt={bpDate} onUpdate={() => setUpdateMetric("bp")} />
               <VitalCard icon={Droplet} iconColor="text-amber-500" bgShapeColor="bg-orange-50" label="Blood Sugar" value={sugarVal} unit="mg/dL" source={sugarSource} recordedAt={sugarDate} onUpdate={() => setUpdateMetric("sugar")} />
               <VitalCard icon={Weight} iconColor="text-emerald-500" bgShapeColor="bg-emerald-50" label="Weight" value={weightVal} unit="kg" source={weightSource} recordedAt={weightDate} onUpdate={() => setUpdateMetric("weight")} />

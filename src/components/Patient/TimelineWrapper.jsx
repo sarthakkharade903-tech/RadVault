@@ -4,7 +4,8 @@ import { getDocuments } from '../../services/vaultService';
 import {
   Calendar, Loader2, ArrowRight, Activity, FileText, Building2,
   Pill, FlaskConical, Shield, Sparkles, Heart, Droplet, Wind,
-  Thermometer, Weight, Clock, CheckCircle2, AlertTriangle, Eye, Download
+  Thermometer, Weight, Clock, CheckCircle2, AlertTriangle, Eye, Download,
+  Stethoscope, CheckCircle
 } from 'lucide-react';
 import DocumentPreview from './DocumentPreview';
 
@@ -14,6 +15,7 @@ const TIMELINE_TRANSLATIONS = {
     title: "Health Timeline",
     subtitle: "Complete chronological medical history & clinical records",
     filterAll: "All Events",
+    filterConsultations: "Doctor Consultations",
     filterVisits: "Health Readings & Visits",
     filterPrescriptions: "Prescriptions",
     filterLabs: "Lab Reports",
@@ -37,6 +39,7 @@ const TIMELINE_TRANSLATIONS = {
     title: "आरोग्य इतिहास व नोंदी",
     subtitle: "सर्व आरोग्य तपासण्या, औषध चिठ्ठ्या व लॅब रिपोर्टची कालक्रमानुसार यादी",
     filterAll: "सर्व नोंदी",
+    filterConsultations: "तज्ज्ञ डॉक्टरांचा सल्ला",
     filterVisits: "तपासणी व गृहभेटी",
     filterPrescriptions: "प्रिस्क्रिप्शन",
     filterLabs: "लॅब रिपोर्ट",
@@ -60,6 +63,7 @@ const TIMELINE_TRANSLATIONS = {
     title: "स्वास्थ्य इतिहास एवं टाइमलाइन",
     subtitle: "सभी स्वास्थ्य जांच, पर्चे और लैब रिपोर्ट का संपूर्ण विवरण",
     filterAll: "सभी रिकॉर्ड",
+    filterConsultations: "डॉक्टर परामर्श",
     filterVisits: "स्वास्थ्य जांच व भेंट",
     filterPrescriptions: "दवा पर्ची",
     filterLabs: "लैब रिपोर्ट",
@@ -103,6 +107,14 @@ function formatFullDateTime(iso) {
 
 // ─── Event Meta Config ─────────────────────────────────────────────────────
 const EVENT_META = {
+  consultation: {
+    label: "SPECIALIST CONSULTATION",
+    Icon: Stethoscope,
+    color: "text-indigo-600",
+    border: "border-indigo-200",
+    bg: "bg-indigo-50",
+    dot: "bg-indigo-500",
+  },
   visit: {
     label: "HEALTH READING",
     Icon: Activity,
@@ -218,12 +230,55 @@ function TimelineCard({ event, onViewDoc, lang }) {
         {/* 2. Clinical Notes / Referral Reason */}
         {event.note && (
           <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl text-xs text-slate-700 leading-relaxed my-2 font-medium">
-            <strong className="text-amber-800 font-black">Observations: </strong>
+            <strong className="text-amber-800 font-black">{event.category === "consultation" ? "Clinical Summary: " : "Observations: "}</strong>
             {event.note}
           </div>
         )}
 
-        {/* 3. Action Button (View PDF / Document) */}
+        {/* 3. Specialist Consultation Treatment Plan & Prescriptions */}
+        {event.category === "consultation" && (
+          <div className="my-3 space-y-2.5">
+            {event.diagnosis && (
+              <div className="flex items-center gap-2 bg-indigo-50 border border-indigo-100/90 px-3.5 py-2 rounded-xl">
+                <span className="text-[10px] font-black uppercase tracking-wider text-indigo-700">Diagnosis:</span>
+                <span className="text-xs font-black text-indigo-950">{event.diagnosis}</span>
+              </div>
+            )}
+            {event.treatmentPlan && (
+              <div className="p-3.5 bg-slate-50 border border-slate-200/90 rounded-xl text-xs text-slate-700">
+                <p className="font-black text-slate-900 mb-1 flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Care Management &amp; Treatment Plan</span>
+                </p>
+                <p className="font-medium leading-relaxed">{event.treatmentPlan}</p>
+              </div>
+            )}
+            {event.prescriptions && Array.isArray(event.prescriptions) && event.prescriptions.length > 0 && (
+              <div className="p-3.5 bg-emerald-50/70 border border-emerald-100 rounded-xl text-xs">
+                <p className="font-black text-emerald-950 mb-2 flex items-center gap-1.5">
+                  <Pill className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Prescribed Medications ({event.prescriptions.length})</span>
+                </p>
+                <div className="space-y-1.5">
+                  {event.prescriptions.map((p, idx) => (
+                    <div key={idx} className="flex items-center justify-between bg-white px-3 py-1.5 rounded-lg border border-emerald-100/80 font-bold text-slate-800 text-[11px]">
+                      <span>{p.name || p.medicine || (typeof p === 'string' ? p : 'Medication')}</span>
+                      <span className="text-emerald-700 font-semibold">{p.dosage || p.frequency || p.instructions || ""}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="flex items-center gap-2 pt-1 text-[11px] font-black text-emerald-700">
+              <span className="inline-flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-lg">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                Closed-Loop Follow-up Active · Attending Specialist Signed
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* 4. Action Button (View PDF / Document) */}
         {isDoc && event.docId && (
           <div className="pt-2 flex justify-end">
             <button
@@ -259,11 +314,12 @@ export default function TimelineWrapper({ member }) {
       try {
         const eventsList = [];
 
-        // Parallelize independent queries for vitals, care_requests, and documents
+        // Parallelize independent queries for vitals, care_requests, documents, and consultations
         const [
           { data: vitalsData },
           { data: refData },
-          { data: docsData }
+          { data: docsData },
+          { data: consultationsData }
         ] = await Promise.all([
           supabase
             .from("vitals_history")
@@ -275,7 +331,12 @@ export default function TimelineWrapper({ member }) {
             .select("*")
             .eq("patient_id", member.id)
             .order("created_at", { ascending: false }),
-          getDocuments(member.id)
+          getDocuments(member.id),
+          supabase
+            .from("consultations")
+            .select("*, doctors(name, specialty, registration_no)")
+            .eq("patient_id", member.id)
+            .order("created_at", { ascending: false })
         ]);
 
         // 1. Process Vitals History
@@ -318,7 +379,29 @@ export default function TimelineWrapper({ member }) {
           });
         }
 
-        // 3. Process Uploaded Medical Documents & Prescriptions
+        // 3. Process Specialist Doctor Consultations (Closed-Loop Care)
+        if (consultationsData && consultationsData.length > 0) {
+          consultationsData.forEach(c => {
+            const docName = c.doctors?.name || "Specialist Physician";
+            const specialty = c.doctors?.specialty || "Clinical Medicine";
+            eventsList.push({
+              id: `consult-${c.id}`,
+              title: `Specialist Consultation: ${c.diagnosis || "Clinical Review"}`,
+              category: "consultation",
+              facility: `Dr. ${docName} (${specialty}) · Sassoon General Hospital`,
+              doctor: `Dr. ${docName}`,
+              rawTimestamp: c.created_at,
+              date: c.created_at,
+              diagnosis: c.diagnosis,
+              treatmentPlan: c.treatment_plan,
+              prescriptions: c.prescriptions,
+              clinicalSummary: c.clinical_summary,
+              note: c.clinical_summary || c.treatment_plan || "Consultation finalized with verified digital signature."
+            });
+          });
+        }
+
+        // 4. Process Uploaded Medical Documents & Prescriptions
         if (docsData && docsData.length > 0) {
           setVaultDocs(docsData);
           docsData.forEach(d => {
@@ -375,6 +458,7 @@ export default function TimelineWrapper({ member }) {
   const filteredEvents = useMemo(() => {
     return events.filter(e => {
       if (filter === "all") return true;
+      if (filter === "consultation") return e.category === "consultation";
       if (filter === "visit") return e.category === "visit";
       if (filter === "prescription") return e.category === "prescription";
       if (filter === "lab_report") return e.category === "lab_report";
@@ -421,6 +505,7 @@ export default function TimelineWrapper({ member }) {
       <div className="flex gap-2 overflow-x-auto pb-2 mb-6 scrollbar-hide">
         {[
           { key: "all", label: t.filterAll },
+          { key: "consultation", label: t.filterConsultations },
           { key: "visit", label: t.filterVisits },
           { key: "prescription", label: t.filterPrescriptions },
           { key: "lab_report", label: t.filterLabs },

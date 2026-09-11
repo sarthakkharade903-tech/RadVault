@@ -349,6 +349,58 @@ function App() {
 
   const goHome = () => setActivePortal("home");
 
+  const openPatientJourneyForMember = (patientId, patientName) => {
+    const defaultFamily = {
+      family: {
+        id: "d9568f85-3c12-4a51-89c1-26d0c4c638ee",
+        family_name: "Patil Family",
+        head_name: "Rahul Patil",
+        head_of_family: "Rahul Patil",
+        village: "Vadgaon",
+        family_email: "sarthakkharade903@gmail.com"
+      },
+      members: [
+        {
+          id: patientId || "b6f81101-46d0-4b4d-8df0-9d9ce11a6a70",
+          name: patientName || "Rekha Bai",
+          age_years: 22,
+          age: 22,
+          gender: "Female",
+          blood_group: "B+",
+          relation_to_head: "Spouse",
+          phone: "9797979797",
+          mobile: "9797979797",
+          abha_id: "91-4567-8901-2345",
+          emergencyContact: { name: "Rahul Patil (Husband)", phone: "9876543210" }
+        },
+        {
+          id: "m2222222-2222-2222-2222-222222222222",
+          name: "Rahul Patil",
+          age_years: 26,
+          age: 26,
+          gender: "Male",
+          blood_group: "O+",
+          relation_to_head: "Head",
+          phone: "9876543210",
+          mobile: "9876543210",
+          abha_id: "91-1234-5678-9012"
+        },
+        {
+          id: "m3333333-3333-3333-3333-333333333333",
+          name: "Aarav Patil",
+          age_years: 3,
+          age: 3,
+          gender: "Male",
+          blood_group: "B+",
+          relation_to_head: "Child",
+          abha_id: "91-9988-7766-5544"
+        }
+      ]
+    };
+    setFamilyAuthData(prev => prev || defaultFamily);
+    setActivePortal("patient");
+  };
+
   return (
     <div className="min-h-screen flex flex-col font-sans">
       {/* ── Global Mode Bar: Always visible across all portals ── */}
@@ -431,6 +483,7 @@ function App() {
             goHome={goHome}
             isDemoMode={demoMode}
             demoDataEnabled={demoMode}
+            onOpenPatientJourney={openPatientJourneyForMember}
           />
         )}
         {activePortal === "home" && (

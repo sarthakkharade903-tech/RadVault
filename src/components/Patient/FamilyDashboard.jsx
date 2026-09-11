@@ -11,6 +11,7 @@ import MedicalDocumentCard from './MedicalDocumentCard';
 import DocumentPreview from './DocumentPreview';
 import UploadModal from './UploadModal';
 import GovernmentSchemes from './GovernmentSchemes';
+import EmergencyHealthPassportModal from './EmergencyHealthPassportModal';
 import { getDocuments, deleteDocument } from '../../services/vaultService';
 
 // ─── Single-Language Dictionaries (No Mixed Text) ─────────
@@ -128,6 +129,7 @@ export default function FamilyDashboard({ family, members, onLogout, onBack, onO
   const [searchQuery, setSearchQuery] = useState("");
   const [previewDoc, setPreviewDoc] = useState(null);
   const [showUpload, setShowUpload] = useState(false);
+  const [showHealthPassport, setShowHealthPassport] = useState(false);
 
   const selectedMember = members.find(m => m.id === selectedMemberId) || members[0];
 
@@ -187,14 +189,23 @@ export default function FamilyDashboard({ family, members, onLogout, onBack, onO
         </div>
 
         {/* Right Section: Universal Language Switcher & Sign Out */}
-        <div className="flex items-center gap-2.5 sm:gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
+          <button
+            onClick={() => setShowHealthPassport(true)}
+            className="px-3 py-1 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-black text-xs rounded-full flex items-center gap-1.5 shadow-sm shadow-red-900/20 transition-transform active:scale-95 cursor-pointer"
+            title="Open Emergency Health Passport"
+          >
+            <Shield className="w-3.5 h-3.5 text-white" />
+            <span>Health Passport</span>
+          </button>
+
           {onOpenEmergencySOS && (
             <button
               onClick={onOpenEmergencySOS}
-              className="px-3 py-1 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-black text-xs rounded-full flex items-center gap-1.5 shadow-sm shadow-red-900/20 transition-transform active:scale-95 cursor-pointer animate-pulse"
+              className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-black text-xs rounded-full flex items-center gap-1.5 border border-slate-200 transition-transform active:scale-95 cursor-pointer"
               title="Trigger 24x7 Emergency SOS"
             >
-              <Siren className="w-3.5 h-3.5" />
+              <Siren className="w-3.5 h-3.5 text-red-600" />
               <span>24x7 SOS</span>
             </button>
           )}
@@ -234,21 +245,41 @@ export default function FamilyDashboard({ family, members, onLogout, onBack, onO
         </div>
       </header>
 
-      {/* ── Member Switcher Strip ── */}
-      <div className="flex-shrink-0 bg-white/60 backdrop-blur-sm border-b border-amber-100/40 py-2.5 px-4 z-20">
-        <div className="max-w-4xl mx-auto flex gap-3 overflow-x-auto scrollbar-hide">
+      {/* ── Member Switcher Strip (Rural Shared Device Mode) ── */}
+      <div className="flex-shrink-0 bg-white/90 backdrop-blur-sm border-b border-amber-100 py-2.5 px-4 z-20 shadow-2xs">
+        <div className="max-w-4xl mx-auto flex items-center justify-between gap-2 mb-1.5">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-black uppercase tracking-wider text-amber-900 bg-amber-100/90 border border-amber-200 px-2.5 py-0.5 rounded-full flex items-center gap-1.5 shadow-2xs">
+              <Users className="w-3 h-3 text-amber-700" />
+              Shared Family Phone · Member Switcher
+            </span>
+            <span className="text-[11px] text-slate-500 font-semibold hidden md:inline">
+              Tap any family member to switch health records instantly
+            </span>
+          </div>
+
+          <button
+            onClick={() => setShowHealthPassport(true)}
+            className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 px-2.5 py-0.5 rounded-full cursor-pointer transition-colors"
+          >
+            <Shield className="w-3 h-3 text-red-600" />
+            <span>Emergency QR Passport</span>
+          </button>
+        </div>
+
+        <div className="max-w-4xl mx-auto flex gap-3 overflow-x-auto scrollbar-hide pt-0.5">
           {members.map(m => {
             const isActive = m.id === selectedMember.id;
             return (
               <button key={m.id} onClick={() => setSelectedMemberId(m.id)}
-                className={`flex items-center gap-2.5 px-3 py-1.5 rounded-full border transition-all duration-300 shrink-0 cursor-pointer ${
+                className={`flex items-center gap-2.5 px-3.5 py-2 rounded-2xl border transition-all duration-300 shrink-0 cursor-pointer ${
                   isActive 
-                    ? "border-amber-300 bg-amber-50/90 shadow-sm" 
-                    : "border-transparent bg-white shadow-sm hover:border-slate-200 opacity-70 hover:opacity-100"
+                    ? "border-amber-400 bg-amber-50/90 shadow-sm ring-2 ring-amber-400/20" 
+                    : "border-slate-200 bg-white shadow-2xs hover:border-amber-200 opacity-75 hover:opacity-100"
                 }`}>
                 
                 {m.avatar_url ? (
-                  <img src={m.avatar_url} alt={m.name} className={`w-8 h-8 rounded-full object-cover shadow-sm ${isActive ? "ring-2 ring-amber-400" : ""}`} />
+                  <img src={m.avatar_url} alt={m.name} className={`w-8 h-8 rounded-full object-cover shadow-xs ${isActive ? "ring-2 ring-amber-400" : ""}`} />
                 ) : (
                   <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[13px] font-black ${
                     isActive ? "bg-gradient-to-br from-amber-400 to-amber-500 text-white" : "bg-slate-100 text-[#64748B]"
@@ -258,10 +289,10 @@ export default function FamilyDashboard({ family, members, onLogout, onBack, onO
                 )}
                 
                 <div className="text-left flex flex-col justify-center">
-                  <p className={`text-[12px] font-bold leading-none truncate max-w-[80px] ${isActive ? "text-[#16324F]" : "text-[#64748B]"}`}>
+                  <p className={`text-[12px] font-black leading-none truncate max-w-[90px] ${isActive ? "text-[#16324F]" : "text-[#64748B]"}`}>
                     {m.name.split(" ")[0]}
                   </p>
-                  <p className={`text-[8px] font-black uppercase tracking-widest mt-0.5 ${isActive ? "text-amber-700" : "text-[#94A3B8]"}`}>
+                  <p className={`text-[8px] font-black uppercase tracking-widest mt-1 ${isActive ? "text-amber-700" : "text-[#94A3B8]"}`}>
                     {m.relation_to_head === "Head" ? "HEAD" : (m.relation_to_head || "Member").toUpperCase()}
                   </p>
                 </div>
@@ -275,7 +306,11 @@ export default function FamilyDashboard({ family, members, onLogout, onBack, onO
         {/* ── Overview Tab ── */}
         {activeTab === "home" && (
           <div className="pb-36">
-            <PatientHome member={selectedMember} onNavigateTab={(tab) => setActiveTab(tab)} />
+            <PatientHome
+              member={selectedMember}
+              onNavigateTab={(tab) => setActiveTab(tab)}
+              onOpenHealthPassport={() => setShowHealthPassport(true)}
+            />
           </div>
         )}
         
@@ -479,6 +514,12 @@ export default function FamilyDashboard({ family, members, onLogout, onBack, onO
         <DocumentPreview
           doc={previewDoc}
           onClose={() => setPreviewDoc(null)}
+        />
+      )}
+      {showHealthPassport && (
+        <EmergencyHealthPassportModal
+          member={selectedMember}
+          onClose={() => setShowHealthPassport(false)}
         />
       )}
       
