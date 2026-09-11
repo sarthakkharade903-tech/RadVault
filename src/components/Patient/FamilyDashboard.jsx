@@ -160,7 +160,7 @@ export default function FamilyDashboard({ family, members, onLogout, onBack, onO
   const handleDeleteDoc = async (doc) => {
     if (!window.confirm(`Are you sure you want to delete "${doc.title || doc.file_name}"?`)) return;
     try {
-      await deleteDocument(doc.id);
+      await deleteDocument(doc.id, doc.file_path);
       setDocuments(prev => prev.filter(d => d.id !== doc.id));
     } catch (e) {
       console.error("Failed to delete document:", e);
