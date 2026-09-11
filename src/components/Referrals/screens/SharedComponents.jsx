@@ -379,6 +379,42 @@ export function TempInput({ value, onChange }) {
   );
 }
 
+// ─── Patient / Child Weight Input (No Spinners, Smooth Fast Typing) ───────────
+export function WeightInput({ value = '', onChange, label = 'Patient Weight (kg)', placeholder = 'e.g. 58' }) {
+  const handleWeightChange = (e) => {
+    let raw = e.target.value;
+    // Allow only digits and at most one decimal point
+    raw = raw.replace(/[^0-9.]/g, '');
+    const parts = raw.split('.');
+    if (parts.length > 2) {
+      raw = parts[0] + '.' + parts.slice(1).join('');
+    }
+    // Limit to 5 chars max (e.g. "120.5" or "90")
+    if (raw.length > 5) {
+      raw = raw.slice(0, 5);
+    }
+    onChange(raw);
+  };
+
+  return (
+    <div>
+      <label className="font-bold text-sm text-[#212121] block mb-2">{label}</label>
+      <div className="bg-white p-3 rounded-2xl border-2 border-slate-200 flex items-center justify-between focus-within:border-[#008F83] transition-colors">
+        <input
+          type="text"
+          inputMode="decimal"
+          value={value ?? ''}
+          onChange={handleWeightChange}
+          placeholder={placeholder}
+          className="text-lg font-black text-slate-900 focus:outline-none placeholder-slate-300 w-full"
+        />
+        <span className="text-xs font-bold text-slate-400 select-none">kg</span>
+      </div>
+    </div>
+  );
+}
+
+
 // ─── Integrated Clinical Voice Scribe (Marathi / Hindi / English) ─────────────
 export function ClinicalVoiceScribe({
   notes = '',

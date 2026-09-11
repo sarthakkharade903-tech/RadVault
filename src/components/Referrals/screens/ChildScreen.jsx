@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { YesNo, Stepper, ColorBandSelector, TempInput, SectionLabel, DangerBanner, VitalsContainer, ClinicalVoiceScribe } from './SharedComponents';
+import { YesNo, Stepper, ColorBandSelector, TempInput, WeightInput, SectionLabel, DangerBanner, VitalsContainer, ClinicalVoiceScribe } from './SharedComponents';
 
 const MUAC_OPTIONS = [
   {
@@ -90,20 +90,7 @@ export default function ChildScreen({ onComplete, initialVoiceNotes = '', initia
       </div>
 
       <VitalsContainer title="Growth & Temperature Vitals">
-        <div>
-          <label className="font-bold text-sm text-[#212121] block mb-2">Child Weight (kg)</label>
-          <div className="bg-white p-3 rounded-2xl border-2 border-slate-200 flex items-center justify-between">
-            <input
-              type="number"
-              step="0.1"
-              value={answers.weight}
-              onChange={(e) => set('weight', e.target.value)}
-              placeholder="e.g. 8.5"
-              className="text-lg font-black text-slate-900 focus:outline-none placeholder-slate-300 w-full"
-            />
-            <span className="text-xs font-bold text-slate-400">kg</span>
-          </div>
-        </div>
+        <WeightInput label="Child Weight (kg)" placeholder="e.g. 8.5" value={answers.weight} onChange={(v) => set('weight', v)} />
         <TempInput value={answers.temp} onChange={(v) => set('temp', v)} />
       </VitalsContainer>
 

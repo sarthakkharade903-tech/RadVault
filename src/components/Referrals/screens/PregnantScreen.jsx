@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { YesNo, Stepper, ColorBandSelector, BPInput, SectionLabel, DangerBanner, VitalsContainer, ClinicalVoiceScribe } from './SharedComponents';
+import { YesNo, Stepper, ColorBandSelector, BPInput, WeightInput, SectionLabel, DangerBanner, VitalsContainer, ClinicalVoiceScribe } from './SharedComponents';
 
 const HEMOGLOBIN_OPTIONS = [
   {
@@ -90,19 +90,7 @@ export default function PregnantScreen({ onComplete, initialVoiceNotes = '', ini
 
       <VitalsContainer title="ANC Clinical Measurements">
         <BPInput value={answers.bp} onChange={(v) => set('bp', v)} />
-        <div>
-          <label className="font-bold text-sm text-[#212121] block mb-2">Patient Weight (kg)</label>
-          <div className="bg-white p-3 rounded-2xl border-2 border-slate-200 flex items-center justify-between">
-            <input
-              type="number"
-              value={answers.weight}
-              onChange={(e) => set('weight', e.target.value)}
-              placeholder="e.g. 58"
-              className="text-lg font-black text-slate-900 focus:outline-none placeholder-slate-300 w-full"
-            />
-            <span className="text-xs font-bold text-slate-400">kg</span>
-          </div>
-        </div>
+        <WeightInput value={answers.weight} onChange={(v) => set('weight', v)} />
       </VitalsContainer>
 
       <div>
