@@ -30,7 +30,8 @@ import {
   FileText,
   Shield,
   Check,
-  Plus
+  Plus,
+  FileCode
 } from 'lucide-react';
 
 import { supabase, ensureRoleAuth } from '../../services/supabase';
@@ -43,6 +44,10 @@ import {
   generateClinicalAiSummary
 } from '../../services/ashaService';
 import { parseEmergencyRecord, updateEmergencyDispatch } from '../../services/emergencyService';
+import { registerCareContext } from '../../services/abdmService';
+import { mapConsultationToFhirBundle } from '../../services/fhirMapper';
+import ConsentRequestPanel from './ConsentRequestPanel';
+import FhirBundleModal from './FhirBundleModal';
 
 
 
@@ -128,6 +133,8 @@ export default function DoctorWorkspace({
 
   const [activeCase, setActiveCase] = useState(null);
   const [showSignModal, setShowSignModal] = useState(false);
+  const [showFhirModal, setShowFhirModal] = useState(false);
+  const [fhirModalBundle, setFhirModalBundle] = useState(null);
 
   const [consultationMode, setConsultationMode] = useState('IN_PERSON');
   const [clinicalAssessment, setClinicalAssessment] = useState('');
@@ -507,6 +514,29 @@ export default function DoctorWorkspace({
         session_duration_sec: teleCallTimer,
         care_request_id: activeTeleSession.care_request_id
       });
+
+      // Milestone 2: ABDM Care Context Registration for Teleconsultation
+      try {
+        await registerCareContext({
+          patient: {
+            id: activeTeleSession.patient_id,
+            name: activeTeleSession.patient_name,
+            abha_id: activeTeleSession.abha_id,
+            mobile: activeTeleSession.mobile
+          },
+          consultation: {
+            id: activeTeleSession.id,
+            diagnosis: teleDiagnosis || 'Viral Illness and Upper Respiratory Review',
+            clinical_assessment: `[REMOTE TELECONSULTATION] ${teleAdvice || 'Consultation complete'}`,
+            treatment_advice: teleAdvice,
+            prescriptions: (teleMedicines || []).map(m => ({ name: m.name, dose: m.dosage || m.dose, freq: m.frequency || m.freq, duration: m.duration }))
+          },
+          recordType: 'OPConsultation'
+        });
+      } catch (abdmErr) {
+        console.warn('[ABDM M2 Teleconsult] Care context note:', abdmErr.message);
+      }
+
       setTeleSaving(false);
       setShowTeleModal(false);
       setActiveTeleSession(null);
@@ -760,6 +790,22 @@ export default function DoctorWorkspace({
         } catch (_) {}
       } catch (e) {
         console.warn('[RadVault Doctor] Care request sync skipped:', e.message);
+      }
+
+      // Milestone 2: ABDM Care Context Registration & FHIR R4 Bundling
+      try {
+        await registerCareContext({
+          patient: {
+            id: activeCase.patient_id || activeCase.id,
+            name: activeCase.patient_name || activeCase.name,
+            abha_id: activeCase.abha_id || activeCase.vitals?.abha_number,
+            mobile: activeCase.patient_mobile || activeCase.phone
+          },
+          consultation: consultationPayload,
+          recordType: 'OPConsultation'
+        });
+      } catch (abdmErr) {
+        console.warn('[ABDM M2] Care context creation note:', abdmErr.message);
       }
 
       setReferrals(prev => prev.map(r => r.id === activeCase.id ? { ...r, status: 'Completed' } : r));
@@ -1689,6 +1735,9 @@ export default function DoctorWorkspace({
                   )}
                 </div>
 
+                {/* Milestone 3: ABDM HIU Consent & Longitudinal Records Desk */}
+                <ConsentRequestPanel patient={activeCase} onBreakGlass={handleBreakGlass} />
+
                 <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-2xs space-y-4">
                   <h3 className="text-xs font-black uppercase text-slate-400 tracking-wider">Patient Health Records History</h3>
                   
@@ -1952,21 +2001,54 @@ export default function DoctorWorkspace({
                       <span>Save Draft</span>
                     </button>
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!diagnosis.trim() || !treatmentAdvice.trim()) {
-                          setError('A clinical diagnosis and treatment advice are required to sign.');
-                          setTimeout(() => setError(''), 4000);
-                          return;
-                        }
-                        setShowSignModal(true);
-                      }}
-                      className="px-6 py-2.5 bg-[#7C3AED] hover:bg-[#6D28D9] text-white font-black text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition-transform active:scale-95 cursor-pointer"
-                    >
-                      <CheckCircle className="w-4 h-4" />
-                      <span>Sign Consultation</span>
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const b = mapConsultationToFhirBundle(
+                            {
+                              id: activeCase.id,
+                              diagnosis: diagnosis || 'Outpatient Clinical Consultation & Review',
+                              clinical_assessment: clinicalAssessment || 'Routine clinical assessment',
+                              treatment_advice: treatmentAdvice || 'Follow-up as advised',
+                              prescriptions: prescriptions,
+                              vitals: activeCase.vitals,
+                              created_at: new Date().toISOString()
+                            },
+                            {
+                              id: activeCase.patient_id || activeCase.id,
+                              name: activeCase.patient_name || activeCase.name,
+                              abhaNumber: activeCase.abha_id || activeCase.vitals?.abha_number || '91-2334-1727-2405',
+                              gender: activeCase.gender
+                            },
+                            doctorProfile,
+                            { name: doctorProfile?.facility_name || 'Primary Health Centre Shirwal', hfrId: 'IN2710001928' }
+                          );
+                          setFhirModalBundle(b);
+                          setShowFhirModal(true);
+                        }}
+                        className="px-3.5 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-black text-xs rounded-xl flex items-center gap-1.5 transition-all cursor-pointer"
+                      >
+                        <FileCode className="w-4 h-4 text-indigo-600" />
+                        <span>Inspect FHIR R4</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!diagnosis.trim() || !treatmentAdvice.trim()) {
+                            setError('A clinical diagnosis and treatment advice are required to sign.');
+                            setTimeout(() => setError(''), 4000);
+                            return;
+                          }
+                          setShowSignModal(true);
+                        }}
+                        className="px-6 py-2.5 bg-[#7C3AED] hover:bg-[#6D28D9] text-white font-black text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition-transform active:scale-95 cursor-pointer"
+                      >
+                        <CheckCircle className="w-4 h-4" />
+                        <span>Sign Consultation</span>
+                      </button>
+                    </div>
                   </div>
 
                 </div>
@@ -2535,6 +2617,15 @@ export default function DoctorWorkspace({
 
           </div>
         </div>
+      )}
+
+      {/* ABDM Milestone 2: NRCeS HL7 FHIR R4 DocumentBundle Inspector */}
+      {showFhirModal && fhirModalBundle && (
+        <FhirBundleModal
+          bundle={fhirModalBundle}
+          onClose={() => setShowFhirModal(false)}
+          title="Clinical Outpatient Consultation · NRCeS FHIR R4 Document"
+        />
       )}
 
     </div>
