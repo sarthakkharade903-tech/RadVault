@@ -1,9 +1,9 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { Share2, Link2, Copy, X, CheckCircle2, Lock } from 'lucide-react';
 
 export default function ShareModal({ record, isOpen, onClose }) {
-  if (!isOpen) return null;
   const [copied, setCopied] = useState(false);
+  if (!isOpen) return null;
   const shareLink = `https://radvault.care/shared/${record.id}`;
 
   const handleCopy = async () => {

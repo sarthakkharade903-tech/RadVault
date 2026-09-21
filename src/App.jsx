@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { HeartPulse, Leaf, Users, Building2, ArrowRight, Stethoscope, Database, Sparkles, Siren } from "lucide-react";
+import { HeartPulse, Leaf, Users, Building2, ArrowRight, Stethoscope, Database, Sparkles } from "lucide-react";
 import ASHAPortal from "./components/ASHA/ASHAPortal";
 import PatientLogin from "./components/Patient/PatientLogin";
 import FamilyDashboard from "./components/Patient/FamilyDashboard";
@@ -128,6 +128,7 @@ function LandingPage({ onSelectPortal, onOpenEmergencySOS }) {
                 return (
                   <button
                     key={key}
+                    data-portal={key}
                     onClick={() => onSelectPortal(key)}
                     onMouseEnter={() => setHoveredPortal(key)}
                     onFocus={() => setHoveredPortal(key)}
@@ -151,34 +152,36 @@ function LandingPage({ onSelectPortal, onOpenEmergencySOS }) {
               })}
             </div>
 
-            {/* ── Public 24x7 Emergency SOS Banner (No Login Required) ── */}
-            <div className="mt-4 p-4 rounded-2xl bg-gradient-to-r from-red-600 via-rose-600 to-red-700 text-white shadow-lg border border-red-500/50 flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3.5">
-                <div className="w-11 h-11 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-xl shrink-0">
-                  🚨
+            {/* ── Public 24x7 Emergency SOS Lifeline Strip (Subtle & Space-Efficient) ── */}
+            <button
+              onClick={onOpenEmergencySOS}
+              type="button"
+              className="mt-3.5 w-full group p-2.5 sm:p-3 rounded-2xl bg-rose-50/80 hover:bg-rose-100/90 border border-rose-200/80 hover:border-rose-300 transition-all duration-300 flex items-center justify-between gap-3 text-left cursor-pointer shadow-2xs"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-7 h-7 rounded-xl bg-rose-500/15 border border-rose-500/20 text-rose-600 flex items-center justify-center shrink-0">
+                  <span className="w-2 h-2 rounded-full bg-rose-600 animate-pulse" />
                 </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-black uppercase tracking-widest bg-white/25 px-2 py-0.5 rounded-full">
-                      24x7 Direct Dispatch
-                    </span>
-                    <span className="text-[10px] font-bold text-red-100">No Login Required</span>
-                  </div>
-                  <h3 className="text-sm font-black leading-snug mt-0.5">Acute Medical Emergency SOS</h3>
-                  <p className="text-[11px] text-red-100 font-medium leading-tight">
-                    Instant 108 Ambulance, ASHA escort & PHC casualty alert
-                  </p>
+                <div className="min-w-0 flex items-center gap-2">
+                  <span className="font-extrabold text-[12px] tracking-tight text-rose-950 shrink-0">
+                    24x7 Emergency SOS
+                  </span>
+                  <span className="text-rose-300 hidden sm:inline">•</span>
+                  <span className="text-[11px] font-medium text-rose-700 truncate hidden sm:inline">
+                    108 Ambulance & PHC Dispatch
+                  </span>
                 </div>
               </div>
-              <button
-                onClick={onOpenEmergencySOS}
-                type="button"
-                className="px-4 py-2.5 bg-white hover:bg-red-50 text-red-700 font-black text-xs rounded-xl shadow-md transition-transform active:scale-95 cursor-pointer shrink-0 flex items-center gap-1.5"
-              >
-                <span>Trigger SOS</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
+
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="text-[10px] font-black uppercase tracking-wider text-rose-700 bg-white/80 group-hover:bg-rose-600 group-hover:text-white px-2 py-0.5 rounded-lg border border-rose-200/60 transition-colors">
+                  No Login
+                </span>
+                <div className="w-5 h-5 rounded-full flex items-center justify-center text-rose-600 group-hover:translate-x-0.5 transition-transform">
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </div>
+              </div>
+            </button>
           </div>
 
           {/* â”€â”€ RIGHT: Real Illustration â”€â”€ */}
@@ -238,15 +241,83 @@ function LandingPage({ onSelectPortal, onOpenEmergencySOS }) {
 }
 
 function App() {
-  const [activePortal, setActivePortal] = useState(() => localStorage.getItem("radvault_portal") || "home");
+  const [activePortal, setActivePortal] = useState(() => {
+    if (typeof window !== "undefined") {
+      const p = new URLSearchParams(window.location.search).get("portal");
+      if (p) return p;
+    }
+    return localStorage.getItem("radvault_portal") || "home";
+  });
   const [familyAuthData, setFamilyAuthData] = useState(() => {
+    const defaultPatilFamily = {
+      family: {
+        id: "d9568f85-3c12-4a51-89c1-26d0c4c638ee",
+        family_name: "Patil Family",
+        head_name: "Rahul Patil",
+        head_of_family: "Rahul Patil",
+        village: "Vadgaon",
+        family_email: "sarthakkharade903@gmail.com"
+      },
+      members: [
+        {
+          id: "b6f81101-46d0-4b4d-8df0-9d9ce11a6a70",
+          name: "Rekha Bai",
+          age_years: 22,
+          gender: "Female",
+          blood_group: "O+",
+          phone: "9797979797",
+          mobile: "9797979797",
+          village: "Vadgaon",
+          relation_to_head: "Wife",
+          is_pregnant: true,
+          abha_id: "64-8837-7348-6384",
+          asha_verified_at: "2026-09-11T07:19:13.499Z"
+        },
+        {
+          id: "b1e7283e-388a-468b-a992-2b3520a77912",
+          name: "Rahul Patil",
+          age_years: 26,
+          gender: "Male",
+          blood_group: "B-",
+          phone: "9898989898",
+          mobile: "9898989898",
+          village: "Vadgaon",
+          relation_to_head: "Head of Family",
+          is_pregnant: false,
+          abha_id: "72-9104-5821-3940",
+          asha_verified_at: "2026-09-11T07:19:13.499Z"
+        }
+      ]
+    };
+
+    if (typeof window !== "undefined") {
+      const p = new URLSearchParams(window.location.search).get("family");
+      if (p === "demo") return defaultPatilFamily;
+    }
     const saved = localStorage.getItem("radvault_family_auth");
-    return saved ? JSON.parse(saved) : null;
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed?.family?.id === "f1111111-1111-1111-1111-111111111111" || !parsed?.members?.some(m => m.id === "b6f81101-46d0-4b4d-8df0-9d9ce11a6a70")) {
+          // Auto-upgrade legacy demo session to Patil Family with Rekha Bai
+          localStorage.setItem("radvault_family_auth", JSON.stringify(defaultPatilFamily));
+          return defaultPatilFamily;
+        }
+        return parsed;
+      } catch (_) {}
+    }
+    return null;
   });
   const [demoMode, setDemoMode] = useState(() => {
     return localStorage.getItem("radvault_demo_mode") === "true";
   });
-  const [showEmergencySOS, setShowEmergencySOS] = useState(false);
+  const [showEmergencySOS, setShowEmergencySOS] = useState(() => {
+    if (typeof window !== "undefined") {
+      const q = new URLSearchParams(window.location.search).get("sos");
+      if (q === "1" || q === "true") return true;
+    }
+    return false;
+  });
 
   useEffect(() => {
     localStorage.setItem("radvault_portal", activePortal);
@@ -278,6 +349,58 @@ function App() {
 
   const goHome = () => setActivePortal("home");
 
+  const openPatientJourneyForMember = (patientId, patientName) => {
+    const defaultFamily = {
+      family: {
+        id: "d9568f85-3c12-4a51-89c1-26d0c4c638ee",
+        family_name: "Patil Family",
+        head_name: "Rahul Patil",
+        head_of_family: "Rahul Patil",
+        village: "Vadgaon",
+        family_email: "sarthakkharade903@gmail.com"
+      },
+      members: [
+        {
+          id: patientId || "b6f81101-46d0-4b4d-8df0-9d9ce11a6a70",
+          name: patientName || "Rekha Bai",
+          age_years: 22,
+          age: 22,
+          gender: "Female",
+          blood_group: "B+",
+          relation_to_head: "Spouse",
+          phone: "9797979797",
+          mobile: "9797979797",
+          abha_id: "91-4567-8901-2345",
+          emergencyContact: { name: "Rahul Patil (Husband)", phone: "9876543210" }
+        },
+        {
+          id: "m2222222-2222-2222-2222-222222222222",
+          name: "Rahul Patil",
+          age_years: 26,
+          age: 26,
+          gender: "Male",
+          blood_group: "O+",
+          relation_to_head: "Head",
+          phone: "9876543210",
+          mobile: "9876543210",
+          abha_id: "91-1234-5678-9012"
+        },
+        {
+          id: "m3333333-3333-3333-3333-333333333333",
+          name: "Aarav Patil",
+          age_years: 3,
+          age: 3,
+          gender: "Male",
+          blood_group: "B+",
+          relation_to_head: "Child",
+          abha_id: "91-9988-7766-5544"
+        }
+      ]
+    };
+    setFamilyAuthData(prev => prev || defaultFamily);
+    setActivePortal("patient");
+  };
+
   return (
     <div className="min-h-screen flex flex-col font-sans">
       {/* ── Global Mode Bar: Always visible across all portals ── */}
@@ -295,15 +418,14 @@ function App() {
           </span>
         </div>
 
-        <div className="flex items-center gap-2.5 mt-1 sm:mt-0 flex-wrap">
-          {/* Public 24x7 Emergency SOS Helpline Button */}
+        <div className="flex items-center gap-3 mt-1 sm:mt-0">
           <button
             onClick={() => setShowEmergencySOS(true)}
-            className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white font-black text-[11px] rounded-full shadow-sm flex items-center gap-1.5 cursor-pointer border border-red-500 animate-pulse transition-all active:scale-95"
-            title="24x7 Public Emergency SOS Helpline (No Login Required)"
+            className="px-3 py-1 bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 hover:text-rose-200 border border-rose-500/40 rounded-full font-bold text-[11px] flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer shadow-xs"
+            title="Open 24x7 Emergency SOS"
           >
-            <Siren className="w-3.5 h-3.5 animate-bounce" />
-            <span>🚨 24x7 Emergency SOS</span>
+            <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+            <span className="tracking-wide font-extrabold">24x7 Emergency SOS</span>
           </button>
 
           <button
@@ -320,6 +442,7 @@ function App() {
 
           {activePortal !== "home" && (
             <button
+              data-action="all-portals"
               onClick={goHome}
               className="text-slate-400 hover:text-white font-semibold text-[11px] underline ml-1 cursor-pointer"
             >
@@ -337,7 +460,13 @@ function App() {
           !familyAuthData ? (
             <PatientLogin onLoggedIn={setFamilyAuthData} onBack={goHome} />
           ) : (
-            <FamilyDashboard family={familyAuthData.family} members={familyAuthData.members} onLogout={() => setFamilyAuthData(null)} onBack={goHome} />
+            <FamilyDashboard
+              family={familyAuthData.family}
+              members={familyAuthData.members}
+              onLogout={() => setFamilyAuthData(null)}
+              onBack={goHome}
+              onOpenEmergencySOS={() => setShowEmergencySOS(true)}
+            />
           )
         )}
         {activePortal === "reception" && (
@@ -354,18 +483,19 @@ function App() {
             goHome={goHome}
             isDemoMode={demoMode}
             demoDataEnabled={demoMode}
+            onOpenPatientJourney={openPatientJourneyForMember}
           />
         )}
         {activePortal === "home" && (
-          <LandingPage onSelectPortal={setActivePortal} onOpenEmergencySOS={() => setShowEmergencySOS(true)} />
+          <LandingPage
+            onSelectPortal={setActivePortal}
+            onOpenEmergencySOS={() => setShowEmergencySOS(true)}
+          />
         )}
       </div>
 
-      {/* Standalone 24x7 Emergency SOS Modal */}
       {showEmergencySOS && (
-        <EmergencySOSModal
-          onClose={() => setShowEmergencySOS(false)}
-        />
+        <EmergencySOSModal onClose={() => setShowEmergencySOS(false)} />
       )}
     </div>
   );

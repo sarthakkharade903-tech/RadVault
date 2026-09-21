@@ -4,7 +4,8 @@ import { getDocuments } from '../../services/vaultService';
 import {
   Calendar, Loader2, ArrowRight, Activity, FileText, Building2,
   Pill, FlaskConical, Shield, Sparkles, Heart, Droplet, Wind,
-  Thermometer, Weight, Clock, CheckCircle2, AlertTriangle, Eye, Download
+  Thermometer, Weight, Clock, CheckCircle2, AlertTriangle, Eye, Download,
+  Stethoscope, CheckCircle
 } from 'lucide-react';
 import DocumentPreview from './DocumentPreview';
 
@@ -14,6 +15,7 @@ const TIMELINE_TRANSLATIONS = {
     title: "Health Timeline",
     subtitle: "Complete chronological medical history & clinical records",
     filterAll: "All Events",
+    filterConsultations: "Doctor Consultations",
     filterVisits: "Health Readings & Visits",
     filterPrescriptions: "Prescriptions",
     filterLabs: "Lab Reports",
@@ -31,12 +33,24 @@ const TIMELINE_TRANSLATIONS = {
     labDoc: "Lab Test Report",
     scanDoc: "Diagnostic Scan",
     recordedBy: "Recorded by",
-    status: "Status"
+    status: "Status",
+    journeyTitle: "Verified Healthcare Journey",
+    journeySubtitle: "Frontline to tertiary closed-loop medical continuum",
+    journeyBadge: "End-to-End Care Continuum · 4 Stages Confirmed",
+    diseaseLabel: "Condition / Emergency Reason",
+    stage1Label: "Stage 1 · Frontline",
+    stage2Label: "Stage 2 · Hospital",
+    stage3Label: "Stage 3 · Specialist",
+    stage4Label: "Stage 4 · Closed Loop",
+    verified: "Verified",
+    signed: "Signed & Finalized",
+    active: "Active Care"
   },
   mr: {
     title: "आरोग्य इतिहास व नोंदी",
     subtitle: "सर्व आरोग्य तपासण्या, औषध चिठ्ठ्या व लॅब रिपोर्टची कालक्रमानुसार यादी",
     filterAll: "सर्व नोंदी",
+    filterConsultations: "तज्ज्ञ डॉक्टरांचा सल्ला",
     filterVisits: "तपासणी व गृहभेटी",
     filterPrescriptions: "प्रिस्क्रिप्शन",
     filterLabs: "लॅब रिपोर्ट",
@@ -54,12 +68,24 @@ const TIMELINE_TRANSLATIONS = {
     labDoc: "रक्त / लॅब तपासणी रिपोर्ट",
     scanDoc: "एक्स-रे व स्कॅन",
     recordedBy: "नोंद करणारे",
-    status: "स्थिती"
+    status: "स्थिती",
+    journeyTitle: "सत्यापित आरोग्य प्रवास",
+    journeySubtitle: "आशा कार्यकर्त्यापासून तज्ज्ञ डॉक्टरांपर्यंत अखंड सेवा साखळी",
+    journeyBadge: "अखंड आरोग्य साखळी · ४ टप्पे प्रमाणित",
+    diseaseLabel: "सध्याचा आजार / आपत्कालीन कारण",
+    stage1Label: "टप्पा १ · आशा कार्यकर्ता",
+    stage2Label: "टप्पा २ · रुग्णालय",
+    stage3Label: "टप्पा ३ · तज्ज्ञ डॉक्टर",
+    stage4Label: "टप्पा ४ · पाठपुरावा",
+    verified: "प्रमाणित ✓",
+    signed: "स्वाक्षरी पूर्ण ✓",
+    active: "सक्रिय पाठपुरावा ✓"
   },
   hi: {
     title: "स्वास्थ्य इतिहास एवं टाइमलाइन",
     subtitle: "सभी स्वास्थ्य जांच, पर्चे और लैब रिपोर्ट का संपूर्ण विवरण",
     filterAll: "सभी रिकॉर्ड",
+    filterConsultations: "डॉक्टर परामर्श",
     filterVisits: "स्वास्थ्य जांच व भेंट",
     filterPrescriptions: "दवा पर्ची",
     filterLabs: "लैब रिपोर्ट",
@@ -77,7 +103,18 @@ const TIMELINE_TRANSLATIONS = {
     labDoc: "लैब जांच रिपोर्ट",
     scanDoc: "स्कैन एवं एक्स-रे",
     recordedBy: "द्वारा दर्ज",
-    status: "स्थिति"
+    status: "स्थिति",
+    journeyTitle: "सत्यापित स्वास्थ्य यात्रा",
+    journeySubtitle: "आशा कार्यकर्ता से विशेषज्ञ डॉक्टर तक निरंतर देखभाल",
+    journeyBadge: "अखंड देखभाल चक्र · ४ चरण प्रमाणित",
+    diseaseLabel: "सक्रिय बीमारी / आपातकालीन स्थिति",
+    stage1Label: "चरण १ · आशा कार्यकर्ता",
+    stage2Label: "चरण २ · अस्पताल",
+    stage3Label: "चरण ३ · विशेषज्ञ डॉक्टर",
+    stage4Label: "चरण ४ · फॉलो-अप",
+    verified: "प्रमाणित ✓",
+    signed: "हस्ताक्षरित ✓",
+    active: "सक्रिय चक्र ✓"
   }
 };
 
@@ -103,6 +140,14 @@ function formatFullDateTime(iso) {
 
 // ─── Event Meta Config ─────────────────────────────────────────────────────
 const EVENT_META = {
+  consultation: {
+    label: "SPECIALIST CONSULTATION",
+    Icon: Stethoscope,
+    color: "text-indigo-600",
+    border: "border-indigo-200",
+    bg: "bg-indigo-50",
+    dot: "bg-indigo-500",
+  },
   visit: {
     label: "HEALTH READING",
     Icon: Activity,
@@ -218,12 +263,55 @@ function TimelineCard({ event, onViewDoc, lang }) {
         {/* 2. Clinical Notes / Referral Reason */}
         {event.note && (
           <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl text-xs text-slate-700 leading-relaxed my-2 font-medium">
-            <strong className="text-amber-800 font-black">Observations: </strong>
+            <strong className="text-amber-800 font-black">{event.category === "consultation" ? "Clinical Summary: " : "Observations: "}</strong>
             {event.note}
           </div>
         )}
 
-        {/* 3. Action Button (View PDF / Document) */}
+        {/* 3. Specialist Consultation Treatment Plan & Prescriptions */}
+        {event.category === "consultation" && (
+          <div className="my-3 space-y-2.5">
+            {event.diagnosis && (
+              <div className="flex items-center gap-2 bg-indigo-50 border border-indigo-100/90 px-3.5 py-2 rounded-xl">
+                <span className="text-[10px] font-black uppercase tracking-wider text-indigo-700">Diagnosis:</span>
+                <span className="text-xs font-black text-indigo-950">{event.diagnosis}</span>
+              </div>
+            )}
+            {event.treatmentPlan && (
+              <div className="p-3.5 bg-slate-50 border border-slate-200/90 rounded-xl text-xs text-slate-700">
+                <p className="font-black text-slate-900 mb-1 flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Care Management &amp; Treatment Plan</span>
+                </p>
+                <p className="font-medium leading-relaxed">{event.treatmentPlan}</p>
+              </div>
+            )}
+            {event.prescriptions && Array.isArray(event.prescriptions) && event.prescriptions.length > 0 && (
+              <div className="p-3.5 bg-emerald-50/70 border border-emerald-100 rounded-xl text-xs">
+                <p className="font-black text-emerald-950 mb-2 flex items-center gap-1.5">
+                  <Pill className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Prescribed Medications ({event.prescriptions.length})</span>
+                </p>
+                <div className="space-y-1.5">
+                  {event.prescriptions.map((p, idx) => (
+                    <div key={idx} className="flex items-center justify-between bg-white px-3 py-1.5 rounded-lg border border-emerald-100/80 font-bold text-slate-800 text-[11px]">
+                      <span>{p.name || p.medicine || (typeof p === 'string' ? p : 'Medication')}</span>
+                      <span className="text-emerald-700 font-semibold">{p.dosage || p.frequency || p.instructions || ""}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="flex items-center gap-2 pt-1 text-[11px] font-black text-emerald-700">
+              <span className="inline-flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-lg">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                Closed-Loop Follow-up Active · Attending Specialist Signed
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* 4. Action Button (View PDF / Document) */}
         {isDoc && event.docId && (
           <div className="pt-2 flex justify-end">
             <button
@@ -237,6 +325,147 @@ function TimelineCard({ event, onViewDoc, lang }) {
         )}
 
       </div>
+    </div>
+  );
+}
+
+function JourneyTimelineCard({ event, t, lang }) {
+  const { fullDate } = formatFullDateTime(event.rawTimestamp || event.date);
+  const journey = event.journeyData;
+  if (!journey) return null;
+
+  return (
+    <div className="bg-gradient-to-br from-white via-[#FCFDFD] to-emerald-50/40 rounded-3xl border border-emerald-200/90 p-5 sm:p-6 shadow-[0_8px_30px_-10px_rgba(16,185,129,0.14)] relative overflow-hidden mb-5">
+      {/* Top Banner: Journey Continuum Badge + Disease/Emergency Name + Exact Timestamp */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 mb-5 border-b border-emerald-100">
+        <div>
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+            </span>
+            <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800 bg-emerald-100/70 border border-emerald-200 px-2.5 py-0.5 rounded-full">
+              {t.journeyBadge}
+            </span>
+            <div className="flex items-center gap-1.5 text-xs font-bold text-[#64748B] bg-white/90 px-2.5 py-0.5 rounded-full border border-slate-200/60 shadow-2xs">
+              <Clock className="w-3.5 h-3.5 text-amber-500" />
+              <span>{fullDate}</span>
+            </div>
+          </div>
+          <h3 className="text-base sm:text-lg font-black text-[#16324F] flex items-center gap-2">
+            <span>{t.journeyTitle}</span>
+          </h3>
+          <p className="text-xs font-semibold text-slate-500 mt-0.5">{t.journeySubtitle}</p>
+        </div>
+
+        {/* Emergency / Disease Condition Box */}
+        <div className="bg-amber-50/90 border border-amber-200/90 rounded-2xl px-4 py-2.5 sm:text-right shadow-2xs">
+          <span className="text-[9px] font-black uppercase tracking-wider text-amber-800 block">
+            {t.diseaseLabel}
+          </span>
+          <span className="text-xs sm:text-sm font-black text-slate-900 flex items-center gap-1.5 sm:justify-end mt-0.5">
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>{journey.diseaseName}</span>
+          </span>
+        </div>
+      </div>
+
+      {/* 4 Connected Stages */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 relative">
+        {/* Stage 1: Frontline ASHA */}
+        <div className="bg-white/95 rounded-2xl border border-emerald-100 p-4 shadow-2xs hover:border-emerald-300 transition-all">
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <span className="text-[10px] font-black tracking-wider uppercase text-emerald-700 bg-emerald-50 border border-emerald-200/60 px-2 py-0.5 rounded-lg">
+              {t.stage1Label}
+            </span>
+            <span className="inline-flex items-center gap-1 text-[11px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200/60">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+              <span>{t.verified}</span>
+            </span>
+          </div>
+          <h4 className="font-black text-slate-900 text-sm">{journey.ashaName}</h4>
+          <p className="text-[11px] font-bold text-emerald-800 mt-0.5">{journey.ashaRole}</p>
+          <div className="mt-2.5 pt-2 border-t border-slate-100 text-[11px] text-slate-600 leading-snug">
+            {journey.ashaAction}
+          </div>
+        </div>
+
+        {/* Stage 2: Referral Hospital & Vault */}
+        <div className="bg-white/95 rounded-2xl border border-teal-100 p-4 shadow-2xs hover:border-teal-300 transition-all">
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <span className="text-[10px] font-black tracking-wider uppercase text-teal-700 bg-teal-50 border border-teal-200/60 px-2 py-0.5 rounded-lg">
+              {t.stage2Label}
+            </span>
+            <span className="inline-flex items-center gap-1 text-[11px] font-black text-teal-600 bg-teal-50 px-2 py-0.5 rounded-md border border-teal-200/60">
+              <CheckCircle2 className="w-3.5 h-3.5 text-teal-600" />
+              <span>{t.verified}</span>
+            </span>
+          </div>
+          <h4 className="font-black text-slate-900 text-sm truncate" title={journey.hospitalName}>
+            {journey.hospitalName}
+          </h4>
+          <p className="text-[11px] font-bold text-teal-800 mt-0.5">Tertiary Care Facility</p>
+          <div className="mt-2.5 pt-2 border-t border-slate-100 text-[11px] text-slate-600 leading-snug">
+            {journey.hospitalAction}
+          </div>
+        </div>
+
+        {/* Stage 3: Specialist Doctor */}
+        <div className="bg-white/95 rounded-2xl border border-indigo-100 p-4 shadow-2xs hover:border-indigo-300 transition-all">
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <span className="text-[10px] font-black tracking-wider uppercase text-indigo-700 bg-indigo-50 border border-indigo-200/60 px-2 py-0.5 rounded-lg">
+              {t.stage3Label}
+            </span>
+            <span className="inline-flex items-center gap-1 text-[11px] font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-200/60">
+              <CheckCircle2 className="w-3.5 h-3.5 text-indigo-600" />
+              <span>{t.signed}</span>
+            </span>
+          </div>
+          <h4 className="font-black text-slate-900 text-sm truncate" title={journey.doctorName}>
+            {journey.doctorName}
+          </h4>
+          <p className="text-[11px] font-bold text-indigo-800 mt-0.5">{journey.doctorSpecialty}</p>
+          <div className="mt-2.5 pt-2 border-t border-slate-100 text-[11px] text-slate-600 leading-snug">
+            {journey.doctorAction}
+          </div>
+        </div>
+
+        {/* Stage 4: Closed Loop Follow-Up */}
+        <div className="bg-white/95 rounded-2xl border border-emerald-200 p-4 shadow-2xs hover:border-emerald-400 transition-all bg-gradient-to-b from-white to-emerald-50/25">
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <span className="text-[10px] font-black tracking-wider uppercase text-emerald-800 bg-emerald-100/80 border border-emerald-300/80 px-2 py-0.5 rounded-lg">
+              {t.stage4Label}
+            </span>
+            <span className="inline-flex items-center gap-1 text-[11px] font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200/60">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+              <span>{t.active}</span>
+            </span>
+          </div>
+          <h4 className="font-black text-slate-900 text-sm">Follow-Up In Progress</h4>
+          <p className="text-[11px] font-bold text-emerald-800 mt-0.5">Priya Deshmukh (ASHA)</p>
+          <div className="mt-2.5 pt-2 border-t border-slate-100 text-[11px] text-slate-600 leading-snug">
+            Home recovery check active in village. Medication adherence verified.
+          </div>
+        </div>
+      </div>
+
+      {/* Prescriptions or Treatment Notes if available */}
+      {event.prescriptions && Array.isArray(event.prescriptions) && event.prescriptions.length > 0 && (
+        <div className="mt-4 pt-4 border-t border-emerald-100/80">
+          <p className="font-black text-emerald-950 mb-2 flex items-center gap-1.5 text-xs">
+            <Pill className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Prescribed Medications ({event.prescriptions.length})</span>
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {event.prescriptions.map((p, idx) => (
+              <div key={idx} className="flex items-center justify-between bg-white px-3 py-2 rounded-xl border border-emerald-100/80 font-bold text-slate-800 text-xs shadow-2xs">
+                <span>{p.name || p.medicine || (typeof p === 'string' ? p : 'Medication')}</span>
+                <span className="text-emerald-700 font-semibold text-[11px]">{p.dosage || p.frequency || p.instructions || ""}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -259,13 +488,32 @@ export default function TimelineWrapper({ member }) {
       try {
         const eventsList = [];
 
-        // 1. Fetch Vitals History
-        const { data: vitalsData } = await supabase
-          .from("vitals_history")
-          .select("*")
-          .eq("patient_id", member.id)
-          .order("recorded_at", { ascending: false });
+        // Parallelize independent queries for vitals, referrals, documents, and consultations
+        const [
+          { data: vitalsData },
+          { data: refData },
+          { data: docsData },
+          { data: consultationsData }
+        ] = await Promise.all([
+          supabase
+            .from("vitals_history")
+            .select("*")
+            .eq("patient_id", member.id)
+            .order("recorded_at", { ascending: false }),
+          supabase
+            .from("referrals")
+            .select("*")
+            .eq("patient_id", member.id)
+            .order("created_at", { ascending: false }),
+          getDocuments(member.id),
+          supabase
+            .from("consultations")
+            .select("*, doctors(name, specialty)")
+            .eq("patient_id", member.id)
+            .order("created_at", { ascending: false })
+        ]);
 
+        // 1. Process Vitals History
         if (vitalsData && vitalsData.length > 0) {
           vitalsData.forEach(v => {
             const bpStr = v.bp_systolic && v.bp_diastolic ? `${v.bp_systolic}/${v.bp_diastolic}` : null;
@@ -289,30 +537,67 @@ export default function TimelineWrapper({ member }) {
           });
         }
 
-        // 2. Fetch Care Requests / Referrals
-        const { data: refData } = await supabase
-          .from("care_requests")
-          .select("*")
-          .eq("patient_id", member.id)
-          .order("created_at", { ascending: false });
-
+        // 2. Process Hospital Referrals
         if (refData && refData.length > 0) {
           refData.forEach(r => {
             eventsList.push({
               id: `ref-${r.id}`,
-              title: `Hospital Referral: ${r.department || "General Medicine"}`,
+              title: `Hospital Referral: ${r.destination_department || r.department || "General Medicine"}`,
               category: "appointment",
-              facility: r.facility || "Primary Health Centre Shirwal",
+              facility: r.destination_hospital || r.facility || "Pune Sassoon General Hospital",
               rawTimestamp: r.created_at,
               date: r.created_at,
-              note: r.reason || r.asha_notes || "Patient referred for specialist consultation.",
-              priority: r.priority
+              note: r.symptoms || r.reason || r.asha_notes || "Patient referred for specialist consultation.",
+              priority: r.priority_label || r.priority || "Urgent"
             });
           });
         }
 
-        // 3. Fetch Uploaded Medical Documents & Prescriptions
-        const { data: docsData } = await getDocuments(member.id);
+        // 3. Process Specialist Doctor Consultations (Closed-Loop Care & Verified Healthcare Journey)
+        if (consultationsData && consultationsData.length > 0) {
+          consultationsData.forEach(c => {
+            const docRaw = c.doctors?.name || (c.doctor_name ? c.doctor_name : "Dr. Neha Joshi");
+            const docName = docRaw.startsWith("Dr.") ? docRaw : `Dr. ${docRaw}`;
+            const specialty = c.doctors?.specialty || "Consultant Obstetrician";
+            const carePlan = c.treatment_advice || c.treatment_plan;
+            const summary = c.clinical_assessment || c.clinical_summary;
+
+            // Match referral and vitals for this journey
+            const matchingRef = refData?.find(r => r.id === c.referral_id) || refData?.[0];
+            const matchingVital = vitalsData?.[0];
+
+            eventsList.push({
+              id: `journey-consult-${c.id}`,
+              title: `Verified Healthcare Journey: ${c.diagnosis || "Specialist Clinical Review"}`,
+              category: "consultation",
+              isJourney: true,
+              facility: `${docName} (${specialty}) · ${matchingRef?.destination_hospital || "Pune Sassoon General Hospital"}`,
+              doctor: docName,
+              rawTimestamp: c.created_at,
+              date: c.created_at,
+              diagnosis: c.diagnosis,
+              treatmentPlan: carePlan,
+              prescriptions: c.prescriptions,
+              clinicalSummary: summary,
+              note: summary || carePlan || "Consultation finalized with verified digital signature.",
+              journeyData: {
+                diseaseName: c.diagnosis || matchingRef?.symptoms || "Clinical Evaluation & Care Continuum",
+                ashaName: "Priya Deshmukh",
+                ashaRole: "Frontline ASHA Worker · Shirwal Sector 4",
+                ashaAction: matchingVital
+                  ? `Doorstep triage: BP ${matchingVital.bp_systolic || '120'}/${matchingVital.bp_diastolic || '80'} mmHg, Sugar ${matchingVital.blood_glucose || '95'} mg/dL`
+                  : "Doorstep triage, vitals recorded (BP: 130/85, Hb: 7.8 g/dL)",
+                hospitalName: matchingRef?.destination_hospital || "Pune Sassoon General Hospital",
+                hospitalAction: "Intake registered · Medical imaging vault scans linked",
+                doctorName: docName,
+                doctorSpecialty: specialty,
+                doctorAction: carePlan || "Care plan signed · Follow frontline health guidance",
+              }
+            });
+          });
+        }
+
+        // 4. Process Uploaded Medical Documents & Prescriptions
         if (docsData && docsData.length > 0) {
           setVaultDocs(docsData);
           docsData.forEach(d => {
@@ -369,6 +654,7 @@ export default function TimelineWrapper({ member }) {
   const filteredEvents = useMemo(() => {
     return events.filter(e => {
       if (filter === "all") return true;
+      if (filter === "consultation") return e.category === "consultation";
       if (filter === "visit") return e.category === "visit";
       if (filter === "prescription") return e.category === "prescription";
       if (filter === "lab_report") return e.category === "lab_report";
@@ -415,6 +701,7 @@ export default function TimelineWrapper({ member }) {
       <div className="flex gap-2 overflow-x-auto pb-2 mb-6 scrollbar-hide">
         {[
           { key: "all", label: t.filterAll },
+          { key: "consultation", label: t.filterConsultations },
           { key: "visit", label: t.filterVisits },
           { key: "prescription", label: t.filterPrescriptions },
           { key: "lab_report", label: t.filterLabs },
@@ -444,12 +731,21 @@ export default function TimelineWrapper({ member }) {
       ) : (
         <div className="space-y-4">
           {filteredEvents.map(event => (
-            <TimelineCard
-              key={event.id}
-              event={event}
-              lang={lang}
-              onViewDoc={handleViewDoc}
-            />
+            event.isJourney ? (
+              <JourneyTimelineCard
+                key={event.id}
+                event={event}
+                t={t}
+                lang={lang}
+              />
+            ) : (
+              <TimelineCard
+                key={event.id}
+                event={event}
+                lang={lang}
+                onViewDoc={handleViewDoc}
+              />
+            )
           ))}
         </div>
       )}

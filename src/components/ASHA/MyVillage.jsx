@@ -686,7 +686,16 @@ export default function MyVillage({
                                 </p>
                               </div>
 
-                              <div className="flex gap-1">
+                              <div className="flex gap-1 flex-wrap items-center">
+                                {p.abha_id && p.abha_id !== "PENDING" && p.abha_id !== "Not linked yet" ? (
+                                  <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 rounded text-[8px] font-black uppercase">
+                                    ✓ ABHA
+                                  </span>
+                                ) : (
+                                  <span className="bg-amber-50 text-amber-800 border border-amber-200 px-1.5 py-0.5 rounded text-[8px] font-bold uppercase">
+                                    No ABHA
+                                  </span>
+                                )}
                                 {p.is_pregnant && (
                                   <span className="bg-rose-50 text-rose-700 border border-rose-200 px-1.5 py-0.5 rounded text-[9px] font-bold">
                                     ANC

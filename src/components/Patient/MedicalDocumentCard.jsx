@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   FileText, Droplet, Pill, FileImage, Syringe, Stethoscope, Sparkles,
-  ArrowRight, FlaskConical, Building2, Share2, Eye, Download, Check
+  ArrowRight, FlaskConical, Building2, Share2, Eye, Download, Check, Trash2
 } from 'lucide-react';
 
 const CATEGORY_META = {
@@ -25,7 +25,7 @@ function fmtBytes(bytes) {
   return `${(bytes / 1048576).toFixed(1)} MB`;
 }
 
-export default function MedicalDocumentCard({ doc, onView }) {
+export default function MedicalDocumentCard({ doc, onView, onDelete }) {
   const [showAI, setShowAI] = useState(false);
   const [copied, setCopied] = useState(false);
   const meta = CATEGORY_META[doc.category] || CATEGORY_META['Other'];
@@ -99,11 +99,20 @@ export default function MedicalDocumentCard({ doc, onView }) {
           </button>
           <button
             onClick={() => setShowAI(true)}
-            className="flex items-center justify-center gap-1.5 text-xs font-bold text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-200 px-4 py-2.5 rounded-xl transition-all cursor-pointer"
+            className="flex items-center justify-center gap-1.5 text-xs font-bold text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-200 px-3.5 py-2.5 rounded-xl transition-all cursor-pointer"
           >
             <Sparkles className="w-3.5 h-3.5 text-amber-600" />
             <span>Explain</span>
           </button>
+          {onDelete && (
+            <button
+              onClick={() => onDelete(doc)}
+              className="p-2.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 border border-rose-200/80 rounded-xl transition-colors cursor-pointer"
+              title="Delete Document"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
         </div>
       </div>
 

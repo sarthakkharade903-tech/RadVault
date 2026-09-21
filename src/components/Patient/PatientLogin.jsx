@@ -71,9 +71,61 @@ export default function PatientLogin({ onLoggedIn, onBack }) {
                 </div>
               </div>
               <button type="submit" disabled={loading}
-                className="w-full bg-teal-600 hover:bg-teal-700 disabled:bg-teal-400 text-white font-bold py-3.5 rounded-xl shadow-md flex items-center justify-center gap-2 transition-all mt-2">
+                className="w-full bg-teal-600 hover:bg-teal-700 disabled:bg-teal-400 text-white font-bold py-3.5 rounded-xl shadow-md flex items-center justify-center gap-2 transition-all mt-2 cursor-pointer">
                 {loading && <Loader2 className="w-4 h-4 animate-spin" />}
                 {loading ? "Signing in..." : "Sign In to Family Portal"}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const demoAuth = {
+                    family: {
+                      id: "d9568f85-3c12-4a51-89c1-26d0c4c638ee",
+                      family_name: "Patil Family",
+                      head_name: "Rahul Patil",
+                      head_of_family: "Rahul Patil",
+                      village: "Vadgaon",
+                      family_email: "sarthakkharade903@gmail.com"
+                    },
+                    members: [
+                      {
+                        id: "b6f81101-46d0-4b4d-8df0-9d9ce11a6a70",
+                        name: "Rekha Bai",
+                        age_years: 22,
+                        age: 22,
+                        gender: "Female",
+                        blood_group: "O+",
+                        phone: "9797979797",
+                        mobile: "9797979797",
+                        village: "Vadgaon",
+                        relation_to_head: "Wife",
+                        is_pregnant: true,
+                        abha_id: "64-8837-7348-6384",
+                        asha_verified_at: "2026-09-11T07:19:13.499Z"
+                      },
+                      {
+                        id: "b1e7283e-388a-468b-a992-2b3520a77912",
+                        name: "Rahul Patil",
+                        age_years: 26,
+                        age: 26,
+                        gender: "Male",
+                        blood_group: "B-",
+                        phone: "9898989898",
+                        mobile: "9898989898",
+                        village: "Vadgaon",
+                        relation_to_head: "Head of Family",
+                        is_pregnant: false,
+                        abha_id: "72-9104-5821-3940",
+                        asha_verified_at: "2026-09-11T07:19:13.499Z"
+                      }
+                    ]
+                  };
+                  if (onLoggedIn) onLoggedIn(demoAuth);
+                }}
+                className="w-full bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 font-bold py-2.5 rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer mt-2"
+              >
+                <span>⚡ Quick Demo Family Login</span>
               </button>
             </form>
           </div>

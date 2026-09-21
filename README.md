@@ -1,271 +1,175 @@
-# 🏥 RadVault — Patient & Frontline Healthcare Portal
+# 🏥 RadVault — Universal Connected Healthcare Platform
 
-> **"One patient. One connected health journey."**  
-> *Consent-Driven Universal Medical Imaging & Emergency Health Record Exchange for Rural and Underserved Communities.*
-
----
-
-## 📌 Executive Summary
-
-**RadVault** is a unified digital health continuity and radiology vault platform built for hackathons and production healthcare scenarios. It bridges the gap between rural frontline healthcare workers (ASHAs / PHCs), patients, and urban medical specialists through a **Unified Patient ID** (e.g. `MH-P-10482`).
-
-### The Problem in Rural Healthcare:
-Rural and underserved patients face long travel distances, severe specialist shortages, fragmented physical records (paper reports, films, CDs), repeated diagnostic tests, delayed hospital referrals, poor follow-up, and absence of critical data during emergency triage.
-
-### RadVault's Solution:
-Connects every stage of the patient's care lifecycle:
-$$\text{Patient / ASHA} \longrightarrow \text{Triage \& Vitals} \longrightarrow \text{Unified Patient ID} \longrightarrow \text{Referral} \longrightarrow \text{Specialist Consultation} \longrightarrow \text{Imaging Vault} \longrightarrow \text{Follow-up}$$
+> **"One Patient. One Connected Health Journey."**  
+> *Consent-driven medical record continuity, ASHA grassroots triage, digital health vault, and tele-radiology consultation platform for rural and underserved communities.*
 
 ---
 
-## 👥 Team Structure & Scope
+![RadVault Universal Connected Health Network](docs/images/01_landing_hero.png)
 
-The project consists of 6 developers divided into two specialized teams:
+---
+
+## 📌 What is RadVault?
+
+**RadVault** is an end-to-end connected healthcare ecosystem designed for rural and tier-2/3 regions. It bridges rural health workers (**ASHAs / PHCs**), patients, hospital receptionists, and urban medical specialists (**Doctors / Radiologists**) around a **Unified Patient & ABHA ID**.
+
+### ❌ The Rural Healthcare Problem:
+* **Fragmented Paper Records**: Patients carry paper files, X-ray films, and CDs across cities—often losing critical history.
+* **Specialist Shortages**: Rural primary health centers lack full-time radiologists and medical specialists.
+* **Duplicate Diagnostic Tests**: Inaccessible medical history leads to repeated, expensive X-rays and scans.
+* **Emergency Delays**: Paramedics at accident sites lack instant access to blood groups, allergies, or health records.
+
+### ✅ How RadVault Solves It:
+RadVault connects every stage of patient care into a single, synchronized digital pipeline—ensuring medical records follow the patient wherever they go.
+
+---
+
+## 🔄 End-to-End Care Workflow
+
+RadVault connects 6 key stages in a patient's healthcare journey:
 
 ```
-                          ┌────────────────────────┐
-                          │   RADVAULT PLATFORM    │
-                          └───────────┬────────────┘
-                                      │
-           ┌──────────────────────────┴──────────────────────────┐
-           ▼                                                     ▼
-┌───────────────────────────────┐             ┌───────────────────────────────┐
-│     TEAM A: PATIENT PORTAL    │             │   TEAM B: CLINICAL PORTAL     │
-│   (Frontline & Patient Web)   │             │ (Doctor & Diagnostics Engine) │
-└──────────────┬────────────────┘             └───────────────────────────────┘
-               │
-   ┌───────────┼───────────┐
-   ▼           ▼           ▼
-Member 1   Member 2    Member 3
- (YOU)     (Sujay)    (Teammate)
-```
-
-| Member | Assigned Ownership | Status |
-| :--- | :--- | :--- |
-| **Member 1 (You)** | • **Patient Home Dashboard** (`PatientHome.jsx`)<br>• **Frontend Architecture & Navigation Shell** (`App.jsx`)<br>• **Supabase Integration & Config** (`supabase.js`)<br>• **Database Schema & Row Level Security (RLS)** (`schema.sql`)<br>• **Global Patient State Context** (`PatientContext.jsx`)<br>• **Shared UI System & Color Theory** (Teal / Maroon / Saffron)<br>• **Module Integration Coordinator** | ✅ **Completed & Integrated** |
-| **Member 2 (Sujay)** | • **Patient Profile & Demographics** (`PatientProfile/`)<br>• **Health Timeline & Chronology** (`HealthTimeline/`)<br>• **Medical Records & Vault Viewer** (`MedicalRecords/`) | ✅ **Merged into `samir5243d`** |
-| **Member 3** | • **Specialist Referrals Management**<br>• **Doctor Appointments & Care Scheduling**<br>• **Emergency Break-Glass QR Code Generator & Audit Log** | 🔄 **Structured Placeholders Ready** |
-| **Team B** | • **Doctor / Clinical Diagnostic Workspace** (Radiology AI, DICOM uploads) | 🔒 **Isolated Portal** |
-
----
-
-## 🛠️ Tech Stack & Dependencies
-
-- **Frontend Framework**: React 19 (`react@^19.2.8`, `react-dom@^19.2.8`)
-- **Bundler & Dev Server**: Vite 8 (`vite@^8.2.2`)
-- **Styling Engine**: Tailwind CSS v4 (`@tailwindcss/vite@^4.3.3`, `tailwindcss@^4.3.3`)
-- **Iconography**: Lucide React (`lucide-react@^1.33.0`)
-- **Backend / Database**: Supabase (PostgreSQL 15+, Auth, Storage, Row Level Security)
-- **Client Library**: `@supabase/supabase-js@^2.112.3`
-- **Linter**: Oxlint (`oxlint@^1.75.0`)
-
----
-
-## 🎨 Cultural Color Palette & Design System
-
-Designed specifically for **Indian healthcare users**, senior citizens, and frontline workers. The theme uses a clean **light background (`#F9F9F9`)** with high-contrast text ($\ge 16\text{px}$) and emotionally resonant healthcare colors:
-
-| Color Role | Hex Code | Psychological & Clinical Meaning | Where It Is Used |
-| :--- | :--- | :--- | :--- |
-| **Background** | `#F9F9F9` | Clean, calm, accessible for senior eyes | Page canvas, main background |
-| **Card Surface** | `#FFFFFF` | Clear elevation & sharp focus | All cards, modals, dropdowns |
-| **Text Primary** | `#212121` | High-contrast dark charcoal (WCAG AA) | Headings, telemetry numbers, body copy |
-| **Text Secondary** | `#555555` | Soft readability for metadata | Subheadings, dates, hospital labels |
-| **Teal (Primary)** | `#008080` | Trust, medical calm, continuity | Brand headers, vitals outlines, nav icons |
-| **Maroon (Secondary)** | `#800000` | Authority, clinical seriousness | Patient name title, doctor names, active tab |
-| **Saffron (Accent)** | `#FF9933` | Warmth, energy, optimism | Greeting underline, action CTAs, emergency badges |
-| **Success Green** | `#2E7D32` | Healing, confirmed care | Confirmed appointments, "All Caught Up" banner |
-| **Warning Amber** | `#FFC107` | Caution, pending review | Pending specialist referrals, attention alerts |
-| **Error Red** | `#D32F2F` | Critical emergency triage | Blood group, critical allergies, emergency cross |
-
-### 🇮🇳 Culturally Familiar Icons:
-- 🏠 **Home**: Traditional sloping-roof Indian house icon (`Home`).
-- 📖 **Records**: Clinic register / medical notebook (`BookOpen`).
-- 🤝 **Referrals**: Doctor–patient connection handshake (`Handshake`).
-- 🛡️➕ **Emergency ID**: Saffron shield with bold red cross (`Shield` + `Plus`).
-- 👤 **Profile**: Circular avatar silhouette (`UserCircle2`).
-
----
-
-## 🗄️ Supabase Database Architecture
-
-Everything is anchored around the **Unified Patient ID** (`MH-P-10482`).
-
-```
-                              ┌──────────────────┐
-                              │  auth.users /    │
-                              │     profiles     │
-                              └────────┬─────────┘
-                                       │ 1:1
-                              ┌────────▼─────────┐
-                              │     patients     │
-                              │  (unified_id)    │
-                              └────────┬─────────┘
-                                       │ 1:N
-         ┌───────────────┬─────────────┼───────────────┬───────────────┐
-         ▼               ▼             ▼               ▼               ▼
-┌────────────────┐┌────────────┐┌─────────────┐┌───────────────┐┌──────────────┐
-│ health_records ││   vitals   ││ referrals   ││ appointments  ││medical_files │
-└────────────────┘└────────────┘└─────────────┘└───────────────┘└──────────────┘
-```
-
-### Tables Implemented in Member 1 Scope:
-1. **`patients`**: `id` (UUID PK), `unified_id` (Unique text), `full_name`, `age`, `gender`, `blood_group`, `contact`, `created_at`.
-2. **`vitals`**: `id` (UUID PK), `patient_id` (FK `patients.id` CASCADE), `blood_pressure`, `pulse`, `temperature`, `oxygen`, `recorded_at`.
-3. **`appointments`**: `id` (UUID PK), `patient_id` (FK `patients.id` CASCADE), `doctor_name`, `facility`, `appointment_date`, `appointment_time`, `status`, `created_at`.
-4. **`referrals`**, **`medical_files`**, **`emergency_profiles`**, **`access_logs`**: (Extended schema tables with foreign keys and RLS).
-
-### Row Level Security (RLS) & Query Optimization:
-- Explicit RLS enabled across all tables.
-- Public read access policies for `anon` and `authenticated` roles in demo/triage mode.
-- Composite indexes on `(patient_id, recorded_at DESC)` and `(patient_id, appointment_date)`.
-
----
-
-## 📂 Project Directory Structure
-
-```
-RadVault/
-├── .env.example                               # Environment template (URL & Anon key placeholders)
-├── .env.local                                 # Local development secrets (Git-ignored)
-├── .gitignore                                 # Git rules ignoring .env, .env.*, node_modules
-├── index.html                                 # Clean HTML5 entry with RadVault branding
-├── package.json                               # Unified dependencies and build scripts
-├── vite.config.js                             # Vite configuration with Tailwind CSS v4 plugin
-│
-├── src/
-│   ├── main.jsx                               # Root mounting with <React.StrictMode> & <PatientProvider>
-│   ├── App.jsx                                # Main Navigation Shell, Header, Portal Switcher, 6 Tabs
-│   ├── index.css                              # Tailwind v4 theme tokens, color variables & base CSS
-│   │
-│   ├── context/
-│   │   └── PatientContext.jsx                 # Global patient state, live fetch lifecycle, usePatient()
-│   │
-│   ├── services/
-│   │   ├── supabase.js                        # Supabase client singleton using Vite env variables
-│   │   ├── supabaseClient.js                  # Top-level client alias for cross-module imports
-│   │   └── patientService.js                  # getPatients(), getVitals(), getUpcomingAppointments()
-│   │
-│   ├── components/
-│   │   ├── common/
-│   │   │   └── LoadingSpinner.jsx             # Accessible animated Teal spinner with ARIA support
-│   │   │
-│   │   ├── dashboard/
-│   │   │   └── PatientHome.jsx                # ⭐ Member 1 Core: Patient Home Command Center
-│   │   │
-│   │   ├── MedicalRecords/                    # 📦 Member 2 (Sujay) Integrated Module
-│   │   │   ├── MedicalRecordsList.jsx         # Records list grid & detail modals
-│   │   │   ├── RecordCard.jsx                 # Scan thumbnail card (X-Ray, CT, MRI, Labs)
-│   │   │   ├── RecordFilters.jsx              # Modality filter chips
-│   │   │   └── RecordViewerModal.jsx          # Interactive report & inverted scan viewer
-│   │   │
-│   │   ├── HealthTimeline/                    # 📦 Member 2 (Sujay) Integrated Module
-│   │   │   ├── HealthTimeline.jsx             # Vertical chronological care event tracker
-│   │   │   ├── TimelineFilter.jsx             # Category filter buttons
-│   │   │   └── TimelineItem.jsx               # Event node with expandable clinical details
-│   │   │
-│   │   └── PatientProfile/                    # 📦 Member 2 (Sujay) Integrated Module
-│   │       ├── PatientProfileCard.jsx         # ABHA ID, demographics, emergency trigger
-│   │       ├── PatientVitals.jsx              # Historical vitals telemetry display
-│   │       └── PatientConditions.jsx          # Chronic conditions, allergies & medications
-│   │
-│   ├── data/
-│   │   └── mockPatientData.js                 # Fallback offline records for hackathon resiliency
-│   │
-│   ├── pages/
-│   │   └── PatientPortalPage.jsx              # Unified multi-module tab layout container
-│   │
-│   └── styles/
-│       └── patientModules.css                 # Unified stylesheet styled with Teal/Maroon/Saffron
+┌───────────────────────────┐      ┌───────────────────────────┐      ┌───────────────────────────┐
+│  STEP 1: VILLAGE TRIAGE   │ ───► │   STEP 2: PATIENT VAULT   │ ───► │  STEP 3: RADIOLOGY VAULT  │
+│ ASHA Worker Registration  │      │  ABHA ID & Vitals Track   │      │ Scan & Diagnostic Reports │
+└───────────────────────────┘      └───────────────────────────┘      └───────────────────────────┘
+                                                                                    │
+                                                                                    ▼
+┌───────────────────────────┐      ┌───────────────────────────┐      ┌───────────────────────────┐
+│  STEP 6: SPECIALIST CARE  │ ◄─── │  STEP 5: HOSPITAL INTAKE  │ ◄─── │  STEP 4: EMERGENCY SOS    │
+│ Tele-Radiology Review     │      │ Reception Queue & Triage  │      │ Zero-Login Ambulance QR   │
+└───────────────────────────┘      └───────────────────────────┘      └───────────────────────────┘
 ```
 
 ---
 
-## 💻 What Has Been Built (Screen-by-Screen)
+## 🚀 Interactive Workflow Walkthrough
 
-### 1. Patient Home Dashboard (`src/components/dashboard/PatientHome.jsx`)
-- **Personalized Greeting**: *"Good morning, Ramesh 👋"* with saffron warm accent underline.
-- **Patient Context & Unified ID**: Card displaying `MH-P-10482`, full name, age, gender, blood group in Red (`O+`), contact number, and Rural Health Link status.
-- **Multi-Patient Switcher**: Dropdown allowing seamless switching between registered patients in Supabase.
-- **"What Needs Your Attention" Section**: Dynamic triage alert showing confirmed consultations (Green) and pending referrals requiring action (Amber). Zero-state displays *"You're all caught up!"*.
-- **Upcoming Doctor Appointment**: Confirmed consultation preview showing Doctor name, Facility, Date, Time, and status pill.
-- **Emergency ID Card**: Red-highlighted emergency card showing blood group, critical allergies, emergency contact, and a bold Saffron CTA to open Emergency ID.
-- **Medical Records Card**: Document counter (12 total, 3 recently added) with Maroon CTA to view records.
-- **Latest Vitals Grid**: 4-card telemetry grid for Blood Pressure (`128/82 mmHg`), Heart Rate (`76 bpm`), SpO2 (`98%`), and Body Temp (`98.4°F`).
-- **Specialist Referrals Summary**: Active referrals counter with Doctor name in Maroon and Handshake icon.
-- **Recent Health Activity**: Chronological audit list of newly uploaded MRI scans, referrals, and lab reports with Teal timeline dots.
+### 👩‍⚕️ Step 1: ASHA Worker Grassroots Portal
+Empowers frontline health workers to register families, capture vital telemetry, and log routine village visits.
 
-### 2. Medical Records Vault (`src/components/MedicalRecords/`)
-- Filter by Modality: `All`, `Radiology (X-Ray/CT/MRI)`, `Lab Reports`, `Prescriptions`.
-- Interactive **RecordViewerModal**: Dual-pane modal with high-resolution scan viewer (invert contrast tool) and structured clinical findings/impressions signed by doctors.
+![ASHA Worker Portal](docs/images/02_asha_portal.png)
 
-### 3. Health Timeline (`src/components/HealthTimeline/`)
-- Vertical chronological track connecting all healthcare events from ASHA triage to specialist follow-up.
-- Filter by event type (`Radiology`, `Labs`, `Consultations`).
-- Direct link from any timeline event to open the corresponding medical record.
-
-### 4. Patient Profile & Vitals (`src/components/PatientProfile/`)
-- Patient identification card with ABHA number, age, gender, blood group, and emergency contact.
-- Critical conditions list, allergy severity indicators, and active daily medication schedules.
-
-### 5. Mobile-First Bottom Navigation (`src/App.jsx`)
-- Fixed responsive bottom navigation bar with 6 tabs:
-  1. 🏠 **Home** (Member 1)
-  2. 📖 **Records** (Member 2)
-  3. ⏱️ **Timeline** (Member 2)
-  4. 🤝 **Referrals** (Member 3)
-  5. 🛡️➕ **Emergency** (Member 3)
-  6. 👤 **Profile** (Member 2)
+* **Village Household Registry**: Manage families and patient profiles in rural villages like *Vadgaon*.
+* **Digital Patient Registration**: Onboard new patients and automatically link ABHA health numbers.
+* **Field Vitals Telemetry**: Capture Blood Pressure, Heart Rate, SpO2, Temperature, and Pregnancy milestones.
+* **Medicine Kit Tracker**: Log distributions of essential village health supplies (ORST, Paracetamol, Iron Folic Acid).
 
 ---
 
-## ⚡ Environment & Setup Guide
+### 👨‍👩‍👧 Step 2: Patient & Family Health Portal
+A central health hub allowing patients and family members to access their ABHA health card, vitals trends, and care history.
 
-### 1. Prerequisites
-- Node.js (v18 or higher)
-- npm (v9 or higher)
+![Patient & Family Hub](docs/images/03_patient_dashboard.png)
 
-### 2. Environment Variables Configuration
-Create a `.env.local` file in the root folder:
+* **Family Member Switcher**: Switch health profiles across household members (spouses, children, elders).
+* **ABHA Digital Health Card**: Access instant digital ABHA QR codes for hospital check-in.
+* **Vitals Telemetry Monitor**: Track historical vitals trends with high-contrast indicator cards.
+* **Government Scheme Finder**: Automated eligibility matching for *Ayushman Bharat (PM-JAY)* benefits.
 
-```env
-VITE_SUPABASE_URL=https://your-project-id.supabase.co
-VITE_SUPABASE_ANON_KEY=your-anon-key-here
+---
 
-PORT=8000
-DEBUG=True
-```
+### 📁 Step 3: Medical Records & Radiology Vault
+A secure digital vault for storing X-rays, CT/MRI scans, lab reports, and doctor prescriptions.
 
-*(Note: `.env` and `.env.local` are strictly protected in `.gitignore`).*
+![Medical Records Vault](docs/images/04_medical_records_vault.png)
 
-### 3. Installation & Local Development
+* **Multi-Modality Organization**: Filter records by *Radiology (X-Ray/CT/MRI)*, *Lab Reports*, or *Prescriptions*.
+* **Interactive Scan Viewer**: High-resolution DICOM/image viewer with contrast inversion tools for detailed examination.
+* **Clinical Diagnostic Reports**: View signed doctor impressions alongside diagnostic images.
+
+---
+
+### 🚨 Step 4: 24x7 Emergency SOS & Health Passport
+A public, zero-login emergency interface built for trauma victims and 108 ambulance first-responders.
+
+![Emergency SOS Passport](docs/images/05_emergency_sos_passport.png)
+
+* **Zero-Login Emergency Dispatch**: Request immediate 108 Ambulance dispatch and notify local PHCs without logging in.
+* **Break-Glass Emergency Profile**: Instantly reveal critical blood group, allergies (e.g., *Penicillin*), and emergency contacts.
+* **Scannable Emergency QR Code**: Paramedics scan the QR code to read emergency details directly on mobile phones.
+
+---
+
+### 🏥 Step 5: Hospital Reception & Intake Desk
+Streamlines patient intake, ABHA scanning, and doctor routing at primary health centers and hospitals.
+
+![Hospital Reception Desk](docs/images/06_hospital_reception.png)
+
+* **ABHA Quick Intake**: Fast patient lookup via ABHA QR code scan or name search.
+* **Triage Categorization**: Priority queue tagging (*Emergency*, *Urgent*, *Routine*).
+* **Doctor Queue Assignment**: Assign waiting patients directly to available consulting physicians.
+
+---
+
+### 🩺 Step 6: Specialist Doctor & Tele-Radiology Workspace
+A clinical workspace for consulting physicians and remote radiologists to review cases, examine scans, and write e-prescriptions.
+
+![Doctor Workspace](docs/images/07_doctor_workspace.png)
+
+* **Clinical Case Review**: Access patient history, timeline events, and previous vitals.
+* **Tele-Radiology Inspection**: Inspect full-resolution diagnostic imaging scans with zoom and adjustment controls.
+* **Digital Prescription & Referral**: Issue digital prescriptions and record diagnostic recommendations.
+
+---
+
+## ⚡ Quick Start & Running Locally
+
+RadVault works **instantly out-of-the-box with built-in Demo Mode**—no API keys or environment configuration required!
+
+### 1. Installation
 ```bash
+# Clone the repository
+git clone https://github.com/sarthakkharade903-tech/RadVault.git
+
+# Navigate to project folder
+cd RadVault
+
 # Install dependencies
 npm install
-
-# Start local Vite development server
-npm run dev
-
-# Build for production
-npm run build
 ```
 
-The application will run locally at **`http://localhost:5173/`**.
+### 2. Run Application
+```bash
+npm run dev
+```
+
+Open your browser at **`http://localhost:5173/`**.
+
+> 💡 *Note: You can toggle between **Demo Mode** (offline sample data) and **Live Supabase DB** anytime using the top navigation bar.*
 
 ---
 
-## 🔄 Git Branch Summary
+## 🛠️ Tech Stack & Database Schema
 
-- **Current Active Branch**: `samir5243d`
-- **Features Merged**:
-  - `member1-patient-theme-light-icons` (Light theme + Indian palette + cultural icons)
-  - `origin/sujay` (Medical Records, Health Timeline, Patient Profile components)
-- **Repository Remote**: `https://github.com/sarthakkharade903-tech/RadVault.git`
+| Layer | Technology |
+| :--- | :--- |
+| **Frontend** | React 19, Vite 8, Tailwind CSS v4 |
+| **Icons & Design** | Lucide React, Custom Healthcare UI Theme |
+| **Database Engine** | Dual Engine: Supabase PostgreSQL + Offline Mock Engine |
+| **Security & RLS** | Row Level Security (RLS) on `patients`, `vitals`, `health_records`, `referrals` |
+
+```
+                        ┌─────────────────────────┐
+                        │     families table      │
+                        └────────────┬────────────┘
+                                     │ 1:N
+                        ┌────────────▼────────────┐
+                        │     patients table      │
+                        │ (unified_id / abha_id)  │
+                        └────────────┬────────────┘
+                                     │ 1:N
+     ┌─────────────────┬─────────────┼─────────────┬─────────────────┐
+     ▼                 ▼             ▼             ▼                 ▼
+┌─────────┐      ┌───────────┐  ┌───────────┐  ┌───────────┐   ┌──────────────┐
+│ vitals  │      │  health_  │  │ referrals │  │ appoint-  │   │ asha_visit_  │
+│         │      │  records  │  │           │  │ ments     │   │    logs      │
+└─────────┘      └───────────┘  └───────────┘  └───────────┘   └──────────────┘
+```
 
 ---
 
-## 🎯 Next Steps for the Team
+## 📜 License & Team
 
-1. **Member 3 Integration**: Drop in the live **Referrals workflow** and **Emergency Break-Glass QR generation logic** into the designated placeholders in `src/App.jsx`.
-2. **Clinical Portal Link**: Connect Team B's doctor diagnostic dashboard to the shared Supabase `health_records` and `medical_files` tables.
-3. **Multilingual Support**: Add Hindi and Marathi language toggles for rural patient accessibility.
+Built for connected health continuity, rural accessibility, and hackathon presentation.  
+Developed by **Team RadVault**.

@@ -5,7 +5,8 @@ import {
   Stethoscope, Plus, X, AlertTriangle, Send, Clock, CheckCircle2, CheckCheck, 
   Calendar, Building2, HeartPulse, Baby, User, Loader2, MapPin,
   Phone, Video, VideoOff, Mic, MicOff, PhoneOff, PhoneCall, Shield,
-  Sparkles, Check, ArrowRight, Download, FileText, Activity, Ticket, Siren
+  Sparkles, Check, ArrowRight, Download, FileText, Activity, Ticket,
+  Navigation, Siren
 } from "lucide-react";
 import {
   getCareRequests,
@@ -15,6 +16,8 @@ import {
   getTeleconsultSessions,
   createWaitingTeleconsult
 } from "../../services/ashaService";
+import { CONNECTED_FACILITIES } from "../../services/locationService";
+import { ALL_CANONICAL_DOCTORS } from "../workspaces/DoctorWorkspace";
 
 
 
@@ -279,6 +282,53 @@ function ReferralCard({ req, lang, onViewRx }) {
                   <span className="leading-snug">{instruction}</span>
                 </div>
               )}
+
+              {/* ── Hospital Directions & Transport directly with Token ── */}
+              <div className="pt-2.5 border-t border-[#008F83]/20 space-y-2">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="font-extrabold text-[#008F83] flex items-center gap-1.5">
+                    <MapPin className="w-3.5 h-3.5" /> Shirwal PHC Route (~2.4 km · 8 mins)
+                  </span>
+                  <a
+                    href="https://maps.google.com/maps?daddr=17.9800,74.0200&travelmode=driving"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[10px] font-black text-[#008F83] hover:underline flex items-center gap-0.5 cursor-pointer"
+                  >
+                    <span>Full Map</span> <ArrowRight className="w-3 h-3" />
+                  </a>
+                </div>
+
+                <div className="grid grid-cols-3 gap-1.5">
+                  <a
+                    href="https://maps.google.com/maps?daddr=17.9800,74.0200&travelmode=driving"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-2 rounded-xl bg-white border border-[#008F83]/30 hover:bg-teal-50 flex items-center justify-center gap-1 text-[10px] font-black text-[#008F83] transition-colors shadow-2xs cursor-pointer"
+                  >
+                    <Navigation className="w-3.5 h-3.5 text-[#008F83]" />
+                    <span>Get Route</span>
+                  </a>
+
+                  <a
+                    href="tel:108"
+                    className="p-2 rounded-xl bg-red-50 border border-red-200 hover:bg-red-100 flex items-center justify-center gap-1 text-[10px] font-black text-red-700 transition-colors shadow-2xs cursor-pointer"
+                  >
+                    <span>🚑</span>
+                    <span>108 Free</span>
+                  </a>
+
+                  <a
+                    href="https://book.olacabs.com"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-2 rounded-xl bg-amber-50 border border-amber-200 hover:bg-amber-100 flex items-center justify-center gap-1 text-[10px] font-black text-amber-800 transition-colors shadow-2xs cursor-pointer"
+                  >
+                    <span>🚕</span>
+                    <span>Auto / Cab</span>
+                  </a>
+                </div>
+              </div>
             </div>
           );
         })()}
@@ -344,8 +394,66 @@ function TeleconsultModal({ member, onClose, onCompleted }) {
   const [savingRx, setSavingRx] = useState(false);
   const [teleSessionId, setTeleSessionId] = useState(null);
   const [teleToken, setTeleToken] = useState('eS-SHIR-248');
-  const [assignedDoctor, setAssignedDoctor] = useState('Dr. Arvind Kulkarni (Medical Officer)');
+
+  // Hospital & Doctor Selection States
+  const [selectedFacilityId, setSelectedFacilityId] = useState('f2222222-2222-2222-2222-222222222222'); // Pune Sassoon General Hospital
+  const [allDoctors, setAllDoctors] = useState(ALL_CANONICAL_DOCTORS);
+  const [selectedDoctorId, setSelectedDoctorId] = useState(ALL_CANONICAL_DOCTORS[0].id);
+  const [assignedDoctor, setAssignedDoctor] = useState(`${ALL_CANONICAL_DOCTORS[0].name} (${ALL_CANONICAL_DOCTORS[0].specialty})`);
   const [waitingSubmitting, setWaitingSubmitting] = useState(false);
+
+  // Load live registered doctors from Supabase
+  useEffect(() => {
+    async function loadDoctors() {
+      try {
+        const { data: dbDocs } = await supabase
+          .from('doctors')
+          .select('id, user_id, name, specialty, facility_id, facilities(id, name, district)')
+          .order('name');
+
+        if (dbDocs && dbDocs.length > 0) {
+          const dbMapped = dbDocs.map(d => ({
+            id: d.id,
+            user_id: d.user_id,
+            name: d.name,
+            specialty: d.specialty,
+            facility_id: d.facility_id,
+            facility_name: d.facilities?.name || 'Pune Sassoon General Hospital'
+          }));
+          const ids = new Set(dbMapped.map(d => d.id));
+          const merged = [...dbMapped, ...ALL_CANONICAL_DOCTORS.filter(c => !ids.has(c.id))];
+          setAllDoctors(merged);
+        }
+      } catch (_) {}
+    }
+    loadDoctors();
+  }, []);
+
+  const selectedFacility = CONNECTED_FACILITIES.find(f => f.id === selectedFacilityId) || CONNECTED_FACILITIES[0];
+  const doctorsForFacility = allDoctors.filter(d => 
+    d.facility_id === selectedFacilityId ||
+    (d.facility_name && selectedFacility && d.facility_name.toLowerCase().includes(selectedFacility.name.toLowerCase().split(' ')[0]))
+  );
+  const activeDoctorsList = doctorsForFacility.length > 0 ? doctorsForFacility : ALL_CANONICAL_DOCTORS.filter(d => d.facility_id === selectedFacilityId);
+  const selectedDoctor = activeDoctorsList.find(d => d.id === selectedDoctorId) || activeDoctorsList[0] || ALL_CANONICAL_DOCTORS[0];
+
+  const handleSelectFacility = (facId) => {
+    setSelectedFacilityId(facId);
+    const docs = allDoctors.filter(d => d.facility_id === facId);
+    if (docs.length > 0) {
+      setSelectedDoctorId(docs[0].id);
+      setAssignedDoctor(`${docs[0].name} (${docs[0].specialty || 'Medical Officer'})`);
+    } else {
+      const fallbackDoc = ALL_CANONICAL_DOCTORS.find(d => d.facility_id === facId) || ALL_CANONICAL_DOCTORS[0];
+      setSelectedDoctorId(fallbackDoc.id);
+      setAssignedDoctor(`${fallbackDoc.name} (${fallbackDoc.specialty || 'Medical Officer'})`);
+    }
+  };
+
+  const handleSelectDoctor = (doc) => {
+    setSelectedDoctorId(doc.id);
+    setAssignedDoctor(`${doc.name} (${doc.specialty || 'Medical Officer'})`);
+  };
 
   // Real vitals from Supabase vitals_history
   const [liveVitals, setLiveVitals] = useState(null);
@@ -539,6 +647,10 @@ function TeleconsultModal({ member, onClose, onCompleted }) {
     const token = `eS-SHIR-${Math.floor(100 + Math.random() * 900)}`;
     setTeleToken(token);
 
+    const chosenDoc = selectedDoctor || ALL_CANONICAL_DOCTORS[0];
+    const chosenFac = selectedFacility || CONNECTED_FACILITIES[0];
+    setAssignedDoctor(`${chosenDoc.name} (${chosenDoc.specialty || 'Medical Officer'})`);
+
     const vitalsSnapshot = {
       bp_systolic: bpSys,
       bp_diastolic: bpDia,
@@ -551,6 +663,11 @@ function TeleconsultModal({ member, onClose, onCompleted }) {
       const { session, careReq, id } = await createWaitingTeleconsult({
         patient_id: member?.id,
         patient_name: member?.name || "Village Patient",
+        facility: chosenFac.name,
+        facility_id: chosenFac.id,
+        doctor_assigned: chosenDoc.name,
+        doctor_name: chosenDoc.name,
+        doctor_id: chosenDoc.id,
         chief_complaint: symptom + (customNotes ? ` (${customNotes})` : ''),
         additional_notes: customNotes || null,
         vitals_snapshot: vitalsSnapshot,
@@ -578,13 +695,29 @@ function TeleconsultModal({ member, onClose, onCompleted }) {
   const handleEndCall = async () => {
     setSavingRx(true);
 
-    const diagnosis = "Acute Viral Febrile Illness with mild upper respiratory inflammation";
-    const medicines = [
-      { name: "Tab. Paracetamol 500mg", dosage: "1 tablet thrice daily after food (3 days)" },
-      { name: "Sachet ORS (Oral Rehydration)", dosage: "1 packet in 1 litre boiled cool water (daily)" },
-      { name: "Tab. Cetirizine 10mg", dosage: "1 tablet at bedtime if nasal congestion persists" }
-    ];
-    const advice = "Take adequate rest, monitor temperature every 6 hours, inform ASHA Priya Deshmukh if fever exceeds 102°F.";
+    const chosenDoc = selectedDoctor || ALL_CANONICAL_DOCTORS[0];
+    const chosenFac = selectedFacility || CONNECTED_FACILITIES[0];
+
+    const isAntenatal = symptom.includes("Antenatal") || (member?.name === "Rekha Bai");
+    const diagnosis = isAntenatal
+      ? "Obstetric Antenatal Evaluation & Maternal Support"
+      : "Acute Viral Febrile Illness with mild upper respiratory inflammation";
+
+    const medicines = isAntenatal
+      ? [
+          { name: "Tab. Ferrous Ascorbate 100mg + Folic Acid", dosage: "1 tablet daily after meal (30 days)" },
+          { name: "Tab. Calcium 500mg + Vitamin D3", dosage: "1 tablet twice daily with milk (30 days)" },
+          { name: "Tab. Doxylamine + Pyridoxine 10mg/10mg", dosage: "1 tablet at bedtime for morning nausea" }
+        ]
+      : [
+          { name: "Tab. Paracetamol 500mg", dosage: "1 tablet thrice daily after food (3 days)" },
+          { name: "Sachet ORS (Oral Rehydration)", dosage: "1 packet in 1 litre boiled cool water (daily)" },
+          { name: "Tab. Cetirizine 10mg", dosage: "1 tablet at bedtime if nasal congestion persists" }
+        ];
+
+    const advice = isAntenatal
+      ? "Maintain iron-rich diet, monitor fetal movements, report immediately to ASHA Priya Deshmukh if any abdominal pain or spotting occurs."
+      : "Take adequate rest, monitor temperature every 6 hours, inform ASHA Priya Deshmukh if fever exceeds 102°F.";
 
     // Build vitals snapshot from real fetched vitals
     const vitalsSnapshot = {
@@ -601,6 +734,8 @@ function TeleconsultModal({ member, onClose, onCompleted }) {
       const { data: sessionData } = await saveTeleconsultSession({
         patient_id: member?.id,
         patient_name: member?.name || "Village Patient",
+        facility: chosenFac.name,
+        doctor_name: chosenDoc.name,
         chief_complaint: symptom,
         additional_notes: customNotes || null,
         vitals_snapshot: vitalsSnapshot,
@@ -619,12 +754,13 @@ function TeleconsultModal({ member, onClose, onCompleted }) {
       await createCareRequest({
         patient_id: member?.id,
         patient_name: member?.name || "Village Patient",
-        facility: "Primary Health Centre - Shirwal",
-        department: "General Medicine & OPD",
+        facility: chosenFac.name,
+        doctor_assigned: chosenDoc.name,
+        department: chosenDoc.specialty || "General Medicine & OPD",
         priority: "ROUTINE",
-        reason: `Teleconsultation: ${symptom}${customNotes ? ". " + customNotes : ""}. e-Prescription issued by Dr. Priya Sharma.`,
+        reason: `Teleconsultation: ${symptom}${customNotes ? ". " + customNotes : ""}. e-Prescription issued by ${chosenDoc.name}.`,
         source: "TELECONSULT",
-        created_by: "eSanjeevani Teleconsult (Dr. Priya Sharma)",
+        created_by: `eSanjeevani Teleconsult (${chosenDoc.name})`,
         status: "COMPLETED",
         ...(teleconsultId ? { asha_notes: `teleconsult_session_id:${teleconsultId}` } : {}),
       });
@@ -633,8 +769,8 @@ function TeleconsultModal({ member, onClose, onCompleted }) {
     }
 
     const rx = {
-      doctorName: "Dr. Priya Sharma (MBBS, DGO)",
-      facility: "Primary Health Centre - Shirwal",
+      doctorName: `${chosenDoc.name} (${chosenDoc.specialty || 'Medical Officer'})`,
+      facility: chosenFac.name,
       date: new Date().toLocaleDateString("en-IN"),
       diagnosis,
       medicines,
@@ -668,7 +804,7 @@ function TeleconsultModal({ member, onClose, onCompleted }) {
                 eSanjeevani Virtual OPD
                 <span className="text-[9px] font-black bg-white/20 text-white px-2 py-0.5 rounded-full">LIVE</span>
               </h3>
-              <p className="text-[11px] text-teal-100 font-medium">PHC Shirwal Tele-Health Service</p>
+              <p className="text-[11px] text-teal-100 font-medium">{selectedFacility?.name || "PHC Shirwal"} Tele-Health Service</p>
             </div>
           </div>
           {step !== "call" && (
@@ -684,14 +820,111 @@ function TeleconsultModal({ member, onClose, onCompleted }) {
           {/* STEP 1: INTAKE */}
           {step === "intake" && (
             <div className="space-y-4">
-              <div className="p-4 bg-[#E8F7F3] border border-[#008F83]/30 rounded-2xl flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-[#008F83] text-white flex items-center justify-center shrink-0">
-                  <Stethoscope className="w-5 h-5" />
+              {/* Option 1: Select Government Hospital / Health Facility */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="font-black text-slate-800 flex items-center gap-1.5 uppercase text-[10px] tracking-wider">
+                    <Building2 className="w-3.5 h-3.5 text-[#008F83]" />
+                    <span>1. Select Government Health Facility</span>
+                  </label>
+                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                    🟢 eSanjeevani Active
+                  </span>
                 </div>
-                <div>
-                  <p className="font-black text-xs text-slate-900">Dr. Priya Sharma (MBBS, DGO)</p>
-                  <p className="text-[11px] text-slate-600">On-Duty Medical Officer · Shirwal PHC</p>
-                  <p className="text-[10px] text-[#008F83] font-bold mt-0.5">🟢 Online & Accepting Patients</p>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {CONNECTED_FACILITIES.map(fac => {
+                    const isSelected = fac.id === selectedFacilityId;
+                    return (
+                      <button
+                        key={fac.id}
+                        type="button"
+                        onClick={() => handleSelectFacility(fac.id)}
+                        className={`p-3 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-1.5 ${
+                          isSelected
+                            ? "bg-[#E8F7F3] border-[#008F83] shadow-xs ring-1 ring-[#008F83]"
+                            : "bg-slate-50/70 border-slate-200 hover:border-slate-300 hover:bg-slate-50"
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-1">
+                          <span className={`font-black text-xs leading-snug ${isSelected ? "text-[#008F83]" : "text-slate-900"}`}>
+                            {fac.name}
+                          </span>
+                          {isSelected && <Check className="w-4 h-4 text-[#008F83] shrink-0" />}
+                        </div>
+                        <div className="flex items-center justify-between text-[10px]">
+                          <span className="font-semibold text-slate-500">{fac.district} District</span>
+                          <span className={`px-1.5 py-0.5 rounded font-bold uppercase text-[9px] ${isSelected ? "bg-[#008F83] text-white" : "bg-slate-200 text-slate-700"}`}>
+                            {fac.type}
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Option 2: Select Attending Specialist / Medical Officer */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between pt-1">
+                  <label className="font-black text-slate-800 flex items-center gap-1.5 uppercase text-[10px] tracking-wider">
+                    <Stethoscope className="w-3.5 h-3.5 text-[#008F83]" />
+                    <span>2. Select Attending Specialist / Doctor</span>
+                  </label>
+                  <span className="text-[10px] font-bold text-slate-500">
+                    {activeDoctorsList.length} Doctor{activeDoctorsList.length > 1 ? 's' : ''} on Duty
+                  </span>
+                </div>
+
+                <div className="space-y-2">
+                  {activeDoctorsList.map(doc => {
+                    const isDocSelected = doc.id === selectedDoctorId;
+                    return (
+                      <button
+                        key={doc.id}
+                        type="button"
+                        onClick={() => handleSelectDoctor(doc)}
+                        className={`w-full p-3 rounded-2xl border text-left transition-all cursor-pointer flex items-center justify-between gap-3 ${
+                          isDocSelected
+                            ? "bg-white border-[#008F83] ring-2 ring-[#008F83]/20 shadow-xs"
+                            : "bg-slate-50/60 border-slate-200 hover:bg-slate-50 hover:border-slate-300"
+                        }`}
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 font-bold text-sm ${
+                            isDocSelected ? "bg-[#008F83] text-white" : "bg-slate-200 text-slate-700"
+                          }`}>
+                            <User className="w-5 h-5" />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className={`font-black text-xs truncate ${isDocSelected ? "text-slate-900" : "text-slate-800"}`}>
+                                {doc.name}
+                              </p>
+                              <span className="text-[9px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200/80 px-1.5 py-0.2 rounded-full">
+                                🟢 Online
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-[#008F83] font-bold mt-0.5 truncate">
+                              {doc.specialty || "Medical Officer"}
+                            </p>
+                            {doc.room && (
+                              <p className="text-[10px] text-slate-500 font-medium truncate">
+                                {doc.room}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="shrink-0 pl-1">
+                          <div className={`w-5 h-5 rounded-full border flex items-center justify-center ${
+                            isDocSelected ? "border-[#008F83] bg-[#008F83] text-white" : "border-slate-300"
+                          }`}>
+                            {isDocSelected && <Check className="w-3 h-3" />}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -773,10 +1006,20 @@ function TeleconsultModal({ member, onClose, onCompleted }) {
                 <button
                   type="button"
                   onClick={handleStartWaiting}
-                  className="w-full py-3.5 bg-[#008F83] hover:bg-[#007A70] text-white font-extrabold text-xs rounded-xl shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  disabled={waitingSubmitting}
+                  className="w-full py-3.5 bg-[#008F83] hover:bg-[#007A70] text-white font-extrabold text-xs rounded-xl shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
                 >
-                  <span>Join Virtual Waiting Room</span>
-                  <ArrowRight className="w-4 h-4" />
+                  {waitingSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Connecting to {selectedFacility.name}...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Join Waiting Room · {selectedDoctor.name.split(' ')[1] || selectedDoctor.name} ({selectedFacility.type})</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
                 </button>
               </div>
             </div>
@@ -800,13 +1043,16 @@ function TeleconsultModal({ member, onClose, onCompleted }) {
                   </span>
                 </div>
                 <h4 className="font-black text-slate-900 text-lg mt-2">
-                  {queuePos === 1 ? "You are next in queue!" : "Waiting for Medical Officer"}
+                  {queuePos === 1 ? "You are next in queue!" : `Waiting for ${selectedDoctor.name}`}
                 </h4>
                 <p className="text-xs text-slate-500 mt-1">
-                  Queue Position: <b className="text-slate-800">#{queuePos}</b> · Assigned Facility: <b className="text-[#008F83]">PHC Shirwal Tele-OPD</b>
+                  Queue Position: <b className="text-slate-800">#{queuePos}</b> · Assigned Facility: <b className="text-[#008F83]">{selectedFacility.name}</b>
+                </p>
+                <p className="text-[11px] text-slate-600 mt-1 font-semibold">
+                  Attending Specialist: <span className="text-slate-900 font-bold">{selectedDoctor.name}</span> · <span className="text-[#008F83] font-bold">{selectedDoctor.specialty}</span>
                 </p>
                 <p className="text-[11px] text-slate-400 mt-1 max-w-sm mx-auto">
-                  Your request is live on the on-duty doctor's dashboard. When the doctor answers, this screen will connect automatically.
+                  Your request is live on {selectedDoctor.name.split(' (')[0]}'s tele-OPD queue. When the doctor answers, this screen will connect automatically.
                 </p>
               </div>
 
@@ -851,8 +1097,8 @@ function TeleconsultModal({ member, onClose, onCompleted }) {
                     👨‍⚕️
                   </div>
                   <div>
-                    <p className="font-extrabold text-sm text-white">{assignedDoctor || 'Dr. Arvind Kulkarni (Medical Officer)'}</p>
-                    <p className="text-[10px] text-teal-300">Shirwal PHC Tele-OPD · Live Consultation</p>
+                    <p className="font-extrabold text-sm text-white">{assignedDoctor || `${selectedDoctor.name} (${selectedDoctor.specialty})`}</p>
+                    <p className="text-[10px] text-teal-300">{selectedFacility.name} · Live Consultation</p>
                   </div>
                   {/* Live audio indicator */}
                   <div className="flex items-center justify-center gap-1">
@@ -879,7 +1125,7 @@ function TeleconsultModal({ member, onClose, onCompleted }) {
               <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
                 <span className="text-[10px] font-black text-slate-400 uppercase">Doctor's Observation</span>
                 <p className="text-xs text-slate-700 font-semibold leading-relaxed">
-                  "Hello {member?.name || "Patient"}, I have reviewed your vitals and chief symptoms. Your blood pressure is normal. Recommending symptomatic fever management and oral hydration."
+                  "Hello {member?.name || "Patient"}, I am {(assignedDoctor || selectedDoctor.name).split(' (')[0]}. I have reviewed your vitals and chief symptoms. Your vitals are recorded in the docket. Recommending symptomatic care and prescribed medications."
                 </p>
               </div>
 
@@ -927,7 +1173,7 @@ function TeleconsultModal({ member, onClose, onCompleted }) {
                 <CheckCircle2 className="w-6 h-6 text-emerald-600 shrink-0" />
                 <div>
                   <p className="font-black text-xs text-emerald-900">Consultation Successfully Completed</p>
-                  <p className="text-[11px] text-emerald-700">e-Prescription signed by Dr. Priya Sharma and saved to your health record.</p>
+                  <p className="text-[11px] text-emerald-700">e-Prescription signed by {rxSummary.doctorName.split(' (')[0]} and saved to your health record.</p>
                 </div>
               </div>
 
@@ -1228,7 +1474,7 @@ function RxViewModal({ req, member, onClose }) {
   const medicines = notesMeds?.length ? notesMeds : session?.rx_medicines?.length ? session.rx_medicines : defaultMedicines;
   const diagnosis = notesDiagnosis || session?.diagnosis || "Acute Viral Febrile Illness with mild upper respiratory inflammation";
   const doctor = notesDoctor || session?.doctor_name || "Dr. Arvind Kulkarni (Medical Officer)";
-  const facility = notesFacility || session?.facility || req?.facility || "Primary Health Centre - Shirwal";
+  const facility = notesFacility || session?.facility || req?.facility || "Pune Sassoon General Hospital";
   const advice = notesAdvice || session?.doctor_advice || "Take adequate rest, monitor temperature every 6 hours, inform ASHA Priya Deshmukh if fever exceeds 102°F.";
   const dateStr = session?.created_at ? new Date(session.created_at).toLocaleDateString("en-IN") : new Date(req?.created_at || Date.now()).toLocaleDateString("en-IN");
 
@@ -1335,6 +1581,12 @@ export default function CareHub({ member, onOpenEmergency }) {
   const [showTeleconsult, setShowTeleconsult] = useState(false);
   const [selectedRxReq, setSelectedRxReq] = useState(null);
   const [activeFilter, setActiveFilter] = useState("ALL"); // 'ALL' | 'ASHA' | 'DIRECT' | 'TELE'
+  const [mapToast, setMapToast] = useState(null);
+
+  const showMapToast = (msg) => {
+    setMapToast(msg);
+    setTimeout(() => setMapToast(null), 4000);
+  };
 
   const load = useCallback(async (isSilent = false) => {
     if (!member?.id) return;
@@ -1359,10 +1611,10 @@ export default function CareHub({ member, onOpenEmergency }) {
       )
       .subscribe();
 
-    // 2. Guaranteed polling fallback (every 3 seconds) for instant token updates
+    // 2. Polling fallback (every 15 seconds) for network resilience
     const pollInterval = setInterval(() => {
       load(true);
-    }, 3000);
+    }, 15000);
 
     return () => {
       supabase.removeChannel(channel);
@@ -1450,6 +1702,156 @@ export default function CareHub({ member, onOpenEmergency }) {
             <span className="font-black text-slate-900 text-sm">1098</span>
             <span className="text-[10px] text-slate-500 font-bold">{t.childHelp}</span>
           </a>
+        </div>
+      </div>
+
+      {/* ── Toast Banner (ASHA Escort / Map Actions) ── */}
+      {mapToast && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 bg-[#008F83] text-white text-xs font-bold px-5 py-3 rounded-2xl shadow-lg flex items-center gap-2 animate-in fade-in">
+          <span>✓</span> {mapToast}
+        </div>
+      )}
+
+      {/* ── 🗺️ How to Reach the Hospital & Transport Options ── */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-xs font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+            <span>🗺️</span> How to Reach the Hospital &amp; Transport
+          </h3>
+          {filteredRequests.some(r => ['Accepted','ACCEPTED','Assigned','Arrived'].includes(r.status)) && (
+            <span className="text-[9px] font-black bg-[#008F83] text-white px-2.5 py-1 rounded-full flex items-center gap-1 shadow-2xs">
+              <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+              APPOINTMENT ACTIVE
+            </span>
+          )}
+        </div>
+
+        {/* Map Preview Card */}
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+          {/* Interactive Map Banner */}
+          <a
+            href="https://maps.google.com/maps?q=Shirwal+Primary+Health+Centre,+Shirwal,+Maharashtra&z=15"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block relative h-32 bg-gradient-to-br from-teal-50 via-emerald-50 to-slate-100 hover:opacity-95 transition-opacity cursor-pointer"
+          >
+            {/* Grid background */}
+            <svg className="absolute inset-0 w-full h-full opacity-15" viewBox="0 0 400 128" preserveAspectRatio="none">
+              {[0,40,80,120,160,200,240,280,320,360,400].map(x => (
+                <line key={`v${x}`} x1={x} y1="0" x2={x} y2="128" stroke="#008F83" strokeWidth="1"/>
+              ))}
+              {[0,32,64,96,128].map(y => (
+                <line key={`h${y}`} x1="0" y1={y} x2="400" y2={y} stroke="#008F83" strokeWidth="1"/>
+              ))}
+              {/* Road lines */}
+              <path d="M0,64 Q100,48 200,64 T400,64" stroke="#008F83" strokeWidth="4" fill="none" opacity="0.5"/>
+              <path d="M200,0 L200,128" stroke="#007A70" strokeWidth="3" opacity="0.4"/>
+              <path d="M0,32 L400,96" stroke="#008F83" strokeWidth="2" opacity="0.3"/>
+            </svg>
+
+            {/* Hospital Pin */}
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="flex flex-col items-center drop-shadow-lg">
+                <div className="w-12 h-12 rounded-full bg-[#008F83] border-3 border-white flex items-center justify-center shadow-lg">
+                  <span className="text-2xl">🏥</span>
+                </div>
+                <div className="mt-1 bg-white/95 px-3 py-0.5 rounded-full text-[10px] font-black text-[#008F83] shadow border border-[#008F83]/20">
+                  Shirwal PHC
+                </div>
+              </div>
+            </div>
+
+            {/* Open Maps CTA */}
+            <div className="absolute top-2 right-2 bg-white/95 border border-slate-200 rounded-lg px-2.5 py-1 text-[9px] font-black text-slate-700 flex items-center gap-1 shadow">
+              <MapPin className="w-3 h-3 text-[#008F83]" /> Open in Google Maps
+            </div>
+
+            {/* Distance badge */}
+            <div className="absolute bottom-2 left-2 bg-[#008F83]/90 text-white rounded-lg px-2.5 py-1 text-[9px] font-black flex items-center gap-1">
+              📍 ~2.4 km · ~8 min by auto
+            </div>
+
+            {/* Appointment time if active */}
+            {filteredRequests.find(r => ['Accepted','ACCEPTED','Assigned'].includes(r.status))?.slot_preference && (
+              <div className="absolute bottom-2 right-2 bg-amber-500/90 text-white rounded-lg px-2.5 py-1 text-[9px] font-black">
+                ⏰ {filteredRequests.find(r => ['Accepted','ACCEPTED','Assigned'].includes(r.status))?.slot_preference?.split('·')?.[1]?.trim() || 'Slot confirmed'}
+              </div>
+            )}
+          </a>
+
+          {/* Transport Options */}
+          <div className="p-3.5 space-y-3">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Choose how to get there</p>
+            <div className="grid grid-cols-4 gap-2">
+              {/* 108 Ambulance / Patient Transport Service */}
+              <a
+                href="tel:108"
+                className="flex flex-col items-center gap-1.5 p-2.5 rounded-xl bg-red-50 border border-red-100 hover:bg-red-100 transition-colors cursor-pointer"
+              >
+                <span className="text-xl">🚑</span>
+                <span className="text-[9px] font-black text-red-700 text-center leading-tight">108 Free</span>
+              </a>
+
+              {/* Google Maps Directions */}
+              <a
+                href="https://maps.google.com/maps?daddr=17.9800,74.0200&travelmode=driving"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex flex-col items-center gap-1.5 p-2.5 rounded-xl bg-[#E8F7F3] border border-[#008F83]/20 hover:bg-teal-100 transition-colors cursor-pointer"
+              >
+                <span className="text-xl">🧭</span>
+                <span className="text-[9px] font-black text-[#008F83] text-center leading-tight">Directions</span>
+              </a>
+
+              {/* Local Auto / Ola Taxi */}
+              <a
+                href="https://book.olacabs.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex flex-col items-center gap-1.5 p-2.5 rounded-xl bg-amber-50 border border-amber-100 hover:bg-amber-100 transition-colors cursor-pointer"
+              >
+                <span className="text-xl">🚕</span>
+                <span className="text-[9px] font-black text-amber-700 text-center leading-tight">Auto / Ola</span>
+              </a>
+
+              {/* ASHA Escort Request */}
+              <button
+                onClick={() => showMapToast('ASHA escort request sent! Your ASHA worker will contact you to confirm pickup time.')}
+                className="flex flex-col items-center gap-1.5 p-2.5 rounded-xl bg-purple-50 border border-purple-100 hover:bg-purple-100 transition-colors cursor-pointer"
+              >
+                <span className="text-xl">👩‍⚕️</span>
+                <span className="text-[9px] font-black text-purple-700 text-center leading-tight">ASHA Escort</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* International Standards Transport Panel */}
+        <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
+          <div className="flex items-center gap-2 pb-2 border-b border-slate-200">
+            <span className="text-base">🌍</span>
+            <span className="text-[11px] font-black text-slate-700">Patient Transport Rights &amp; Accessibility</span>
+          </div>
+          <div className="space-y-2.5 text-[11px]">
+            <div className="flex items-start gap-2.5">
+              <span className="shrink-0 text-sm mt-0.5">🇬🇧</span>
+              <span className="text-slate-600 leading-snug">
+                <strong className="text-slate-800">NHS-style PTS:</strong> Non-emergency 108 Patient Transport Service available for those medically unable to travel independently. Request via ASHA worker or PHC reception on <strong>02169-244222</strong>.
+              </span>
+            </div>
+            <div className="flex items-start gap-2.5">
+              <span className="shrink-0 text-sm mt-0.5">🇺🇸</span>
+              <span className="text-slate-600 leading-snug">
+                <strong className="text-slate-800">ADA Accessible:</strong> Shirwal PHC has wheelchair ramps, accessible OPD counters, and sign-language support. Inform reception for priority queue access.
+              </span>
+            </div>
+            <div className="flex items-start gap-2.5">
+              <span className="shrink-0 text-sm mt-0.5">🏥</span>
+              <span className="text-slate-600 leading-snug">
+                <strong className="text-slate-800">PM-JAY / Ayushman Bharat:</strong> Free transport via 108 for BPL patients. Show your Ayushman Bharat card at Reception for reimbursement upto ₹250.
+              </span>
+            </div>
+          </div>
         </div>
       </div>
 

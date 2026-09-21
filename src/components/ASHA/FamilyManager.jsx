@@ -129,7 +129,16 @@ export default function FamilyManager({ family: initialFamily, onBack, onAddMemb
                       {p.status === 'red' && <div className="w-2 h-2 rounded-full bg-red-500 shrink-0" />}
                     </div>
                     <p className="text-xs font-semibold text-[#64748B] mt-0.5">{p.relation_to_head || "Member"} · {p.age_years}y · {p.gender}</p>
-                    <div className="flex gap-1.5 mt-2">
+                    <div className="flex gap-1.5 mt-2 flex-wrap items-center">
+                      {p.abha_id && p.abha_id !== "PENDING" && p.abha_id !== "Not linked yet" ? (
+                        <span className="bg-emerald-50 border border-emerald-200 text-emerald-800 px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wide flex items-center gap-1">
+                          <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" /> ABHA: {p.abha_id}
+                        </span>
+                      ) : (
+                        <span className="bg-amber-50 border border-amber-200 text-amber-800 px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wide">
+                          ABHA: Pending
+                        </span>
+                      )}
                       {p.is_pregnant && <span className="bg-rose-50 border border-rose-100 text-rose-600 px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wide">ANC</span>}
                       {p.is_child && <span className="bg-amber-50 border border-amber-100 text-amber-600 px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wide">Child</span>}
                       {p.status === 'red' && <span className="bg-red-50 border border-red-100 text-red-600 px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wide">Urgent</span>}

@@ -49,7 +49,7 @@ export default function DocumentPreview({ doc, onClose }) {
 
   const isPDF   = doc.file_type === 'application/pdf';
   const isImage = doc.file_type?.startsWith('image/');
-  const dataUrl = fullDoc?.file_data || null;
+  const dataUrl = fullDoc?.file_data || fullDoc?.file_path || null;
   const sizeStr = fmtBytes(doc.file_size);
   const catLabel = CATEGORY_LABELS[doc.category] || 'DOCUMENT';
   const sourceCls = SOURCE_STYLE[doc.source] || SOURCE_STYLE['Self uploaded'];

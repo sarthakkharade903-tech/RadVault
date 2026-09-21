@@ -1,12 +1,33 @@
-import React from 'react';
-import { Plus, Minus, AlertTriangle, CheckCircle2, Heart, Activity } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Plus, Minus, AlertTriangle, CheckCircle2, Heart, Activity, Mic, Square, Volume2, Trash2, Globe, Sparkles } from 'lucide-react';
 
 // ─── Section Label ───────────────────────────────────────────────────────────
 export function SectionLabel({ children }) {
   return (
-    <p className="text-xs font-black text-slate-500 uppercase tracking-wider mb-2.5 mt-4">
-      {children}
+    <p className="text-xs font-black text-slate-600 uppercase tracking-wider mb-3 mt-5 flex items-center gap-1.5">
+      <span className="w-1.5 h-1.5 rounded-full bg-[#008F83]" />
+      <span>{children}</span>
     </p>
+  );
+}
+
+// ─── Vitals Container (Generous Spacing & Visual Rhythm) ─────────────────────
+export function VitalsContainer({ children, title = "Clinical Vitals (If measured)" }) {
+  return (
+    <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-4 sm:p-5 space-y-4 mb-6">
+      <div className="flex items-center justify-between pb-2 border-b border-slate-200/70">
+        <h4 className="text-xs font-black uppercase text-slate-700 tracking-wider flex items-center gap-1.5">
+          <Activity className="w-4 h-4 text-[#008F83]" />
+          <span>{title}</span>
+        </h4>
+        <span className="text-[10px] font-bold text-slate-400 bg-white px-2 py-0.5 rounded border border-slate-200">
+          Field Vitals
+        </span>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {children}
+      </div>
+    </div>
   );
 }
 
@@ -298,21 +319,417 @@ export function SpO2Input({ value = '', onChange }) {
 
 // ─── Temperature Selector ─────────────────────────────────────────────────────
 export function TempInput({ value, onChange }) {
-  const isFever = value && value !== 'No Fever';
+  const isNumeric = value && !isNaN(parseFloat(value));
+  const isNormal = value === '98.4' || value === 'No Fever' || (isNumeric && parseFloat(value) < 100);
+  const isFever = value === '101.2' || value === 'Fever' || (isNumeric && parseFloat(value) >= 100);
+
   return (
     <div className="mb-5">
-      <p className="font-bold text-sm text-[#212121] mb-2.5">Body Temperature</p>
-      <div className="grid grid-cols-2 gap-3">
-        {['No Fever', 'Fever Present'].map((label) => (
-          <button key={label} type="button" onClick={() => onChange(label === 'Fever Present' ? 'Fever' : 'No Fever')}
-            className={`py-3.5 rounded-xl font-extrabold text-sm border-2 transition-all cursor-pointer ${
-              (label === 'Fever Present' && isFever) || (label === 'No Fever' && value === 'No Fever')
-                ? label === 'Fever Present' ? 'bg-[#D32F2F] border-[#D32F2F] text-white shadow-xs' : 'bg-[#008F83] border-[#008F83] text-white shadow-xs'
-                : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
-            }`}>
-            {label === 'Fever Present' ? '🔥 High Fever' : '🟢 Normal Temp'}
+      <div className="flex items-center justify-between mb-2">
+        <label className="font-bold text-sm text-[#212121]">Body Temperature (°F)</label>
+        {value && (
+          <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border ${
+            isFever ? 'bg-red-100 text-red-800 border-red-200' : 'bg-emerald-100 text-emerald-800 border-emerald-200'
+          }`}>
+            {isFever ? 'FEVER (>=100°F)' : 'NORMAL (<100°F)'}
+          </span>
+        )}
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 mb-2">
+        <button
+          type="button"
+          onClick={() => onChange('98.4')}
+          className={`py-2.5 px-3 rounded-xl font-bold text-xs border-2 transition-all cursor-pointer ${
+            isNormal && value
+              ? 'bg-[#008F83] border-[#008F83] text-white shadow-xs'
+              : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
+          }`}
+        >
+          🟢 Normal (98.4°F)
+        </button>
+        <button
+          type="button"
+          onClick={() => onChange('101.2')}
+          className={`py-2.5 px-3 rounded-xl font-bold text-xs border-2 transition-all cursor-pointer ${
+            isFever
+              ? 'bg-[#D32F2F] border-[#D32F2F] text-white shadow-xs'
+              : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
+          }`}
+        >
+          🔥 Fever (101.2°F)
+        </button>
+      </div>
+
+      <div className="bg-white p-2.5 rounded-xl border border-slate-200 flex items-center justify-between">
+        <input
+          type="text"
+          inputMode="decimal"
+          value={isNumeric ? value : ''}
+          onChange={(e) => {
+            const val = e.target.value.replace(/[^0-9.]/g, '').slice(0, 5);
+            onChange(val);
+          }}
+          placeholder="Or type exact °F (e.g. 99.2)"
+          className="text-xs font-bold text-slate-900 focus:outline-none placeholder-slate-400 w-full"
+        />
+        <span className="text-xs font-bold text-slate-400 shrink-0">°F</span>
+      </div>
+    </div>
+  );
+}
+
+// ─── Patient / Child Weight Input (No Spinners, Smooth Fast Typing) ───────────
+export function WeightInput({ value = '', onChange, label = 'Patient Weight (kg)', placeholder = 'e.g. 58' }) {
+  const handleWeightChange = (e) => {
+    let raw = e.target.value;
+    // Allow only digits and at most one decimal point
+    raw = raw.replace(/[^0-9.]/g, '');
+    const parts = raw.split('.');
+    if (parts.length > 2) {
+      raw = parts[0] + '.' + parts.slice(1).join('');
+    }
+    // Limit to 5 chars max (e.g. "120.5" or "90")
+    if (raw.length > 5) {
+      raw = raw.slice(0, 5);
+    }
+    onChange(raw);
+  };
+
+  return (
+    <div>
+      <label className="font-bold text-sm text-[#212121] block mb-2">{label}</label>
+      <div className="bg-white p-3 rounded-2xl border-2 border-slate-200 flex items-center justify-between focus-within:border-[#008F83] transition-colors">
+        <input
+          type="text"
+          inputMode="decimal"
+          value={value ?? ''}
+          onChange={handleWeightChange}
+          placeholder={placeholder}
+          className="text-lg font-black text-slate-900 focus:outline-none placeholder-slate-300 w-full"
+        />
+        <span className="text-xs font-bold text-slate-400 select-none">kg</span>
+      </div>
+    </div>
+  );
+}
+
+
+// ─── Integrated Clinical Voice Scribe (Marathi / Hindi / English) ─────────────
+export function ClinicalVoiceScribe({
+  notes = '',
+  onChangeNotes,
+  audioBlobUrl,
+  setAudioBlobUrl,
+  title = 'Clinical Notes & Voice Scribe',
+  placeholder = 'Type patient complaints or tap the mic to speak in Marathi, Hindi, or English...'
+}) {
+  const defaultLang = localStorage.getItem('radvault_asha_lang') || 'en';
+  const [speechLang, setSpeechLang] = useState(
+    defaultLang === 'mr' ? 'mr-IN' : defaultLang === 'hi' ? 'hi-IN' : 'en-IN'
+  );
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+
+  const isRecordingRef = useRef(false);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const timerIntervalRef = useRef(null);
+  const recognitionRef = useRef(null);
+
+  // Multi-tier speech accumulators to ensure zero word loss across pauses:
+  // baseNotesRef: text present in the textarea before current recording session started
+  const baseNotesRef = useRef('');
+  // sessionFinalTextRef: all finalized chunks from previous speech-recognition cycles in this session
+  const sessionFinalTextRef = useRef('');
+  // currentRunFinalRef: finalized chunks from the currently running speech-recognition instance
+  const currentRunFinalRef = useRef('');
+
+  useEffect(() => {
+    return () => {
+      isRecordingRef.current = false;
+      if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+        mediaRecorderRef.current.stop();
+      }
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.onend = null;
+          recognitionRef.current.stop();
+        } catch (_) {}
+      }
+    };
+  }, []);
+
+  // Helper to construct a clean SpeechRecognition instance
+  const initSpeechRecognition = (lang) => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) return null;
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = lang;
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
+
+    recognition.onresult = (e) => {
+      let currentRunFinal = '';
+      let currentRunInterim = '';
+
+      for (let i = 0; i < e.results.length; i++) {
+        const piece = e.results[i][0].transcript;
+        if (e.results[i].isFinal) {
+          currentRunFinal += piece + ' ';
+        } else {
+          currentRunInterim += piece + ' ';
+        }
+      }
+
+      currentRunFinalRef.current = currentRunFinal;
+
+      const finalizedSoFar = [sessionFinalTextRef.current, currentRunFinal]
+        .filter(Boolean)
+        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      const combined = [
+        baseNotesRef.current,
+        finalizedSoFar,
+        currentRunInterim.trim()
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      if (onChangeNotes && combined) {
+        onChangeNotes(combined);
+      }
+    };
+
+    recognition.onerror = (err) => {
+      // Benign pause/silence events in Web Speech API
+      if (err.error === 'no-speech' || err.error === 'aborted') {
+        return;
+      }
+      console.warn('[ClinicalVoiceScribe] Speech recognition notice:', err.error);
+    };
+
+    recognition.onend = () => {
+      // Commit finalized text from this run so far into the session accumulator
+      if (currentRunFinalRef.current) {
+        sessionFinalTextRef.current = [sessionFinalTextRef.current, currentRunFinalRef.current]
+          .filter(Boolean)
+          .join(' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+        currentRunFinalRef.current = '';
+      }
+
+      // If user is still recording, seamlessly restart (auto-reconnect on silence timeout)
+      if (isRecordingRef.current) {
+        try {
+          recognition.start();
+        } catch (_) {
+          // Ignore if already starting or active
+        }
+      }
+    };
+
+    return recognition;
+  };
+
+  const startRecording = async () => {
+    try {
+      audioChunksRef.current = [];
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+
+      recorder.onstop = () => {
+        const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const url = URL.createObjectURL(blob);
+        if (setAudioBlobUrl) setAudioBlobUrl(url);
+        stream.getTracks().forEach((t) => t.stop());
+      };
+
+      recorder.start();
+      mediaRecorderRef.current = recorder;
+
+      // Initialize text state for this session
+      baseNotesRef.current = notes ? notes.trim() : '';
+      sessionFinalTextRef.current = '';
+      currentRunFinalRef.current = '';
+      isRecordingRef.current = true;
+
+      // Start Web Speech Recognition
+      const recognition = initSpeechRecognition(speechLang);
+      if (recognition) {
+        recognition.start();
+        recognitionRef.current = recognition;
+      }
+
+      setIsRecording(true);
+      setRecordingSeconds(0);
+      timerIntervalRef.current = setInterval(() => {
+        setRecordingSeconds((prev) => prev + 1);
+      }, 1000);
+    } catch (err) {
+      console.error('[ClinicalVoiceScribe] Mic access failed:', err);
+      alert('Microphone access is required for voice scribe. Please grant permission in your browser.');
+    }
+  };
+
+  const stopRecording = () => {
+    isRecordingRef.current = false;
+
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop();
+    }
+
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.onend = null; // Detach onend before stopping to avoid auto-restart
+        recognitionRef.current.stop();
+      } catch (_) {}
+    }
+
+    if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+    setIsRecording(false);
+  };
+
+  const handleLanguageChange = (newLang) => {
+    setSpeechLang(newLang);
+    // If actively recording, switch language on-the-fly without losing text
+    if (isRecordingRef.current && recognitionRef.current) {
+      try {
+        if (currentRunFinalRef.current) {
+          sessionFinalTextRef.current = [sessionFinalTextRef.current, currentRunFinalRef.current]
+            .filter(Boolean)
+            .join(' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+          currentRunFinalRef.current = '';
+        }
+        recognitionRef.current.onend = null;
+        recognitionRef.current.stop();
+
+        const newRec = initSpeechRecognition(newLang);
+        if (newRec) {
+          newRec.start();
+          recognitionRef.current = newRec;
+        }
+      } catch (err) {
+        console.warn('[ClinicalVoiceScribe] Language hot-reload notice:', err);
+      }
+    }
+  };
+
+  return (
+    <div className="bg-gradient-to-br from-indigo-50/70 via-purple-50/50 to-slate-50 border border-indigo-200/80 rounded-2xl p-4 sm:p-5 space-y-3.5 mb-6 shadow-2xs">
+      {/* Scribe Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2 border-b border-indigo-100">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-xs shrink-0">
+            <Mic className="w-4 h-4" />
+          </div>
+          <div>
+            <h4 className="text-xs font-black uppercase text-indigo-950 tracking-wider flex items-center gap-1.5">
+              <span>{title}</span>
+              <span className="text-[10px] font-bold text-indigo-600 bg-white px-1.5 py-0.2 rounded border border-indigo-200">
+                Live Speech-to-Text
+              </span>
+            </h4>
+            <p className="text-[11px] text-slate-500 font-medium">Record frontline observations in your preferred language</p>
+          </div>
+        </div>
+
+        {/* Language selector */}
+        <div className="flex items-center gap-2 self-end sm:self-center">
+          <Globe className="w-3.5 h-3.5 text-indigo-700" />
+          <select
+            value={speechLang}
+            onChange={(e) => handleLanguageChange(e.target.value)}
+            className="text-xs font-bold bg-white text-indigo-950 border border-indigo-200 rounded-xl px-2.5 py-1.5 shadow-2xs focus:outline-none focus:border-indigo-500 cursor-pointer"
+          >
+            <option value="mr-IN">मराठी (Marathi)</option>
+            <option value="hi-IN">हिंदी (Hindi)</option>
+            <option value="en-IN">English (India)</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Mic Record Trigger Strip */}
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-3 rounded-xl border border-indigo-100">
+        {!isRecording ? (
+          <button
+            type="button"
+            onClick={startRecording}
+            className="w-full sm:w-auto px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs rounded-xl shadow-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+          >
+            <Mic className="w-4 h-4" />
+            <span>Start Voice Recording</span>
           </button>
-        ))}
+        ) : (
+          <div className="w-full sm:w-auto flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full bg-rose-600 animate-pulse" />
+              <span className="font-mono font-black text-rose-700 text-xs">
+                Recording... 0:{recordingSeconds < 10 ? `0${recordingSeconds}` : recordingSeconds}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={stopRecording}
+              className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-black text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
+            >
+              <Square className="w-3.5 h-3.5" />
+              <span>Stop & Save Voice Note</span>
+            </button>
+          </div>
+        )}
+
+        <span className="text-[11px] text-slate-500 font-medium text-center sm:text-right">
+          {isRecording ? 'Listening and transcribing...' : 'Tap mic and speak, or type notes below'}
+        </span>
+      </div>
+
+      {/* Audio Memo Playback Chip */}
+      {audioBlobUrl && (
+        <div className="bg-white p-2.5 rounded-xl border border-indigo-200 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <Volume2 className="w-4 h-4 text-indigo-600 shrink-0" />
+            <audio controls src={audioBlobUrl} className="w-full h-7" />
+          </div>
+          {setAudioBlobUrl && (
+            <button
+              type="button"
+              onClick={() => setAudioBlobUrl(null)}
+              title="Delete audio memo"
+              className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 cursor-pointer transition-colors shrink-0"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Textarea for Transcription & Editing */}
+      <div>
+        <label className="block text-[10px] font-black uppercase tracking-wider text-slate-600 mb-1">
+          Clinical Notes / Symptoms Transcript
+        </label>
+        <textarea
+          rows={3}
+          value={notes}
+          onChange={(e) => onChangeNotes && onChangeNotes(e.target.value)}
+          placeholder={placeholder}
+          className="w-full bg-white border border-slate-200 focus:border-indigo-500 rounded-xl p-3 text-xs font-semibold text-slate-900 placeholder:text-slate-400 focus:outline-none shadow-2xs leading-relaxed transition-colors resize-none"
+        />
       </div>
     </div>
   );

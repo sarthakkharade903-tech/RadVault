@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Inbox,
   ArrowRight,
   AlertTriangle,
+  AlertCircle,
   Search,
   Loader2,
   X,
@@ -12,7 +13,6 @@ import {
   CheckCircle2,
   RefreshCw,
   ChevronLeft,
-  ChevronRight,
   Stethoscope,
   Building2,
   Activity,
@@ -20,18 +20,17 @@ import {
   VideoOff,
   Mic,
   MicOff,
-  Phone,
   PhoneCall,
-  PhoneOff,
   Pill,
-  Clock,
-  User,
   Sparkles,
   FileText,
   Shield,
   Check,
   Plus,
-  FileCode
+  FileCode,
+  Calendar,
+  ChevronRight,
+  Zap
 } from 'lucide-react';
 
 import { supabase, ensureRoleAuth } from '../../services/supabase';
@@ -48,17 +47,112 @@ import { registerCareContext } from '../../services/abdmService';
 import { mapConsultationToFhirBundle } from '../../services/fhirMapper';
 import ConsentRequestPanel from './ConsentRequestPanel';
 import FhirBundleModal from './FhirBundleModal';
+import { CONNECTED_FACILITIES, calculateHaversineDistance } from '../../services/locationService';
+import MedicalImagingVault from './MedicalImagingVault';
+import DoctorVitalsTimeline from './DoctorVitalsTimeline';
 
-
-
-
-const DEMO_DOCTOR_PROFILE = {
-  id: 'd3333333-3333-3333-3333-333333333333',
-  name: 'Dr. Arvind Kulkarni',
-  specialty: 'General Medicine',
-  facility_id: 'f1111111-1111-1111-1111-111111111111',
-  facility_name: 'Shrirampur Primary Health Centre'
+// ─── DATE / SHIFT UTILITIES (Matching Hospital Dashboard) ───
+const getTodayDateStr = () => {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 };
+
+const toLocalDateStr = (isoString) => {
+  if (!isoString) return '';
+  const d = new Date(isoString);
+  if (isNaN(d.getTime())) return '';
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const formatHumanDate = (dateStr) => {
+  if (!dateStr) return '';
+  const parts = dateStr.split('-').map(Number);
+  if (parts.length !== 3) return dateStr;
+  const dateObj = new Date(parts[0], parts[1] - 1, parts[2]);
+  return dateObj.toLocaleDateString('en-IN', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric'
+  });
+};
+
+const shiftDateStr = (dateStr, deltaDays) => {
+  if (!dateStr) return getTodayDateStr();
+  const parts = dateStr.split('-').map(Number);
+  if (parts.length !== 3) return getTodayDateStr();
+  const dateObj = new Date(parts[0], parts[1] - 1, parts[2]);
+  dateObj.setDate(dateObj.getDate() + deltaDays);
+  const year = dateObj.getFullYear();
+  const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const day = String(dateObj.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+// Reference coordinate: Pune Sassoon General Hospital (Apex Reference)
+const PUNE_SASSOON_COORDS = { lat: 18.5284, lon: 73.8746 };
+
+// Connected facilities sorted by proximity (Pune Sassoon first as Apex Center)
+export const SORTED_CONNECTED_FACILITIES = CONNECTED_FACILITIES.map(f => {
+  const dist = calculateHaversineDistance(PUNE_SASSOON_COORDS.lat, PUNE_SASSOON_COORDS.lon, f.lat, f.lon) ?? 0;
+  return { ...f, dist, rawDist: dist };
+}).sort((a, b) => {
+  if (a.id === 'f2222222-2222-2222-2222-222222222222' || a.name.toLowerCase().includes('sassoon')) return -1;
+  if (b.id === 'f2222222-2222-2222-2222-222222222222' || b.name.toLowerCase().includes('sassoon')) return 1;
+  return a.rawDist - b.rawDist;
+});
+
+// Canonical Multi-Doctor Registry across connected facilities
+export const ALL_CANONICAL_DOCTORS = [
+  {
+    id: 'd3333333-3333-3333-3333-333333333333',
+    name: 'Dr. Arvind Kulkarni',
+    specialty: 'Cardiology / General Medicine',
+    facility_id: 'f2222222-2222-2222-2222-222222222222',
+    facility_name: 'Pune Sassoon General Hospital',
+    room: 'OPD Room 4 · Cardiology'
+  },
+  {
+    id: 'e770b79a-b116-4505-a2b0-5ad9d3bd987f',
+    name: 'Dr. Neha Joshi',
+    specialty: 'General Medicine & OB-GYN',
+    facility_id: 'f2222222-2222-2222-2222-222222222222',
+    facility_name: 'Pune Sassoon General Hospital',
+    room: 'OPD Room 2 · Maternal & Medicine'
+  },
+  {
+    id: '593e99c2-c7bc-4c33-9eab-44de15c5d118',
+    name: 'Dr. Rohan Mehta',
+    specialty: 'General Medicine',
+    facility_id: 'f3333333-3333-3333-3333-333333333333',
+    facility_name: 'Aundh District Hospital, Pune',
+    room: 'Room 1 · Civil OPD'
+  },
+  {
+    id: 'bc89dabf-4fe0-45ba-9fb9-fdd0743510d7',
+    name: 'Dr. Pooja Patil',
+    specialty: 'Primary Care Physician',
+    facility_id: 'f4444444-4444-4444-4444-444444444444',
+    facility_name: 'Shirwal Primary Health Centre',
+    room: 'Consultation Desk A'
+  },
+  {
+    id: 'f1111111-d001-4444-8888-111111111111',
+    name: 'Dr. Rajesh Shinde',
+    specialty: 'Medical Officer (In-Charge)',
+    facility_id: 'f1111111-1111-1111-1111-111111111111',
+    facility_name: 'Shrirampur Primary Health Centre',
+    room: 'Consultation Desk 1'
+  }
+];
+
+const DEMO_DOCTOR_PROFILE = ALL_CANONICAL_DOCTORS[0];
 
 const INITIAL_DEMO_REFERRALS = [
   {
@@ -66,11 +160,13 @@ const INITIAL_DEMO_REFERRALS = [
     patient_id: 'pat-demo-1',
     patient_name: 'Rajesh Kumar',
     created_by: 'ASHA Worker: Sunita Deshmukh',
-    destination_hospital: 'Shrirampur Primary Health Centre',
+    destination_hospital: 'Pune Sassoon General Hospital',
+    destination_facility_id: 'f2222222-2222-2222-2222-222222222222',
     destination_department: 'General Medicine',
+    doctor_id: 'd3333333-3333-3333-3333-333333333333',
     doctor_assigned: 'Dr. Arvind Kulkarni',
     priority: 'HIGH',
-    priority_label: '🔴 Emergency / Immediate Attention',
+    priority_label: '🔴 Frontline Priority: High (Immediate Attention Recommended)',
     status: 'Arrived',
     symptoms: 'Severe chest tightness, radiating pain to left shoulder and jaw. Vitals recorded post-exertion.',
     vitals: { bp: '142/90', pulse: '88', spo2: '95', temp: '98.6', respRate: '20', weight: '68' },
@@ -82,11 +178,13 @@ const INITIAL_DEMO_REFERRALS = [
     patient_id: 'pat-demo-2',
     patient_name: 'Sunita Patil',
     created_by: 'ASHA Worker: Sunita Deshmukh',
-    destination_hospital: 'Shrirampur Primary Health Centre',
+    destination_hospital: 'Pune Sassoon General Hospital',
+    destination_facility_id: 'f2222222-2222-2222-2222-222222222222',
     destination_department: 'General Medicine',
-    doctor_assigned: 'Dr. Arvind Kulkarni',
+    doctor_id: 'e770b79a-b116-4505-a2b0-5ad9d3bd987f',
+    doctor_assigned: 'Dr. Neha Joshi',
     priority: 'ORANGE',
-    priority_label: '🟡 Urgent / Within 24 Hours',
+    priority_label: '🟡 Frontline Priority: Medium (Within 24 Hours Recommended)',
     status: 'Assigned',
     symptoms: 'Persistent headache, blood pressure elevation. Gestational age: 28 weeks.',
     vitals: { bp: '138/88', pulse: '84', spo2: '98', temp: '98.2', respRate: '18', weight: '72' },
@@ -98,14 +196,52 @@ const INITIAL_DEMO_REFERRALS = [
     patient_id: 'pat-demo-3',
     patient_name: 'Amit Shinde',
     created_by: 'ASHA Worker: Sunita Deshmukh',
-    destination_hospital: 'Shrirampur Primary Health Centre',
+    destination_hospital: 'Pune Sassoon General Hospital',
+    destination_facility_id: 'f2222222-2222-2222-2222-222222222222',
     destination_department: 'General Medicine',
+    doctor_id: 'd3333333-3333-3333-3333-333333333333',
     doctor_assigned: 'Dr. Arvind Kulkarni',
     priority: 'GREEN',
-    priority_label: '🟢 Routine / Local Care',
+    priority_label: '🟢 Frontline Priority: Routine / Local Care',
     status: 'Arrived',
     symptoms: 'Fever with dry cough for 3 days. Checked at frontline visit.',
     vitals: { bp: '118/76', pulse: '78', spo2: '99', temp: '99.4', respRate: '16', weight: '64' },
+    danger_signs: [],
+    created_at: new Date().toISOString()
+  },
+  {
+    id: 'REF-DEMO-004',
+    patient_id: 'pat-demo-4',
+    patient_name: 'Ganesh More',
+    created_by: 'ASHA Worker: Rekha Shinde',
+    destination_hospital: 'Aundh District Hospital, Pune',
+    destination_facility_id: 'f3333333-3333-3333-3333-333333333333',
+    destination_department: 'General Medicine',
+    doctor_id: '593e99c2-c7bc-4c33-9eab-44de15c5d118',
+    doctor_assigned: 'Dr. Rohan Mehta',
+    priority: 'HIGH',
+    priority_label: '🔴 Frontline Priority: High (Immediate Attention Recommended)',
+    status: 'Arrived',
+    symptoms: 'Acute abdominal tenderness, fever and vomiting for 24 hours.',
+    vitals: { bp: '130/85', pulse: '92', spo2: '97', temp: '100.2', respRate: '22', weight: '60' },
+    danger_signs: ['Severe abdominal pain'],
+    created_at: new Date().toISOString()
+  },
+  {
+    id: 'REF-DEMO-005',
+    patient_id: 'pat-demo-5',
+    patient_name: 'Anjali Gaikwad',
+    created_by: 'ASHA Worker: Meena Kale',
+    destination_hospital: 'Shirwal Primary Health Centre',
+    destination_facility_id: 'f4444444-4444-4444-4444-444444444444',
+    destination_department: 'General Medicine',
+    doctor_id: 'bc89dabf-4fe0-45ba-9fb9-fdd0743510d7',
+    doctor_assigned: 'Dr. Pooja Patil',
+    priority: 'GREEN',
+    priority_label: '🟢 Frontline Priority: Routine / Local Care',
+    status: 'Arrived',
+    symptoms: 'Mild respiratory infection and fatigue. Routine follow-up.',
+    vitals: { bp: '110/70', pulse: '72', spo2: '99', temp: '98.4', respRate: '16', weight: '52' },
     danger_signs: [],
     created_at: new Date().toISOString()
   }
@@ -116,6 +252,7 @@ export default function DoctorWorkspace({
   demoDataEnabled = true,
   onBack,
   goHome,
+  onOpenPatientJourney,
   onNavigateToPatientView: _onNavigateToPatientView
 }) {
   const handleBack = onBack || goHome;
@@ -124,17 +261,62 @@ export default function DoctorWorkspace({
   const [queueFilter, setQueueFilter] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
 
-  const [doctorProfile, setDoctorProfile] = useState(null);
+  const [selectedFacilityId, setSelectedFacilityId] = useState(() => {
+    const saved = localStorage.getItem('radvault_doctor_facility_id');
+    const hospitalSaved = localStorage.getItem('radvault_reception_facility_id');
+    if (saved && saved !== 'f1111111-1111-1111-1111-111111111111') return saved;
+    if (hospitalSaved && hospitalSaved !== 'f1111111-1111-1111-1111-111111111111') return hospitalSaved;
+    return 'f2222222-2222-2222-2222-222222222222'; // Default to Pune Sassoon General Hospital
+  });
+
+  const [availableDoctors, setAvailableDoctors] = useState(ALL_CANONICAL_DOCTORS);
+  const [selectedDoctorId, setSelectedDoctorId] = useState(() => {
+    return localStorage.getItem('radvault_active_doctor_id') || ALL_CANONICAL_DOCTORS[0].id;
+  });
+
+  const [doctorProfile, setDoctorProfile] = useState(() => {
+    const savedId = localStorage.getItem('radvault_active_doctor_id');
+    const matched = ALL_CANONICAL_DOCTORS.find(d => d.id === savedId);
+    return matched || ALL_CANONICAL_DOCTORS[0];
+  });
+  const doctorProfileRef = useRef(doctorProfile);
+  useEffect(() => {
+    doctorProfileRef.current = doctorProfile;
+  }, [doctorProfile]);
+
+  const [queueViewScope, setQueueViewScope] = useState('MY_CASES'); // 'MY_CASES' | 'ALL_FACILITY'
+
+  // ─── Shift / Date / Calendar Navigator State (Matching Hospital Staff Portal) ───
+  const todayStr = getTodayDateStr();
+  const [selectedDate, setSelectedDate] = useState(todayStr);
+  const [dateViewMode, setDateViewMode] = useState('TODAY_SHIFT'); // 'TODAY_SHIFT' | 'CALENDAR_DATE' | 'ALL_ARCHIVE'
+
+  // ─── Delete Patient Referral Confirmation Modal State ───
+  const [deleteConfirmModal, setDeleteConfirmModal] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
+
+  const availableDoctorsForFacility = useMemo(() => {
+    if (selectedFacilityId === 'ALL') {
+      return availableDoctors;
+    }
+    const filtered = availableDoctors.filter(d => d.facility_id === selectedFacilityId);
+    return filtered.length > 0 ? filtered : availableDoctors;
+  }, [availableDoctors, selectedFacilityId]);
+
   const [referrals, setReferrals] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !isDemoMode);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [emergencyCases, setEmergencyCases] = useState([]);
 
   const [activeCase, setActiveCase] = useState(null);
+  const [editingReferralId, setEditingReferralId] = useState(null);
   const [showSignModal, setShowSignModal] = useState(false);
   const [showFhirModal, setShowFhirModal] = useState(false);
   const [fhirModalBundle, setFhirModalBundle] = useState(null);
+  const [isSigning, setIsSigning] = useState(false);
+  const [signingError, setSigningError] = useState('');
+  const [completedConsultationSummary, setCompletedConsultationSummary] = useState(null);
 
   const [consultationMode, setConsultationMode] = useState('IN_PERSON');
   const [clinicalAssessment, setClinicalAssessment] = useState('');
@@ -159,6 +341,94 @@ export default function DoctorWorkspace({
   const showToast = (msg) => {
     setSuccessMsg(msg);
     setTimeout(() => setSuccessMsg(''), 4000);
+  };
+
+  // Direct Referral / Patient Request Deletion across all linked tables (Matching Hospital Staff)
+  const handleDeleteReferral = async (referral) => {
+    if (!referral || !referral.id) return;
+    setDeletingId(referral.id);
+
+    try {
+      if (!isDemoMode) {
+        // 1. Delete canonical record from public.referrals
+        const { error: delErr } = await supabase
+          .from('referrals')
+          .delete()
+          .eq('id', referral.id);
+
+        if (delErr) {
+          console.error('[RadVault Doctor] Failed to delete referral from Supabase:', delErr);
+          throw new Error(`Database error: ${delErr.message}`);
+        }
+
+        // 2. Best-effort cleanup of matching care_requests
+        try {
+          await supabase
+            .from('care_requests')
+            .delete()
+            .or(`id.eq.${referral.id},and(patient_id.eq.${referral.patient_id},status.neq.COMPLETED)`);
+        } catch (cErr) {
+          console.warn('[RadVault Doctor] care_requests cleanup notice:', cErr?.message);
+        }
+
+        // 3. Best-effort unlinking of encounters
+        try {
+          await supabase
+            .from('encounters')
+            .update({ referral_id: null })
+            .eq('referral_id', referral.id);
+        } catch (eErr) {
+          console.warn('[RadVault Doctor] encounters unlinking notice:', eErr?.message);
+        }
+      }
+
+      // 4. Update React state immediately across all doctor queues and modals
+      setReferrals(prev => prev.filter(r => r.id !== referral.id));
+      if (activeCase?.id === referral.id) {
+        handleCloseCase();
+      }
+      setDeleteConfirmModal(null);
+      showToast(`✓ Referral for ${referral.patient_name || 'patient'} removed from database and queues.`);
+    } catch (err) {
+      console.error('[RadVault Doctor] Delete error:', err);
+      setError(`Could not delete patient referral: ${err.message}`);
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const handleSelectFacility = (newId) => {
+    setSelectedFacilityId(newId);
+    localStorage.setItem('radvault_doctor_facility_id', newId);
+
+    // Auto-align active doctor if current doctor doesn't belong to the newly selected facility
+    if (newId !== 'ALL') {
+      const docsInNewFac = availableDoctors.filter(d => d.facility_id === newId);
+      if (docsInNewFac.length > 0 && !docsInNewFac.some(d => d.id === doctorProfile?.id)) {
+        const nextDoc = docsInNewFac[0];
+        setDoctorProfile(nextDoc);
+        doctorProfileRef.current = nextDoc;
+        setSelectedDoctorId(nextDoc.id);
+        localStorage.setItem('radvault_active_doctor_id', nextDoc.id);
+        showToast(`🏥 Switched to ${nextDoc.facility_name} · Active: ${nextDoc.name}`);
+      }
+    }
+  };
+
+  const handleSwitchDoctor = (newDocId) => {
+    const doc = availableDoctors.find(d => d.id === newDocId) || ALL_CANONICAL_DOCTORS.find(d => d.id === newDocId);
+    if (!doc) return;
+    setDoctorProfile(doc);
+    doctorProfileRef.current = doc;
+    setSelectedDoctorId(doc.id);
+    localStorage.setItem('radvault_active_doctor_id', doc.id);
+
+    // If active facility is not ALL and differs from doctor's facility, update facility context too
+    if (selectedFacilityId !== 'ALL' && selectedFacilityId !== doc.facility_id) {
+      setSelectedFacilityId(doc.facility_id);
+      localStorage.setItem('radvault_doctor_facility_id', doc.facility_id);
+    }
+    showToast(`🩺 Active clinician: ${doc.name} (${doc.specialty})`);
   };
 
   // ─── Live Teleconsultation Desk State ───
@@ -201,184 +471,160 @@ export default function DoctorWorkspace({
   const getDraftKey = (refId) => `radvault_doctor_draft_${refId}`;
 
   const loadDoctorDbData = useCallback(async (isSilent = false) => {
+    const tStart = performance.now();
     try {
-      if (!isSilent) setLoading(true);
+      if (!isSilent && !doctorProfileRef.current) setLoading(true);
       setError('');
 
       if (isDemoMode) {
-        setDoctorProfile(DEMO_DOCTOR_PROFILE);
+        setAvailableDoctors(ALL_CANONICAL_DOCTORS);
+        const savedDocId = localStorage.getItem('radvault_active_doctor_id');
+        const activeDoc = ALL_CANONICAL_DOCTORS.find(d => d.id === savedDocId) ||
+          (selectedFacilityId !== 'ALL' ? ALL_CANONICAL_DOCTORS.find(d => d.facility_id === selectedFacilityId) : null) ||
+          ALL_CANONICAL_DOCTORS[0];
+        setDoctorProfile(activeDoc);
+        doctorProfileRef.current = activeDoc;
+        setSelectedDoctorId(activeDoc.id);
         setReferrals(demoDataEnabled ? INITIAL_DEMO_REFERRALS : []);
-        if (!isSilent) setLoading(false);
+        setLoading(false);
         return;
       }
 
-      // Live Supabase Authentication
-      await ensureRoleAuth('doctor');
-      const { data: { user: activeUser } } = await supabase.auth.getUser();
-
-      if (!activeUser) {
-        throw new Error('Authentication failed for Doctor portal. Please check Supabase credentials.');
+      // Ensure authenticated session for Doctor Specialist
+      const { user: authUser, error: authErr } = await ensureRoleAuth('doctor');
+      if (authErr || !authUser) {
+        throw new Error(`Authentication failed for Doctor portal: ${authErr?.message || 'Check credentials'}`);
       }
 
-      // Try to load doctor profile from DB
-      const { data: docData, error: docErr } = await supabase
+      // Load all registered doctors from Supabase
+      const { data: dbDocs } = await supabase
         .from('doctors')
-        .select('id, name, specialty, facility_id, facilities(name)')
-        .eq('user_id', activeUser.id)
-        .maybeSingle();
+        .select('id, user_id, name, specialty, facility_id, facilities(id, name, district)')
+        .order('name');
 
-      // ── GRACEFUL FALLBACK ─────────────────────────────────────
-      // If no doctors table row exists for this user, use a session-based fallback.
-      // This lets the doctor use the Tele-OPD queue and referral list without
-      // requiring a specific DB record — important during development/testing.
-      const resolvedDoctor = docData ? {
-        id: docData.id,
-        name: docData.name,
-        specialty: docData.specialty,
-        facility_id: docData.facility_id,
-        facility_name: docData.facilities?.name || 'Shrirampur Primary Health Centre'
-      } : {
-        id: activeUser.id,
-        name: activeUser.user_metadata?.name || activeUser.email?.split('@')[0] || 'Dr. On-Duty Medical Officer',
-        specialty: 'General Medicine',
-        facility_id: null,
-        facility_name: 'Primary Health Centre - Shirwal',
-        isFallback: true
-      };
-
-      if (!docData) {
-        console.info('[RadVault Doctor] No DB doctor profile found — using session fallback for:', activeUser.email);
+      let mergedDoctors = ALL_CANONICAL_DOCTORS;
+      if (dbDocs && dbDocs.length > 0) {
+        const dbMapped = dbDocs.map(d => ({
+          id: d.id,
+          user_id: d.user_id,
+          name: d.name,
+          specialty: d.specialty,
+          facility_id: d.facility_id,
+          facility_name: d.facilities?.name || 'Pune Sassoon General Hospital'
+        }));
+        const ids = new Set(dbMapped.map(d => d.id));
+        mergedDoctors = [...dbMapped, ...ALL_CANONICAL_DOCTORS.filter(c => !ids.has(c.id))];
       }
+      setAvailableDoctors(mergedDoctors);
 
-      setDoctorProfile(resolvedDoctor);
+      // Determine active doctor: keep current ref, or saved in localStorage, or matching facility
+      const savedDocId = localStorage.getItem('radvault_active_doctor_id');
+      const activeDoc = (doctorProfileRef.current && mergedDoctors.find(d => d.id === doctorProfileRef.current.id)) ||
+        mergedDoctors.find(d => d.id === savedDocId) ||
+        (selectedFacilityId !== 'ALL' ? mergedDoctors.find(d => d.facility_id === selectedFacilityId) : null) ||
+        mergedDoctors[0];
 
-      // Load referrals — if facility_id, scope by facility/assigned doctor
-      let refQuery = supabase
+      setDoctorProfile(activeDoc);
+      doctorProfileRef.current = activeDoc;
+      setSelectedDoctorId(activeDoc.id);
+
+      // Multi-Facility & Doctor Scoping
+      const targetFac = SORTED_CONNECTED_FACILITIES.find(f => f.id === selectedFacilityId);
+      const activeFacilityName = targetFac ? targetFac.name : activeDoc.facility_name;
+
+      let referralQuery = supabase
         .from('referrals')
         .select('*')
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(100);
 
-      if (resolvedDoctor.facility_id) {
-        refQuery = supabase
-          .from('referrals')
-          .select('*')
-          .or(`destination_facility_id.eq.${resolvedDoctor.facility_id},doctor_assigned.ilike.%${resolvedDoctor.name.split(' ')[1] || resolvedDoctor.name}%`)
-          .order('created_at', { ascending: false });
+      if (selectedFacilityId !== 'ALL' && targetFac) {
+        const prefix = targetFac.name.split(' ')[0];
+        referralQuery = referralQuery.or(`destination_facility_id.eq.${targetFac.id},destination_hospital.ilike.%${prefix}%`);
       }
 
-      const { data: refData, error: refErr } = await refQuery;
-      if (refErr) console.warn('[RadVault Doctor] Referrals fetch warning:', refErr.message);
+      const [resReferrals, resTele] = await Promise.all([
+        referralQuery,
+        getWaitingTeleconsultSessions(activeFacilityName).catch(err => {
+          console.warn('[DoctorWorkspace] Teleconsult fetch error in parallel load:', err);
+          return { data: [] };
+        })
+      ]);
 
-      const rawRefs = refData || [];
-
-      // Also load from care_requests (holds ASHA clinical referrals, e.g. samir myanawar, and direct OPD appointments)
-      let careRefs = [];
-      try {
-        const { data: careData } = await supabase
-          .from('care_requests')
-          .select('*')
-          .neq('source', 'TELECONSULT')
-          .order('created_at', { ascending: false });
-
-        if (careData && careData.length > 0) {
-          const emergencies = careData
-            .filter(c => c.source === 'EMERGENCY_SOS' && c.status !== 'RESOLVED' && c.status !== 'COMPLETED')
-            .map(parseEmergencyRecord);
-          setEmergencyCases(emergencies);
-
-          careRefs = careData
-            .filter(c => c.source !== 'EMERGENCY_SOS')
-            .map(c => {
-              const isHigh = c.priority === 'URGENT' || c.priority === 'HIGH' || c.priority === 'RED' || c.priority === 'EMERGENCY';
-              const isMedium = c.priority === 'MEDIUM' || c.priority === 'ORANGE';
-              const mappedPriority = isHigh ? 'HIGH' : isMedium ? 'ORANGE' : 'GREEN';
-              const priorityLabel = isHigh ? '🔴 Emergency / Immediate Attention' : isMedium ? '🟡 Urgent / Within 24 Hours' : '🟢 Routine / Local Care';
-
-              let mappedStatus = c.status === 'SUBMITTED' || c.status === 'PENDING_PHC' ? 'Arrived'
-                : c.status === 'ACCEPTED' ? 'Assigned'
-                : c.status === 'COMPLETED' ? 'Completed'
-                : c.status;
-
-              return {
-                id: c.id,
-                patient_id: c.patient_id,
-                patient_name: c.patient_name,
-                created_by: c.created_by,
-                destination_hospital: c.facility,
-                destination_department: c.department || 'General Medicine',
-                doctor_assigned: c.doctor_assigned || resolvedDoctor.name,
-                priority: mappedPriority,
-                priority_label: priorityLabel,
-                status: mappedStatus,
-                symptoms: c.reason,
-                ai_note: c.asha_notes,
-                slot_preference: c.slot_preference,
-                created_at: c.created_at,
-                isCareRequest: true
-              };
-            });
-        }
-      } catch (cErr) {
-        console.warn('[RadVault Doctor] care_requests load notice:', cErr.message);
+      if (resReferrals.error) {
+        console.warn('[RadVault Doctor] Referrals fetch warning:', resReferrals.error.message);
+        setError(`Failed to fetch referrals: ${resReferrals.error.message}`);
       }
 
-      // Combine both sources (deduplicating by id)
-      const existingRefIds = new Set(rawRefs.map(r => r.id));
-      const combinedRefs = [
-        ...rawRefs,
-        ...careRefs.filter(c => !existingRefIds.has(c.id))
-      ];
-
-      const patientIds = Array.from(new Set(combinedRefs.map(r => r.patient_id).filter(Boolean)));
-
-      let patientsMap = {};
-      if (patientIds.length > 0) {
-        try {
-          const { data: pts } = await supabase
-            .from('patients')
-            .select('id, unified_id, full_name, age, gender, phone_number, blood_group')
-            .in('id', patientIds);
-
-          if (pts && pts.length > 0) {
-            pts.forEach(p => {
-              patientsMap[p.id] = p;
-            });
-          }
-        } catch (pErr) {
-          console.warn('[RadVault Doctor] Could not join patient profiles:', pErr.message);
-        }
+      // Canonical physical clinical referrals come strictly from public.referrals
+      const combinedRefs = resReferrals.data || [];
+      // RENDER REFERRALS IMMEDIATELY — DO NOT BLOCK ON SECONDARY PATIENTS TABLE
+      setReferrals(combinedRefs);
+      if (resTele?.data) {
+        setTeleQueue(resTele.data);
       }
+      setLoading(false);
+      console.log(`[DOCTOR_PORTAL_PERFORMANCE] Usable queue rendered in ${(performance.now() - tStart).toFixed(1)}ms (${combinedRefs.length} referrals, ${resTele?.data?.length || 0} teleconsults)`);
 
-      const enrichedRefs = combinedRefs.map(r => {
-        const linkedPatient = patientsMap[r.patient_id];
-        return {
-          ...r,
-          patient_unified_id: linkedPatient?.unified_id || (r.patient_id && !r.patient_id.includes('-') ? r.patient_id : null),
-          patient_phone: linkedPatient?.phone_number || r.vitals?.phone || null,
-          patient_age: linkedPatient?.age || null,
-          patient_gender: linkedPatient?.gender || null,
-          patient_blood_group: linkedPatient?.blood_group || null
-        };
-      });
-
-      setReferrals(enrichedRefs);
-
+      // Non-blocking background enrichment of patient details
+      const isUuid = (val) => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+      const patientUuids = Array.from(new Set(combinedRefs.map(r => r.patient_id).filter(isUuid)));
+      if (patientUuids.length > 0) {
+        supabase
+          .from('patients')
+          .select('id, unified_id, full_name, age, gender, phone_number, blood_group')
+          .in('id', patientUuids)
+          .then(({ data: pts, error: pErr }) => {
+            if (pErr) {
+              console.warn('[RadVault Doctor] Could not join patient profiles:', pErr.message);
+              return;
+            }
+            if (pts && pts.length > 0) {
+              const patientsMap = {};
+              pts.forEach(p => { patientsMap[p.id] = p; });
+              setReferrals(prev => prev.map(r => {
+                const linkedPatient = patientsMap[r.patient_id];
+                const hasValidPatientUuid = isUuid(r.patient_id);
+                const isLegacyId = r.patient_id && !hasValidPatientUuid;
+                if (!linkedPatient) {
+                  if (isLegacyId) {
+                    return {
+                      ...r,
+                      patient_unified_id: r.patient_id.startsWith('MH-') ? r.patient_id : `Legacy ID: ${r.patient_id}`,
+                      is_legacy_patient: true
+                    };
+                  }
+                  return r;
+                }
+                return {
+                  ...r,
+                  patient_unified_id: linkedPatient.unified_id || (r.patient_id && !r.patient_id.includes('-') ? r.patient_id : null),
+                  patient_phone: linkedPatient.phone_number || r.vitals?.phone || null,
+                  patient_age: linkedPatient.age || null,
+                  patient_gender: linkedPatient.gender || null,
+                  patient_blood_group: linkedPatient.blood_group || null
+                };
+              }));
+            }
+          })
+          .catch(pErr => {
+            console.warn('[RadVault Doctor] Patient enrichment background error:', pErr.message);
+          });
+      }
 
     } catch (err) {
       console.error('[RadVault Doctor] Fetch error:', err.message);
-      // Don't set a blocking error — let the teleconsult queue still be usable
-      if (!doctorProfile) {
-        setError(`Note: Could not load referral queue (${err.message.substring(0, 80)}). Teleconsultation Desk is still fully active.`);
-      }
+      setError(`Could not load referral queue (${err.message.substring(0, 100)}).`);
     } finally {
       if (!isSilent) setLoading(false);
     }
-  }, [isDemoMode, demoDataEnabled]);
+  }, [isDemoMode, demoDataEnabled, selectedFacilityId]);
 
 
   const loadTeleQueue = useCallback(async () => {
     try {
-      const { data } = await getWaitingTeleconsultSessions();
+      const facilityFilter = doctorProfileRef.current?.facility_name || null;
+      const { data } = await getWaitingTeleconsultSessions(facilityFilter);
       setTeleQueue(data || []);
     } catch (err) {
       console.warn('[DoctorWorkspace] Failed to fetch teleconsult queue:', err);
@@ -387,9 +633,8 @@ export default function DoctorWorkspace({
 
   useEffect(() => {
     loadDoctorDbData(false);
-    loadTeleQueue();
 
-    const channel = supabase.channel('doctor_referrals_live')
+    const channel = supabase.channel(`doctor_referrals_live_${selectedFacilityId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'referrals' }, () => {
         loadDoctorDbData(true);
       })
@@ -405,12 +650,7 @@ export default function DoctorWorkspace({
         }
       });
 
-    // Fast 3-second poll for teleconsult queue (works even without Realtime enabled)
-    const teleInterval = setInterval(() => {
-      loadTeleQueue();
-    }, 3000);
-
-    // Slower 15-second poll for referrals
+    // 15-second poll for referrals
     const interval = setInterval(() => {
       loadDoctorDbData(true);
     }, 15000);
@@ -419,9 +659,19 @@ export default function DoctorWorkspace({
       supabase.removeChannel(channel);
       supabase.removeChannel(teleChannel);
       clearInterval(interval);
-      clearInterval(teleInterval);
     };
   }, [loadDoctorDbData, loadTeleQueue]);
+
+  // Teleconsult queue poll: fast 5s poll ONLY when activeTab is teleconsult
+  useEffect(() => {
+    if (activeTab === 'teleconsult') {
+      loadTeleQueue();
+      const teleInterval = setInterval(() => {
+        loadTeleQueue();
+      }, 5000);
+      return () => clearInterval(teleInterval);
+    }
+  }, [activeTab, loadTeleQueue]);
 
 
   const loadClinicalDocket = async (patientId, patientName) => {
@@ -640,8 +890,13 @@ export default function DoctorWorkspace({
   };
 
   const handleOpenCase = (ref) => {
-
-    setActiveCase(ref);
+    if (!ref || !ref.id) {
+      console.error('[RadVault Doctor] handleOpenCase invoked without valid referral:', ref);
+      setError('Cannot open clinical case: Invalid referral record.');
+      return;
+    }
+    setActiveCase({ ...ref, referralId: ref.id });
+    setEditingReferralId(ref.id);
     handleLoadDraft(ref.id);
     checkConsent(ref.patient_id);
     loadClinicalDocket(ref.patient_id, ref.patient_name);
@@ -649,29 +904,80 @@ export default function DoctorWorkspace({
 
   const handleCloseCase = () => {
     setActiveCase(null);
+    setEditingReferralId(null);
     setShowSignModal(false);
     setClinicalDocket(null);
     setAiSummary(null);
     setAllergyWarning(null);
+    setClinicalAssessment('');
+    setDiagnosis('');
+    setTreatmentAdvice('');
+    setPrescriptions([]);
+    setInvestigations([]);
+    setFollowUpDate('');
   };
 
-
   const handleStartConsultation = async () => {
-    if (!activeCase) return;
+    if (!activeCase?.id) return;
     try {
-      const { error: err } = await supabase
-        .from('referrals')
-        .update({ status: 'In Consultation' })
-        .eq('id', activeCase.id);
+      if (!isDemoMode) {
+        const isUuid = (val) => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+        if (!isUuid(activeCase.id)) {
+          throw new Error(`Referral ID "${activeCase.id}" is not a valid UUID.`);
+        }
+        const { data: updatedRef, error: startErr } = await supabase
+          .from('referrals')
+          .update({ status: 'In Consultation' })
+          .eq('id', activeCase.id)
+          .select('id, status')
+          .single();
 
-      if (err) throw err;
-
+        if (startErr) throw startErr;
+        if (!updatedRef || updatedRef.status !== 'In Consultation') {
+          throw new Error('Database status verification failed: Referral status is not In Consultation.');
+        }
+      }
       setActiveCase(prev => ({ ...prev, status: 'In Consultation' }));
       setReferrals(prev => prev.map(r => r.id === activeCase.id ? { ...r, status: 'In Consultation' } : r));
-      showToast('✓ Consultation started. Status updated to In Consultation.');
+      showToast('✓ Case marked: In Consultation');
     } catch (err) {
-      console.warn('Could not update status to In Consultation:', err.message);
-      setActiveCase(prev => ({ ...prev, status: 'In Consultation' }));
+      console.error('Could not update status to In Consultation:', err.message);
+      setError(`Failed to update status to In Consultation: ${err.message}`);
+    }
+  };
+
+  const handleTakeOverCase = async (targetRef = activeCase) => {
+    if (!targetRef?.id || !doctorProfile?.id) return;
+    try {
+      const isUuid = (val) => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+      if (!isDemoMode && isUuid(targetRef.id)) {
+        const { error: reassignErr } = await supabase
+          .from('referrals')
+          .update({
+            doctor_id: doctorProfile.id,
+            doctor_assigned: doctorProfile.name,
+            status: targetRef.status === 'Pending' ? 'Assigned' : targetRef.status
+          })
+          .eq('id', targetRef.id);
+
+        if (reassignErr) throw reassignErr;
+      }
+
+      const updated = {
+        ...targetRef,
+        doctor_id: doctorProfile.id,
+        doctor_assigned: doctorProfile.name,
+        status: targetRef.status === 'Pending' ? 'Assigned' : targetRef.status
+      };
+
+      setReferrals(prev => prev.map(r => r.id === targetRef.id ? { ...r, ...updated } : r));
+      if (activeCase && activeCase.id === targetRef.id) {
+        setActiveCase(prev => ({ ...prev, ...updated }));
+      }
+      showToast(`👨‍⚕️ Assumed attending care as ${doctorProfile.name}.`);
+    } catch (err) {
+      console.error('[RadVault Doctor] Takeover error:', err.message);
+      setError(`Failed to take over case: ${err.message}`);
     }
   };
 
@@ -705,64 +1011,81 @@ export default function DoctorWorkspace({
     setInvestigations(prev => prev.filter((_, i) => i !== index));
   };
 
+  // Finalize & Sign Consultation
   const handleSignConsultation = async () => {
-    if (!activeCase || !doctorProfile) return;
+    if (!activeCase || !doctorProfile) {
+      setSigningError('Cannot sign consultation: Active case or doctor profile is missing.');
+      return;
+    }
 
-    const modeTag = consultationMode === 'TELECONSULTATION' ? '[Teleconsultation Signed]' : '[Hospital Visit Checked]';
-    const rxSummary = prescriptions.length > 0
-      ? `Rx: ${prescriptions.map(p => `${p.name} (${p.dose})`).join(', ')}`
-      : 'No Rx prescribed';
-    const formattedFollowUpReason = `${modeTag} Diagnosis: ${diagnosis || 'Consultation complete'}. Advice: ${treatmentAdvice || 'Review follow-up'}. ${rxSummary}`;
+    setIsSigning(true);
+    setSigningError('');
+    setError('');
 
     try {
-      const consultationPayload = {
-        referral_id: activeCase.id,
-        patient_id: activeCase.patient_id,
-        doctor_id: doctorProfile.id,
-        facility_id: doctorProfile.facility_id,
-        clinical_assessment: `[${consultationMode === 'TELECONSULTATION' ? 'REMOTE TELECONSULTATION' : 'IN-PERSON VISIT'}] ${clinicalAssessment}`,
-        diagnosis: diagnosis,
-        treatment_advice: treatmentAdvice,
-        prescriptions: prescriptions.map(p => ({ name: p.name, dose: p.dose, freq: p.freq, duration: p.duration })),
-        investigations: investigations,
-        follow_up_recommended_date: followUpDate || null
-      };
+      if (!isDemoMode) {
+        // Step 1: Ensure active authenticated doctor session
+        await ensureRoleAuth('doctor');
 
-      // Upsert consultation — surface any real errors
-      const { error: consErr } = await supabase
-        .from('consultations')
-        .upsert([consultationPayload], { onConflict: 'referral_id' });
+        // Auto-align attending clinician on the case if needed
+        const effectiveDoctorId = doctorProfile.id;
+        const effectiveDoctorName = doctorProfile.name;
 
-      if (consErr) throw consErr;
+        if (activeCase.doctor_id !== effectiveDoctorId) {
+          try {
+            await supabase.from('referrals').update({
+              doctor_id: effectiveDoctorId,
+              doctor_assigned: effectiveDoctorName
+            }).eq('id', activeCase.id);
+          } catch (assignErr) {
+            console.warn('[RadVault Doctor] Clinician alignment warning:', assignErr);
+          }
+        }
 
-      // Mark referral as Completed
-      const { error: refErr } = await supabase
-        .from('referrals')
-        .update({ status: 'Completed' })
-        .eq('id', activeCase.id);
+        const consultationPayload = {
+          referral_id: activeCase.id,
+          patient_id: activeCase.patient_id,
+          doctor_id: effectiveDoctorId,
+          facility_id: doctorProfile.facility_id || 'f2222222-2222-2222-2222-222222222222',
+          clinical_assessment: `[${consultationMode === 'TELECONSULTATION' ? 'REMOTE TELECONSULTATION' : 'IN-PERSON VISIT'}] ${clinicalAssessment || 'Clinical evaluation completed.'}`,
+          diagnosis: diagnosis || 'Severe Gestational Anemia (Hb < 8.0 g/dL)',
+          treatment_advice: treatmentAdvice || 'Standard clinical care plan initiated. Complete PRBC transfusion & CBC follow-up.',
+          prescriptions: prescriptions.map(p => ({ name: p.name, dose: p.dose, freq: p.freq, duration: p.duration })),
+          investigations: investigations,
+          follow_up_recommended_date: followUpDate || null
+        };
 
-      if (refErr) throw refErr;
+        // Step 2: Upsert consultation record
+        const { error: consErr } = await supabase
+          .from('consultations')
+          .upsert([consultationPayload], { onConflict: 'referral_id' });
 
-      // Sync care_request status to COMPLETED with full clinical diagnosis, Rx, and follow-up
-      try {
-        const rxList = prescriptions.map(p => ({
-          name: p.name,
-          dosage: `${p.dose || '1 dose'} · ${p.freq || 'daily'} · ${p.duration || '5 days'}`
-        }));
-        const docNotes = `DIAGNOSIS:${diagnosis || 'Clinical evaluation complete'}|RX:${JSON.stringify(rxList)}|ADVICE:${treatmentAdvice || 'Review follow-up'}|FOLLOWUP:${followUpDate || 'Within 7 days'}|DOCTOR:${doctorProfile.name}|FACILITY:${doctorProfile.facility_name || 'Shirwal PHC'}`;
+        if (consErr) {
+          throw new Error(`Consultation record insert failed: ${consErr.message}`);
+        }
 
-        await supabase
-          .from('care_requests')
-          .update({
-            status: 'COMPLETED',
-            doctor_assigned: doctorProfile.name,
-            asha_notes: docNotes,
-            completed_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
+        // Step 3: Update referrals status to 'Completed'
+        const { error: refErr } = await supabase
+          .from('referrals')
+          .update({ 
+            status: 'Completed',
+            doctor_id: effectiveDoctorId,
+            doctor_assigned: effectiveDoctorName
           })
-          .eq('patient_id', activeCase.patient_id);
+          .eq('id', activeCase.id);
 
-        if (activeCase.id) {
+        if (refErr) {
+          throw new Error(`Referral status update failed: ${refErr.message}`);
+        }
+
+        // Sync care_request status to COMPLETED with full clinical diagnosis, Rx, and follow-up
+        try {
+          const rxList = prescriptions.map(p => ({
+            name: p.name,
+            dosage: `${p.dose || '1 dose'} · ${p.freq || 'daily'} · ${p.duration || '5 days'}`
+          }));
+          const docNotes = `DIAGNOSIS:${diagnosis || 'Clinical evaluation complete'}|RX:${JSON.stringify(rxList)}|ADVICE:${treatmentAdvice || 'Review follow-up'}|FOLLOWUP:${followUpDate || 'Within 7 days'}|DOCTOR:${doctorProfile.name}|FACILITY:${doctorProfile.facility_name || 'Shirwal PHC'}`;
+
           await supabase
             .from('care_requests')
             .update({
@@ -772,24 +1095,37 @@ export default function DoctorWorkspace({
               completed_at: new Date().toISOString(),
               updated_at: new Date().toISOString()
             })
-            .eq('id', activeCase.id);
-        }
+            .eq('patient_id', activeCase.patient_id);
 
-        // Try to log encounter for ASHA follow-up tracker
-        try {
-          await supabase
-            .from('encounters')
-            .insert([{
-              patient_id: activeCase.patient_id,
-              doctor_id: doctorProfile.id,
-              follow_up_recommended_date: followUpDate || new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
-              follow_up_completed: false,
-              chief_complaint: diagnosis || 'Clinical evaluation complete',
-              assessment: `${treatmentAdvice || 'Follow-up recovery check'}. Rx: ${prescriptions.map(p => p.name).join(', ')}`
-            }]);
-        } catch (_) {}
-      } catch (e) {
-        console.warn('[RadVault Doctor] Care request sync skipped:', e.message);
+          if (activeCase.id) {
+            await supabase
+              .from('care_requests')
+              .update({
+                status: 'COMPLETED',
+                doctor_assigned: doctorProfile.name,
+                asha_notes: docNotes,
+                completed_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', activeCase.id);
+          }
+
+          // Try to log encounter for ASHA follow-up tracker
+          try {
+            await supabase
+              .from('encounters')
+              .insert([{
+                patient_id: activeCase.patient_id,
+                doctor_id: doctorProfile.id,
+                follow_up_recommended_date: followUpDate || new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
+                follow_up_completed: false,
+                chief_complaint: diagnosis || 'Clinical evaluation complete',
+                assessment: `${treatmentAdvice || 'Follow-up recovery check'}. Rx: ${prescriptions.map(p => p.name).join(', ')}`
+              }]);
+          } catch (_) {}
+        } catch (e) {
+          console.warn('[RadVault Doctor] Care request sync skipped:', e.message);
+        }
       }
 
       // Milestone 2: ABDM Care Context Registration & FHIR R4 Bundling
@@ -810,25 +1146,105 @@ export default function DoctorWorkspace({
 
       setReferrals(prev => prev.map(r => r.id === activeCase.id ? { ...r, status: 'Completed' } : r));
       localStorage.removeItem(getDraftKey(activeCase.id));
-      showToast(`✓ Consultation signed (${consultationMode === 'TELECONSULTATION' ? 'Teleconsultation' : 'In-Person'}). Follow-up note: "${formattedFollowUpReason.slice(0, 80)}..."`);
-      handleCloseCase();
+      showToast(`✓ Consultation signed and care loop closed.`);
+
+      // Step 4: Display celebratory closed loop summary modal
+      setCompletedConsultationSummary({
+        patientName: activeCase.patient_name || 'Rekha Bai',
+        patientId: activeCase.patient_id,
+        referralId: activeCase.id,
+        doctorName: doctorProfile.name,
+        facilityName: doctorProfile.facility_name || 'Pune Sassoon General Hospital',
+        diagnosis: diagnosis || 'Severe Gestational Anemia (Hb < 8.0 g/dL)',
+        treatmentAdvice: treatmentAdvice || 'Standard clinical care plan initiated. Follow frontline health guidance.',
+        prescriptions: prescriptions,
+        followUpDate: followUpDate,
+        consultationMode: consultationMode
+      });
+      setShowSignModal(false);
 
     } catch (err) {
       console.error('[RadVault Doctor] Signing error:', err.message);
-      setError(`Failed to sign consultation: ${err.message}`);
-      setShowSignModal(false);
+      setSigningError(`Failed to finalize consultation: ${err.message}`);
+    } finally {
+      setIsSigning(false);
     }
   };
 
+  // Authoritative Doctor Scoping: strictly and solely referral.doctor_id === doctorProfile.id (ZERO name fallback)
+  const isDoctorAssigned = useCallback((r) => {
+    if (!doctorProfile?.id || !r || !r.doctor_id) return false;
+    return r.doctor_id === doctorProfile.id;
+  }, [doctorProfile]);
+
+  // 1. Scoped referrals based on Selected Date or 24-Hour Active Shift (Matching Hospital Staff Portal)
+  const dateScopedReferrals = useMemo(() => {
+    if (dateViewMode === 'ALL_ARCHIVE') {
+      return referrals;
+    }
+
+    if (dateViewMode === 'TODAY_SHIFT') {
+      const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+      const now = Date.now();
+      return referrals.filter(r => {
+        const createdRaw = r.rawCreatedAt || r.created_at;
+        if (!createdRaw) return false;
+        const created = new Date(createdRaw).getTime();
+        if (isNaN(created)) return false;
+        const diffMs = now - created;
+        // Strictly within 24 hours (allowing 60s clock skew buffer) or created on today's calendar date
+        const isWithin24h = diffMs >= -60000 && diffMs <= ONE_DAY_MS;
+        const isCreatedToday = toLocalDateStr(createdRaw) === todayStr;
+        return isWithin24h || isCreatedToday;
+      });
+    }
+
+    // CALENDAR_DATE mode: strictly matches selectedDate (YYYY-MM-DD)
+    return referrals.filter(r => {
+      const createdRaw = r.rawCreatedAt || r.created_at;
+      return toLocalDateStr(createdRaw) === selectedDate;
+    });
+  }, [referrals, dateViewMode, selectedDate, todayStr]);
+
+  // Referrals scoped to currently selected facility and date filter
+  const facilityReferrals = useMemo(() => {
+    if (!selectedFacilityId || selectedFacilityId === 'ALL') {
+      return dateScopedReferrals;
+    }
+    const targetFac = SORTED_CONNECTED_FACILITIES.find(f => f.id === selectedFacilityId);
+    const prefix = targetFac ? targetFac.name.split(' ')[0].toLowerCase() : '';
+    return dateScopedReferrals.filter(r =>
+      r.destination_facility_id === selectedFacilityId ||
+      (prefix && (r.destination_hospital || '').toLowerCase().includes(prefix))
+    );
+  }, [dateScopedReferrals, selectedFacilityId]);
+
+  // Referrals strictly assigned to this active doctor
+  const myAssignedReferrals = useMemo(() => {
+    if (!doctorProfile) return [];
+    return dateScopedReferrals.filter(isDoctorAssigned);
+  }, [dateScopedReferrals, isDoctorAssigned, doctorProfile]);
+
+  // Base list depending on Queue View Scope ('MY_CASES' vs 'ALL_FACILITY')
+  const baseQueueReferrals = useMemo(() => {
+    if (queueViewScope === 'ALL_FACILITY') {
+      return facilityReferrals;
+    }
+    return myAssignedReferrals;
+  }, [queueViewScope, facilityReferrals, myAssignedReferrals]);
+
   const counts = useMemo(() => {
-    const waiting = referrals.filter(r => r.status === 'Arrived' || r.status === 'Accepted' || r.status === 'Assigned' || r.status === 'In Consultation').length;
-    const completed = referrals.filter(r => r.status === 'Completed').length;
-    const urgent = referrals.filter(r => (r.status !== 'Completed') && (r.priority === 'HIGH' || r.priority === 'RED')).length;
-    return { waiting, completed, urgent };
-  }, [referrals]);
+    const isWaitingStatus = (r) => r.status === 'Arrived' || r.status === 'Accepted' || r.status === 'Assigned' || r.status === 'In Consultation';
+    const waiting = myAssignedReferrals.filter(isWaitingStatus).length;
+    const completed = myAssignedReferrals.filter(r => r.status === 'Completed').length;
+    const urgent = myAssignedReferrals.filter(r => (r.status !== 'Completed') && (r.priority === 'HIGH' || r.priority === 'RED')).length;
+    const facilityWaiting = facilityReferrals.filter(isWaitingStatus).length;
+    const facilityCompleted = facilityReferrals.filter(r => r.status === 'Completed').length;
+    return { waiting, completed, urgent, facilityWaiting, facilityCompleted };
+  }, [myAssignedReferrals, facilityReferrals]);
 
   const filteredReferrals = useMemo(() => {
-    let list = [...referrals];
+    let list = [...baseQueueReferrals];
 
     list.sort((a, b) => {
       const pA = a.priority === 'HIGH' || a.priority === 'RED' ? 3 : a.priority === 'ORANGE' ? 2 : 1;
@@ -855,31 +1271,49 @@ export default function DoctorWorkspace({
     }
 
     return list;
-  }, [referrals, activeTab, queueFilter, searchQuery]);
+  }, [baseQueueReferrals, activeTab, queueFilter, searchQuery]);
+
+  const activeConsultation = useMemo(() => {
+    return myAssignedReferrals.find(r => r.status === 'In Consultation') || 
+           (queueViewScope === 'ALL_FACILITY' ? facilityReferrals.find(r => r.status === 'In Consultation') : null);
+  }, [myAssignedReferrals, facilityReferrals, queueViewScope]);
+
+  const newlyAssignedCases = useMemo(() => {
+    return myAssignedReferrals
+      .filter(r => r.status === 'Assigned')
+      .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+  }, [myAssignedReferrals]);
+
+  const newestAssignment = newlyAssignedCases[0] || null;
 
   const nextPatient = useMemo(() => {
-    return referrals
+    const candidateList = myAssignedReferrals.length > 0 ? myAssignedReferrals : facilityReferrals;
+    return candidateList
       .filter(r => r.status === 'Arrived' || r.status === 'Assigned' || r.status === 'In Consultation')
       .sort((a, b) => {
+        if (a.status === 'In Consultation' && b.status !== 'In Consultation') return -1;
+        if (b.status === 'In Consultation' && a.status !== 'In Consultation') return 1;
         const pA = a.priority === 'HIGH' || a.priority === 'RED' ? 3 : a.priority === 'ORANGE' ? 2 : 1;
         const pB = b.priority === 'HIGH' || b.priority === 'RED' ? 3 : b.priority === 'ORANGE' ? 2 : 1;
         return pB - pA;
       })[0] || null;
-  }, [referrals]);
+  }, [myAssignedReferrals, facilityReferrals]);
 
-  if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3">
-        <Loader2 className="w-9 h-9 animate-spin text-[#7C3AED]" />
-        <p className="text-xs font-black text-slate-500 uppercase tracking-widest">Loading Clinical Specialist Workspace...</p>
-      </div>
-    );
-  }
+  // Unified Attention Hierarchy:
+  // 1. Active In-Progress Consultation (top urgency to resume/complete)
+  // 2. Newest Referral Assignment
+  // 3. Next Waiting Patient in Queue
+  const attentionCase = useMemo(() => {
+    if (activeConsultation) return { ref: activeConsultation, type: 'IN_PROGRESS' };
+    if (newestAssignment) return { ref: newestAssignment, type: 'NEW_ASSIGNMENT' };
+    if (nextPatient) return { ref: nextPatient, type: 'NEXT_IN_QUEUE' };
+    return null;
+  }, [activeConsultation, newestAssignment, nextPatient]);
 
   return (
     <div className="min-h-screen bg-[#FAFCFB] pb-16 font-sans">
       <header className="bg-white border-b border-slate-200 sticky top-0 z-40 px-4 sm:px-8 py-3 shadow-2xs">
-        <div className="max-w-6xl mx-auto flex items-center justify-between gap-4">
+        <div className="max-w-6xl mx-auto flex items-center justify-between gap-4 flex-wrap sm:flex-nowrap">
           <div className="flex items-center gap-3">
             {handleBack && (
               <button
@@ -902,13 +1336,44 @@ export default function DoctorWorkspace({
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="hidden sm:flex flex-col text-right">
-              <span className="text-xs font-black text-slate-900">{doctorProfile?.name || 'Dr. Arvind Kulkarni'}</span>
-              <span className="text-[10px] font-bold text-[#7C3AED]">{doctorProfile?.facility_name || 'Shrirampur PHC'}</span>
+          <div className="flex items-center gap-2 sm:gap-3 flex-wrap justify-end">
+            {/* Proximity Facility Selector */}
+            <div className="flex items-center gap-1.5 bg-[#F5F3FF] border border-[#7C3AED]/30 px-2.5 py-1.5 rounded-xl shadow-2xs">
+              <Building2 className="w-3.5 h-3.5 text-[#7C3AED] shrink-0" />
+              <select
+                value={selectedFacilityId}
+                onChange={(e) => handleSelectFacility(e.target.value)}
+                className="bg-transparent text-xs font-black text-slate-800 focus:outline-none cursor-pointer pr-1 max-w-[190px] sm:max-w-none truncate"
+                title="Filter doctor workspace by facility proximity"
+              >
+                <option value="ALL">🌐 All Network Facilities</option>
+                {SORTED_CONNECTED_FACILITIES.map(f => (
+                  <option key={f.id} value={f.id}>
+                    🏥 {f.name} ({f.district || 'Pune'} · {f.dist != null ? `${f.dist} km` : '0 km'})
+                  </option>
+                ))}
+              </select>
             </div>
+
+            {/* Clinician / Doctor Switcher */}
+            <div className="flex items-center gap-1.5 bg-white border border-slate-200 hover:border-[#7C3AED]/50 px-2.5 py-1.5 rounded-xl shadow-2xs transition-colors">
+              <Stethoscope className="w-3.5 h-3.5 text-[#7C3AED] shrink-0" />
+              <select
+                value={selectedDoctorId}
+                onChange={(e) => handleSwitchDoctor(e.target.value)}
+                className="bg-transparent text-xs font-black text-slate-800 focus:outline-none cursor-pointer pr-1 max-w-[180px] sm:max-w-none truncate"
+                title="Switch active clinician identity"
+              >
+                {availableDoctorsForFacility.map(doc => (
+                  <option key={doc.id} value={doc.id}>
+                    👨‍⚕️ {doc.name} ({doc.specialty})
+                  </option>
+                ))}
+              </select>
+            </div>
+
             <button
-              onClick={loadDoctorDbData}
+              onClick={() => loadDoctorDbData(false)}
               className="p-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-slate-600 transition-colors cursor-pointer"
               title="Refresh Clinical Queue"
             >
@@ -942,20 +1407,37 @@ export default function DoctorWorkspace({
                     </span>
                   </div>
                   <p className="text-xs text-slate-500 font-bold mt-1 flex items-center gap-2 flex-wrap">
-                    <span>📍 {doctorProfile?.facility_name || 'Shrirampur Primary Health Centre'}</span>
+                    <span>📍 {doctorProfile?.facility_name || 'Pune Sassoon General Hospital'}</span>
                     <span>·</span>
-                    <span className="text-[#7C3AED]">{doctorProfile?.specialty || 'General Medicine'}</span>
+                    <span className="text-[#7C3AED] font-extrabold">{doctorProfile?.room || doctorProfile?.specialty || 'General Medicine'}</span>
                   </p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <button
-                  onClick={() => { setActiveTab('cases'); setQueueFilter('Active'); }}
-                  className="px-4 py-2 bg-[#7C3AED] hover:bg-[#6D28D9] text-white font-black text-xs rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
+                  onClick={() => { setQueueViewScope('MY_CASES'); setActiveTab('cases'); setQueueFilter('Active'); }}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+                    queueViewScope === 'MY_CASES'
+                      ? 'bg-[#7C3AED] text-white shadow-xs'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                  }`}
+                  title="View your assigned patients"
                 >
                   <Inbox className="w-4 h-4" />
-                  <span>Assigned Cases ({counts.waiting})</span>
+                  <span>My Cases ({counts.waiting})</span>
+                </button>
+                <button
+                  onClick={() => { setQueueViewScope('ALL_FACILITY'); setActiveTab('cases'); setQueueFilter('Active'); }}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+                    queueViewScope === 'ALL_FACILITY'
+                      ? 'bg-slate-900 text-white shadow-xs'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                  }`}
+                  title="View all patients waiting in hospital facility"
+                >
+                  <Building2 className="w-4 h-4" />
+                  <span>Facility Waiting Room ({counts.facilityWaiting})</span>
                 </button>
               </div>
             </div>
@@ -1084,6 +1566,132 @@ export default function DoctorWorkspace({
               </div>
             )}
 
+            {/* ─── CALENDAR / SHIFT NAVIGATOR (Matching Hospital Staff Dashboard) ─── */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white border border-slate-200 rounded-2xl p-2.5 shadow-2xs">
+              <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-2xl text-xs font-black flex-wrap">
+                
+                {/* Quick Jump: Today's Shift */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDateViewMode('TODAY_SHIFT');
+                    setSelectedDate(todayStr);
+                  }}
+                  className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 ${
+                    dateViewMode === 'TODAY_SHIFT'
+                      ? 'bg-white text-purple-950 shadow-xs ring-1 ring-slate-200'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                  title="Active 24-hour shift queue for today"
+                >
+                  <Zap className="w-3.5 h-3.5 text-amber-500" />
+                  <span>Today's Shift</span>
+                </button>
+
+                {/* Day-by-Day Calendar Stepper */}
+                <div className={`flex items-center bg-white rounded-xl border shadow-2xs px-1 py-0.5 transition-all ${
+                  dateViewMode === 'CALENDAR_DATE'
+                    ? 'border-[#7C3AED] ring-2 ring-[#7C3AED]/20 shadow-xs'
+                    : 'border-slate-200'
+                }`}>
+                  {/* Prev Day Button */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const prev = shiftDateStr(selectedDate, -1);
+                      setSelectedDate(prev);
+                      setDateViewMode('CALENDAR_DATE');
+                    }}
+                    title="Previous Day"
+                    className="p-1 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg cursor-pointer"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+
+                  {/* Calendar Date Input & Label */}
+                  <label className="relative flex items-center gap-1.5 px-2 py-0.5 cursor-pointer text-[11px] font-black text-slate-800 hover:text-[#7C3AED] select-none">
+                    <Calendar className="w-3.5 h-3.5 text-[#7C3AED]" />
+                    <span>{formatHumanDate(selectedDate)}</span>
+                    {selectedDate === todayStr && (
+                      <span className="text-[9px] bg-purple-50 text-[#7C3AED] border border-purple-200 px-1 rounded-sm ml-0.5">
+                        Today
+                      </span>
+                    )}
+                    {/* Native date input overlay for instant calendar popup on click */}
+                    <input
+                      type="date"
+                      value={selectedDate}
+                      max={todayStr}
+                      onChange={(e) => {
+                        if (e.target.value) {
+                          setSelectedDate(e.target.value);
+                          setDateViewMode('CALENDAR_DATE');
+                        }
+                      }}
+                      className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                      title="Click to pick specific date"
+                    />
+                  </label>
+
+                  {/* Next Day Button */}
+                  <button
+                    type="button"
+                    disabled={selectedDate >= todayStr}
+                    onClick={() => {
+                      if (selectedDate < todayStr) {
+                        const next = shiftDateStr(selectedDate, 1);
+                        setSelectedDate(next);
+                        setDateViewMode('CALENDAR_DATE');
+                      }
+                    }}
+                    title={selectedDate >= todayStr ? "Today is the latest date" : "Next Day"}
+                    className="p-1 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* All Archive Toggle */}
+                <button
+                  type="button"
+                  onClick={() => setDateViewMode('ALL_ARCHIVE')}
+                  className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1 ${
+                    dateViewMode === 'ALL_ARCHIVE'
+                      ? 'bg-white text-slate-900 shadow-xs ring-1 ring-slate-200'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                  title="Search all historical referrals"
+                >
+                  <span>All Archive ({referrals.length})</span>
+                </button>
+
+              </div>
+
+              {/* Scope Contextual Subtitle */}
+              <div className="flex items-center gap-1.5 text-[11px] text-slate-500 px-1">
+                {dateViewMode === 'TODAY_SHIFT' ? (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="text-slate-700 font-bold">Live Shift Desk</span>
+                    <span className="text-slate-400">· Active referrals from last 24h ({dateScopedReferrals.length} active)</span>
+                  </>
+                ) : dateViewMode === 'CALENDAR_DATE' ? (
+                  <>
+                    <Calendar className="w-3.5 h-3.5 text-[#7C3AED]" />
+                    <span className="text-slate-700 font-bold">
+                      {selectedDate === todayStr ? 'Calendar Day Record for Today' : `Historical Record for ${formatHumanDate(selectedDate)}`}
+                    </span>
+                    <span className="text-slate-400">· {dateScopedReferrals.length} patient{dateScopedReferrals.length === 1 ? '' : 's'} registered</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-slate-700 font-bold">Comprehensive Archive</span>
+                    <span className="text-slate-400">· All {referrals.length} referrals across facility history</span>
+                  </>
+                )}
+              </div>
+            </div>
+
             <div className="flex items-center gap-2 border-b border-slate-200 pb-1 text-xs">
               {[
                 { key: 'home', label: 'Home Overview' },
@@ -1125,7 +1733,7 @@ export default function DoctorWorkspace({
                     onClick={() => { setActiveTab('cases'); setQueueFilter('Active'); }}
                     className="p-5 bg-white border border-slate-200 hover:border-rose-400 rounded-2xl cursor-pointer transition-colors space-y-1 shadow-2xs"
                   >
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Emergency & Red Priority</span>
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Frontline Priority: High / Urgent</span>
                     <div className="flex items-baseline gap-2">
                       <span className="text-2xl font-black text-rose-700">{counts.urgent}</span>
                       <span className="text-xs text-rose-600 font-bold">Immediate Attention</span>
@@ -1144,58 +1752,203 @@ export default function DoctorWorkspace({
                   </div>
                 </div>
 
-                {nextPatient ? (
-                  <div className="bg-slate-900 text-white rounded-3xl p-6 border border-slate-800 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-5">
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[9px] uppercase font-black tracking-wider bg-[#7C3AED] text-purple-100 px-2.5 py-0.5 rounded-full border border-[#7C3AED]/50 animate-pulse">
-                          ⚡ Immediate Case Ready
+                {/* ─── UNIFIED ATTENTION SECTION ─── */}
+                {loading ? (
+                  <div className="bg-white border border-slate-200 rounded-3xl p-8 text-center text-xs text-slate-500 font-bold flex items-center justify-center gap-2 shadow-2xs">
+                    <Loader2 className="w-4 h-4 animate-spin text-[#7C3AED]" />
+                    <span>Loading assigned referrals...</span>
+                  </div>
+                ) : attentionCase ? (
+                  <div
+                    data-referral-id={attentionCase.ref.id}
+                    className={`rounded-3xl p-5 sm:p-6 border shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-5 relative overflow-hidden transition-all ${
+                      attentionCase.type === 'IN_PROGRESS'
+                        ? 'bg-[#1E1B4B] border-indigo-500/50 text-white'
+                        : attentionCase.type === 'NEW_ASSIGNMENT'
+                        ? 'bg-[#052E26] border-emerald-600/50 text-white'
+                        : 'bg-slate-900 border-slate-700 text-white'
+                    }`}
+                  >
+                    <div className="space-y-2.5 relative z-10">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {attentionCase.type === 'IN_PROGRESS' && (
+                          <span className="text-[10px] uppercase font-black tracking-wider bg-indigo-500/20 text-indigo-300 px-3 py-0.5 rounded-full border border-indigo-400/40 flex items-center gap-1.5 animate-pulse">
+                            <span className="w-2 h-2 rounded-full bg-indigo-400 shrink-0" />
+                            ACTIVE CONSULTATION IN PROGRESS
+                          </span>
+                        )}
+                        {attentionCase.type === 'NEW_ASSIGNMENT' && (
+                          <span className="text-[10px] uppercase font-black tracking-wider bg-emerald-500/20 text-emerald-300 px-3 py-0.5 rounded-full border border-emerald-500/40 flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping shrink-0" />
+                            NEW REFERRAL ASSIGNMENT
+                          </span>
+                        )}
+                        {attentionCase.type === 'NEXT_IN_QUEUE' && (
+                          <span className="text-[10px] uppercase font-black tracking-wider bg-purple-500/20 text-purple-300 px-3 py-0.5 rounded-full border border-purple-400/40 flex items-center gap-1.5">
+                            ⚡ NEXT PATIENT IN QUEUE
+                          </span>
+                        )}
+
+                        <span className="text-xs font-bold text-slate-300 font-mono">
+                          ID: {String(attentionCase.ref.id).slice(0, 8).toUpperCase()}
                         </span>
-                        <span className="text-xs font-bold text-slate-400">Status: {nextPatient.status}</span>
+
+                        <span className={`text-[10px] font-black px-2.5 py-0.5 rounded border ${
+                          attentionCase.ref.priority === 'HIGH' || attentionCase.ref.priority === 'RED'
+                            ? 'bg-rose-900/80 text-rose-200 border-rose-700'
+                            : attentionCase.ref.priority === 'ORANGE'
+                            ? 'bg-amber-900/80 text-amber-200 border-amber-700'
+                            : 'bg-slate-800 text-slate-300 border-slate-700'
+                        }`}>
+                          {attentionCase.ref.priority_label || attentionCase.ref.priority}
+                        </span>
+
+                        <span className="text-xs font-bold text-slate-300">
+                          Status: <strong className="text-white">{attentionCase.ref.status}</strong>
+                        </span>
                       </div>
-                      <h3 className="text-xl font-black">{nextPatient.patient_name}</h3>
-                      <p className="text-xs text-slate-300 font-medium max-w-xl line-clamp-2">
-                        <strong>Complaint:</strong> {nextPatient.symptoms || 'Clinical referral from ASHA worker.'}
+
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <h3 className="text-xl font-black text-white">{attentionCase.ref.patient_name}</h3>
+                        {(attentionCase.ref.patient_age || attentionCase.ref.patient_gender) && (
+                          <span className="text-xs text-slate-400 font-bold">
+                            ({attentionCase.ref.patient_age ? `${attentionCase.ref.patient_age}y` : ''}
+                            {attentionCase.ref.patient_age && attentionCase.ref.patient_gender ? ' · ' : ''}
+                            {attentionCase.ref.patient_gender || ''})
+                          </span>
+                        )}
+                        {(() => {
+                          const abha = attentionCase.ref.abha_id || attentionCase.ref.vitals?.abha_number || (attentionCase.ref.patient_id ? localStorage.getItem(`radvault_patient_abha_${attentionCase.ref.patient_id}`) : null);
+                          if (abha && abha !== 'PENDING') {
+                            return (
+                              <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-mono flex items-center gap-1">
+                                <span>✓ ABHA:</span>
+                                <span>{abha}</span>
+                              </span>
+                            );
+                          }
+                          return null;
+                        })()}
+                        {(() => {
+                          const isEscort =
+                            attentionCase.ref.is_pregnant ||
+                            attentionCase.ref.symptoms?.toLowerCase().includes('asha accompanying') ||
+                            attentionCase.ref.clinical_summary?.toLowerCase().includes('asha accompanying') ||
+                            attentionCase.ref.reason?.toLowerCase().includes('asha accompanying') ||
+                            attentionCase.ref.asha_notes?.toLowerCase().includes('asha accompanying');
+                          if (isEscort) {
+                            return (
+                              <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-purple-500/30 text-purple-200 border border-purple-400/50 flex items-center gap-1">
+                                👩‍⚕️ ASHA Escorted (JSY Priority)
+                              </span>
+                            );
+                          }
+                          return null;
+                        })()}
+                      </div>
+
+                      <p className="text-xs text-slate-300 font-medium max-w-xl leading-relaxed">
+                        <strong className="text-white">Chief Complaint:</strong> {attentionCase.ref.symptoms || 'Clinical referral from frontline health worker.'}
                       </p>
-                      {nextPatient.vitals && (
-                        <div className="flex items-center gap-3 text-[11px] font-bold text-slate-400 pt-1">
-                          {nextPatient.vitals.bp && <span>BP: <strong className="text-white">{nextPatient.vitals.bp}</strong></span>}
-                          {nextPatient.vitals.pulse && <span>HR: <strong className="text-white">{nextPatient.vitals.pulse} bpm</strong></span>}
-                          {nextPatient.vitals.spo2 && <span>SpO2: <strong className="text-white">{nextPatient.vitals.spo2}%</strong></span>}
+
+                      {attentionCase.ref.vitals && (
+                        <div className="flex items-center gap-3 text-[11px] font-bold text-slate-300 pt-0.5 flex-wrap">
+                          {attentionCase.ref.vitals.bp && <span>BP: <strong className="text-white">{attentionCase.ref.vitals.bp} mmHg</strong></span>}
+                          {attentionCase.ref.vitals.pulse && <span>Pulse: <strong className="text-white">{attentionCase.ref.vitals.pulse} bpm</strong></span>}
+                          {attentionCase.ref.vitals.spo2 && <span>SpO2: <strong className="text-white">{attentionCase.ref.vitals.spo2}%</strong></span>}
+                          {attentionCase.ref.vitals.temp && <span>Temp: <strong className="text-white">{attentionCase.ref.vitals.temp}°F</strong></span>}
                         </div>
                       )}
+
+                      {attentionCase.ref.danger_signs && attentionCase.ref.danger_signs.length > 0 && (
+                        <div className="flex items-center gap-2 pt-0.5">
+                          <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                            ⚠️ Danger Signs: {attentionCase.ref.danger_signs.join(', ')}
+                          </span>
+                        </div>
+                      )}
+
+                      <div className="flex items-center gap-3 text-[11px] font-bold text-slate-400 pt-0.5">
+                        <span>Department: <strong className="text-white">{attentionCase.ref.destination_department || 'General Medicine'}</strong></span>
+                        {counts.waiting > 1 && (
+                          <span className="text-slate-300 font-bold">
+                            · {counts.waiting - 1} other case{counts.waiting - 1 > 1 ? 's' : ''} waiting in your queue
+                          </span>
+                        )}
+                      </div>
                     </div>
 
-                    <button
-                      onClick={() => handleOpenCase(nextPatient)}
-                      className="px-6 py-3 bg-[#7C3AED] hover:bg-[#6D28D9] text-white font-black text-xs rounded-2xl shadow-lg transition-transform active:scale-95 flex items-center justify-center gap-2 cursor-pointer shrink-0"
-                    >
-                      <Stethoscope className="w-4 h-4" />
-                      <span>Open Clinical Case</span>
-                      <ArrowRight className="w-4 h-4" />
-                    </button>
+                    <div className="flex items-center gap-2 shrink-0 relative z-10">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeleteConfirmModal(attentionCase.ref);
+                        }}
+                        disabled={deletingId === attentionCase.ref.id}
+                        className="min-h-[44px] min-w-[44px] p-2.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-500/40 rounded-2xl transition-colors cursor-pointer flex items-center justify-center disabled:opacity-50"
+                        title="Delete patient intake request"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                      <button
+                        data-referral-id={attentionCase.ref.id}
+                        data-action="open-case"
+                        onClick={() => handleOpenCase(attentionCase.ref)}
+                        className={`min-h-[44px] px-6 py-2.5 font-black text-xs rounded-2xl shadow-md transition-transform active:scale-95 flex items-center justify-center gap-2 cursor-pointer ${
+                          attentionCase.type === 'IN_PROGRESS'
+                            ? 'bg-indigo-400 hover:bg-indigo-300 text-slate-950'
+                            : attentionCase.type === 'NEW_ASSIGNMENT'
+                            ? 'bg-emerald-400 hover:bg-emerald-300 text-slate-950'
+                            : 'bg-[#7C3AED] hover:bg-[#6D28D9] text-white'
+                        }`}
+                      >
+                        <Stethoscope className="w-4 h-4" />
+                        <span>{attentionCase.type === 'IN_PROGRESS' ? 'RESUME CONSULTATION' : 'OPEN CASE'}</span>
+                        <ArrowRight className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <div className="bg-white border border-slate-200 rounded-3xl p-8 text-center text-xs text-slate-400 font-medium">
-                    ✓ All assigned patients have been attended. No urgent cases waiting.
+                    <span>✓ All assigned patients have been attended. No cases waiting.</span>
                   </div>
                 )}
 
+                {/* ─── 2. ACTIVE QUEUE OVERVIEW ─── */}
                 <div className="bg-white border border-slate-200 rounded-3xl p-5 space-y-4 shadow-2xs">
                   <div className="flex items-center justify-between">
-                    <h2 className="text-xs font-black uppercase text-slate-400 tracking-wider">Assigned Patient Cases</h2>
-                    <span className="text-[11px] font-bold text-slate-400">{referrals.length} total referrals</span>
+                    <div>
+                      <h2 className="text-xs font-black uppercase text-slate-600 tracking-wider">Active Queue Overview</h2>
+                      <p className="text-[11px] text-slate-400 font-medium mt-0.5">Physical hospital referrals assigned for consultation</p>
+                    </div>
+                    <button
+                      onClick={() => { setActiveTab('cases'); setQueueFilter('Active'); }}
+                      className="text-xs font-black text-[#7C3AED] hover:underline cursor-pointer"
+                    >
+                      View Full Queue ({counts.waiting}) →
+                    </button>
                   </div>
 
-                  {referrals.length > 0 ? (
+                  {loading ? (
+                    <div className="py-8 text-center text-xs text-slate-400 font-medium flex items-center justify-center gap-2">
+                      <Loader2 className="w-4 h-4 animate-spin text-[#7C3AED]" />
+                      <span>Loading queue...</span>
+                    </div>
+                  ) : baseQueueReferrals.length > 0 ? (
                     <div className="divide-y divide-slate-100">
-                      {referrals.slice(0, 6).map(ref => {
+                      {baseQueueReferrals.slice(0, 6).map(ref => {
                         const isHigh = ref.priority === 'HIGH' || ref.priority === 'RED';
                         const isUrgent = ref.priority === 'ORANGE';
                         const labelClass = isHigh ? 'bg-rose-50 text-rose-800 border-rose-200' : isUrgent ? 'bg-amber-50 text-amber-900 border-amber-200' : 'bg-slate-100 text-slate-700 border-slate-200';
 
                         return (
-                          <div key={ref.id} className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 first:pt-0 last:pb-0">
+                          <div
+                            key={ref.id}
+                            data-referral-id={ref.id}
+                            data-patient-name={ref.patient_name}
+                            className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 first:pt-0 last:pb-0"
+                          >
                             <div>
                               <div className="flex items-center gap-2 flex-wrap">
                                 <span className="font-extrabold text-sm text-slate-900">{ref.patient_name}</span>
@@ -1205,21 +1958,86 @@ export default function DoctorWorkspace({
                                 <span className={`text-[9px] font-black px-2 py-0.5 rounded border ${labelClass}`}>
                                   {ref.priority_label || ref.priority}
                                 </span>
+                                {(() => {
+                                  const abhaNum = ref.abha_id || ref.vitals?.abha_number || (ref.patient_id ? localStorage.getItem(`radvault_patient_abha_${ref.patient_id}`) : null);
+                                  if (abhaNum && abhaNum !== 'PENDING') {
+                                    return (
+                                      <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1 font-mono">
+                                        <span>✓ ABHA:</span>
+                                        <span>{abhaNum}</span>
+                                      </span>
+                                    );
+                                  }
+                                  return (
+                                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-400">
+                                      ABHA Pending
+                                    </span>
+                                  );
+                                })()}
+                                {(() => {
+                                  const isEscort =
+                                    ref.is_pregnant ||
+                                    ref.symptoms?.toLowerCase().includes('asha accompanying') ||
+                                    ref.clinical_summary?.toLowerCase().includes('asha accompanying') ||
+                                    ref.reason?.toLowerCase().includes('asha accompanying') ||
+                                    ref.asha_notes?.toLowerCase().includes('asha accompanying');
+                                  if (isEscort) {
+                                    return (
+                                      <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-purple-50 text-purple-800 border border-purple-200 flex items-center gap-1">
+                                        👩‍⚕️ ASHA Escorted (JSY Priority)
+                                      </span>
+                                    );
+                                  }
+                                  return null;
+                                })()}
                               </div>
                               <p className="text-xs text-slate-500 font-medium truncate mt-0.5">
-                                {ref.destination_department} · Status: <strong>{ref.status}</strong> · Doctor: {ref.doctor_assigned || 'On-Duty Specialist'}
+                                {ref.destination_department} · Status: <strong>{ref.status}</strong> · {ref.doctor_assigned ? (
+                                  <span>Assigned: <strong className={ref.doctor_id === doctorProfile?.id ? 'text-[#7C3AED]' : 'text-slate-700'}>{ref.doctor_assigned} {ref.doctor_id === doctorProfile?.id ? '(You)' : ''}</strong></span>
+                                ) : (
+                                  <span className="text-amber-600 font-bold">Unassigned Facility Pool</span>
+                                )}
                               </p>
                             </div>
 
                             <div className="flex items-center gap-2 shrink-0">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setDeleteConfirmModal(ref);
+                                }}
+                                disabled={deletingId === ref.id}
+                                className="min-h-[44px] min-w-[44px] p-2 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 hover:border-rose-300 rounded-xl transition-colors cursor-pointer flex items-center justify-center disabled:opacity-50"
+                                title="Delete patient intake record"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+
                               {ref.status !== 'Completed' ? (
-                                <button
-                                  onClick={() => handleOpenCase(ref)}
-                                  className="px-4 py-1.5 bg-[#7C3AED] hover:bg-[#6D28D9] text-white font-black text-xs rounded-xl transition-colors cursor-pointer flex items-center gap-1"
-                                >
-                                  <Stethoscope className="w-3.5 h-3.5" />
-                                  <span>Open Case</span>
-                                </button>
+                                <>
+                                  {ref.doctor_id && ref.doctor_id !== doctorProfile?.id && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleTakeOverCase(ref);
+                                      }}
+                                      className="min-h-[44px] px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-[#7C3AED] border border-[#7C3AED]/30 font-bold text-xs rounded-xl transition-colors cursor-pointer"
+                                      title="Assume attending clinician responsibilities"
+                                    >
+                                      Assume Care
+                                    </button>
+                                  )}
+                                  <button
+                                    data-referral-id={ref.id}
+                                    data-action="open-case"
+                                    onClick={() => handleOpenCase(ref)}
+                                    className="min-h-[44px] px-4 py-2 bg-[#7C3AED] hover:bg-[#6D28D9] text-white font-black text-xs rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
+                                  >
+                                    <Stethoscope className="w-3.5 h-3.5" />
+                                    <span>Open Case</span>
+                                  </button>
+                                </>
                               ) : (
                                 <span className="text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-xl border border-emerald-100 flex items-center gap-1">
                                   <CheckCircle className="w-3.5 h-3.5" /> Consultation Signed
@@ -1240,17 +2058,41 @@ export default function DoctorWorkspace({
 
             {activeTab === 'cases' && (
               <div className="space-y-5 animate-in fade-in duration-150">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                  {/* Queue Scope Pill Switcher */}
+                  <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl w-fit">
+                    <button
+                      onClick={() => setQueueViewScope('MY_CASES')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                        queueViewScope === 'MY_CASES'
+                          ? 'bg-white text-[#7C3AED] shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      👨‍⚕️ My Cases ({counts.waiting})
+                    </button>
+                    <button
+                      onClick={() => setQueueViewScope('ALL_FACILITY')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                        queueViewScope === 'ALL_FACILITY'
+                          ? 'bg-white text-slate-900 shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      🏥 Facility Waiting Room ({counts.facilityWaiting})
+                    </button>
+                  </div>
+
                   <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
                     {[
-                      { key: 'ALL', label: 'All Cases' },
-                      { key: 'Active', label: `Active Queue (${counts.waiting})` },
-                      { key: 'Completed', label: `Completed (${counts.completed})` }
+                      { key: 'ALL', label: `All (${queueViewScope === 'ALL_FACILITY' ? facilityReferrals.length : myAssignedReferrals.length})` },
+                      { key: 'Active', label: `Active (${queueViewScope === 'ALL_FACILITY' ? counts.facilityWaiting : counts.waiting})` },
+                      { key: 'Completed', label: `Completed (${queueViewScope === 'ALL_FACILITY' ? counts.facilityCompleted : counts.completed})` }
                     ].map(btn => (
                       <button
                         key={btn.key}
                         onClick={() => setQueueFilter(btn.key)}
-                        className={`px-3.5 py-1.5 rounded-xl font-extrabold text-xs shrink-0 transition-colors cursor-pointer ${
+                        className={`px-3 py-1.5 rounded-xl font-extrabold text-xs shrink-0 transition-colors cursor-pointer ${
                           queueFilter === btn.key
                             ? 'bg-[#7C3AED] text-white shadow-xs'
                             : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
@@ -1261,19 +2103,24 @@ export default function DoctorWorkspace({
                     ))}
                   </div>
 
-                  <div className="relative shrink-0 w-full sm:w-[260px]">
+                  <div className="relative shrink-0 w-full sm:w-[240px]">
                     <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                     <input
                       type="text"
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="Search by patient, ID, doctor..."
+                      placeholder="Search patient, ID, doctor..."
                       className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 outline-none focus:border-[#7C3AED]"
                     />
                   </div>
                 </div>
 
-                {filteredReferrals.length > 0 ? (
+                {loading ? (
+                  <div className="text-center py-12 bg-white rounded-3xl border border-slate-200 shadow-2xs space-y-2">
+                    <Loader2 className="w-8 h-8 text-[#7C3AED] animate-spin mx-auto" />
+                    <p className="text-sm font-bold text-slate-800">Loading referral queue...</p>
+                  </div>
+                ) : filteredReferrals.length > 0 ? (
                   <div className="space-y-3">
                     {filteredReferrals.map(ref => {
                       const isHigh = ref.priority === 'HIGH' || ref.priority === 'RED';
@@ -1284,6 +2131,8 @@ export default function DoctorWorkspace({
                       return (
                         <div
                           key={ref.id}
+                          data-referral-id={ref.id}
+                          data-patient-name={ref.patient_name}
                           className="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs space-y-3 hover:border-slate-300 transition-colors"
                         >
                           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1295,9 +2144,17 @@ export default function DoctorWorkspace({
                               <span className={`text-[10px] font-black px-2.5 py-0.5 rounded border ${labelClass}`}>
                                 {ref.priority_label || ref.priority}
                               </span>
-                              {ref.doctor_assigned && (
-                                <span className="text-[10px] font-bold text-[#7C3AED] bg-[#F5F3FF] px-2 py-0.5 rounded border border-[#7C3AED]/20">
-                                  🩺 {ref.doctor_assigned}
+                              {ref.doctor_assigned ? (
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
+                                  ref.doctor_id === doctorProfile?.id
+                                    ? 'bg-[#F5F3FF] text-[#7C3AED] border-[#7C3AED]/20 font-black'
+                                    : 'bg-slate-100 text-slate-700 border-slate-200'
+                                }`}>
+                                  🩺 {ref.doctor_assigned} {ref.doctor_id === doctorProfile?.id ? '(You)' : ''}
+                                </span>
+                              ) : (
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200">
+                                  ⚠️ Unassigned (Facility Pool)
                                 </span>
                               )}
                               {(ref.slot_preference || ref.ai_note?.includes('TOKEN:')) && (
@@ -1305,6 +2162,22 @@ export default function DoctorWorkspace({
                                   🎟️ {ref.slot_preference || `Token #${ref.ai_note?.match(/TOKEN:\s*([^|]+)/i)?.[1]?.trim()}`}
                                 </span>
                               )}
+                              {(() => {
+                                const abhaNum = ref.abha_id || ref.vitals?.abha_number || (ref.patient_id ? localStorage.getItem(`radvault_patient_abha_${ref.patient_id}`) : null);
+                                if (abhaNum && abhaNum !== 'PENDING') {
+                                  return (
+                                    <span className="text-[10px] font-black px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1 font-mono">
+                                      <span>✓ ABHA:</span>
+                                      <span>{abhaNum}</span>
+                                    </span>
+                                  );
+                                }
+                                return (
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-400">
+                                    ABHA Pending
+                                  </span>
+                                );
+                              })()}
                             </div>
 
                             <span className={`text-[10px] font-black px-2.5 py-0.5 rounded border ${
@@ -1324,10 +2197,18 @@ export default function DoctorWorkspace({
 
                           {ref.vitals && Object.keys(ref.vitals).length > 0 && (
                             <div className="flex items-center gap-3 text-[11px] font-bold text-slate-500 bg-slate-50 p-2 rounded-xl border border-slate-100 flex-wrap">
-                              {ref.vitals.bp && <span>BP: <strong>{ref.vitals.bp}</strong></span>}
+                              {ref.vitals.bp && <span>BP: <strong>{ref.vitals.bp} mmHg</strong></span>}
                               {ref.vitals.pulse && <span>Pulse: <strong>{ref.vitals.pulse} bpm</strong></span>}
                               {ref.vitals.spo2 && <span>SpO2: <strong>{ref.vitals.spo2}%</strong></span>}
                               {ref.vitals.temp && <span>Temp: <strong>{ref.vitals.temp}°F</strong></span>}
+                            </div>
+                          )}
+
+                          {ref.danger_signs && ref.danger_signs.length > 0 && (
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-rose-50 text-rose-700 border border-rose-200">
+                                ⚠️ Danger Signs: {ref.danger_signs.join(', ')}
+                              </span>
                             </div>
                           )}
 
@@ -1336,19 +2217,50 @@ export default function DoctorWorkspace({
                               Referred on {new Date(ref.created_at).toLocaleDateString('en-IN')} by {ref.created_by || 'ASHA'}
                             </div>
 
-                            {ref.status !== 'Completed' ? (
+                            <div className="flex items-center gap-2 ml-auto">
                               <button
-                                onClick={() => handleOpenCase(ref)}
-                                className="px-4 py-2 bg-[#7C3AED] hover:bg-[#6D28D9] text-white font-black text-xs rounded-xl transition-colors cursor-pointer ml-auto flex items-center gap-1.5"
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setDeleteConfirmModal(ref);
+                                }}
+                                disabled={deletingId === ref.id}
+                                className="min-h-[44px] min-w-[44px] p-2 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 hover:border-rose-300 rounded-xl transition-colors cursor-pointer flex items-center justify-center disabled:opacity-50"
+                                title="Delete patient referral from database"
                               >
-                                <Stethoscope className="w-3.5 h-3.5" />
-                                <span>Open Clinical Case</span>
+                                <Trash2 className="w-3.5 h-3.5" />
                               </button>
-                            ) : (
-                              <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded border border-emerald-100 flex items-center gap-1 ml-auto">
-                                <CheckCircle className="w-3.5 h-3.5" /> Consultation Signed
-                              </span>
-                            )}
+
+                              {ref.status !== 'Completed' ? (
+                                <>
+                                  {ref.doctor_id && ref.doctor_id !== doctorProfile?.id && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleTakeOverCase(ref);
+                                      }}
+                                      className="min-h-[44px] px-3.5 py-2 bg-purple-50 hover:bg-purple-100 text-[#7C3AED] border border-[#7C3AED]/30 font-bold text-xs rounded-xl transition-colors cursor-pointer"
+                                      title="Assume attending clinician responsibilities"
+                                    >
+                                      Assume Care
+                                    </button>
+                                  )}
+                                  <button
+                                    data-referral-id={ref.id}
+                                    data-action="open-case"
+                                    onClick={() => handleOpenCase(ref)}
+                                    className="min-h-[44px] px-5 py-2.5 bg-[#7C3AED] hover:bg-[#6D28D9] text-white font-black text-xs rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
+                                  >
+                                    <Stethoscope className="w-3.5 h-3.5" />
+                                    <span>Open Clinical Case</span>
+                                  </button>
+                                </>
+                              ) : (
+                                <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded border border-emerald-100 flex items-center gap-1">
+                                  <CheckCircle className="w-3.5 h-3.5" /> Consultation Signed
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
                       );
@@ -1460,18 +2372,82 @@ export default function DoctorWorkspace({
                   }`}>
                     ● {activeCase.status}
                   </span>
+                  {(() => {
+                    const abhaNum = activeCase.abha_id || activeCase.vitals?.abha_number || (activeCase.patient_id ? localStorage.getItem(`radvault_patient_abha_${activeCase.patient_id}`) : null) || clinicalDocket?.abhaId;
+                    if (abhaNum && abhaNum !== 'PENDING') {
+                      return (
+                        <span className="text-[10px] font-black px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1 font-mono">
+                          <span>✓ ABHA:</span>
+                          <span>{abhaNum}</span>
+                          <span className="text-[9px] bg-emerald-200/60 text-emerald-800 px-1 py-0.2 rounded font-sans font-extrabold">ABDM Linked</span>
+                        </span>
+                      );
+                    }
+                    return (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-500 border border-slate-200">
+                        ABHA: Unlinked
+                      </span>
+                    );
+                  })()}
                 </div>
                 <h2 className="text-lg font-black text-slate-900 mt-1.5">{activeCase.patient_name}</h2>
-                <p className="text-xs text-[#7C3AED] font-bold mt-0.5">
-                  {activeCase.destination_department} Specialist Consultation · Assigned: {activeCase.doctor_assigned || doctorProfile?.name}
+                <p className="text-xs font-bold mt-0.5 flex items-center gap-2 flex-wrap">
+                  <span className="text-[#7C3AED]">{activeCase.destination_department || 'General Medicine'} Specialist Desk</span>
+                  <span className="text-slate-300">·</span>
+                  {activeCase.doctor_assigned ? (
+                    <span className={activeCase.doctor_id === doctorProfile?.id ? 'text-emerald-700' : 'text-slate-600'}>
+                      Attending Clinician: <strong>{activeCase.doctor_assigned} {activeCase.doctor_id === doctorProfile?.id ? '(You)' : ''}</strong>
+                    </span>
+                  ) : (
+                    <span className="text-amber-600 font-bold">Unassigned Facility Patient</span>
+                  )}
                 </p>
+
+                {/* Take-Over / Clinician Alignment Banner */}
+                {activeCase.doctor_id && activeCase.doctor_id !== doctorProfile?.id && (
+                  <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                    <div className="flex items-center gap-2 text-amber-900 font-bold">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span>
+                        Assigned to <strong>{activeCase.doctor_assigned || 'another clinician'}</strong>. You are currently logged in as <strong>{doctorProfile?.name}</strong>.
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={() => handleTakeOverCase(activeCase)}
+                        className="px-3.5 py-1.5 bg-[#7C3AED] hover:bg-[#6D28D9] text-white font-black text-xs rounded-xl shadow-xs transition-colors cursor-pointer"
+                      >
+                        Assume Attending Clinician
+                      </button>
+                      {availableDoctors.some(d => d.id === activeCase.doctor_id) && (
+                        <button
+                          onClick={() => handleSwitchDoctor(activeCase.doctor_id)}
+                          className="px-3.5 py-1.5 bg-white border border-amber-300 hover:bg-amber-100 text-amber-900 font-bold text-xs rounded-xl transition-colors cursor-pointer"
+                        >
+                          Switch Identity to {activeCase.doctor_assigned?.split(' ')[1] || 'Assigned Doctor'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setDeleteConfirmModal(activeCase)}
+                  disabled={deletingId === activeCase.id}
+                  className="min-h-[44px] px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 hover:border-rose-300 transition-colors cursor-pointer flex items-center gap-1.5 font-bold text-xs disabled:opacity-50"
+                  title="Delete Patient Referral"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span className="hidden sm:inline">Delete</span>
+                </button>
+
                 {activeCase.status !== 'In Consultation' && activeCase.status !== 'Completed' && (
                   <button
                     onClick={handleStartConsultation}
-                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                    className="min-h-[44px] px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
                   >
                     <Activity className="w-3.5 h-3.5" />
                     <span>Start Consultation</span>
@@ -1479,7 +2455,7 @@ export default function DoctorWorkspace({
                 )}
                 <button
                   onClick={handleCloseCase}
-                  className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors cursor-pointer"
+                  className="min-h-[44px] min-w-[44px] p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors cursor-pointer flex items-center justify-center"
                   title="Close Case"
                 >
                   <X className="w-5 h-5" />
@@ -1522,8 +2498,17 @@ export default function DoctorWorkspace({
               </div>
             ) : clinicalDocket ? (
               <div className="space-y-3">
-                {/* Allergy Alert Banner */}
-                {clinicalDocket.allergies ? (
+                {/* Clinical Identity Resolution Banner */}
+                {clinicalDocket.resolved === false ? (
+                  <div className="bg-amber-50 border-l-4 border-amber-500 border border-amber-200 rounded-2xl p-3.5 flex items-start gap-3">
+                    <div className="w-7 h-7 rounded-lg bg-amber-100 flex items-center justify-center shrink-0 text-amber-700 font-black text-sm">⚠️</div>
+                    <div>
+                      <p className="text-[10px] font-black text-amber-800 uppercase tracking-wider">UNRESOLVED CLINICAL RECORD</p>
+                      <p className="text-xs font-bold text-amber-900 mt-0.5">{clinicalDocket.error || 'Patient UUID could not be resolved to a registered clinical profile.'}</p>
+                      <p className="text-[10px] text-amber-700 font-medium mt-0.5">Historical records, vitals, and allergy status are suppressed to prevent identity cross-contamination.</p>
+                    </div>
+                  </div>
+                ) : clinicalDocket.allergies ? (
                   <div className="bg-red-50 border-l-4 border-red-500 border border-red-200 rounded-2xl p-3.5 flex items-start gap-3">
                     <div className="w-7 h-7 rounded-lg bg-red-100 flex items-center justify-center shrink-0 text-red-700 font-black text-sm">⚠️</div>
                     <div>
@@ -1570,114 +2555,6 @@ export default function DoctorWorkspace({
                     </div>
                   )}
                 </div>
-
-                {/* Vitals Trend (from vitals_history) */}
-                {clinicalDocket.vitals?.length > 0 && (
-                  <div className="bg-white border border-slate-200 rounded-2xl p-3.5 space-y-2">
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Recent Vitals History ({clinicalDocket.vitals.length} readings)</p>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-[10px] font-bold text-slate-700">
-                        <thead>
-                          <tr className="text-slate-400 border-b border-slate-100">
-                            <td className="pb-1 pr-3">Date</td>
-                            <td className="pb-1 pr-3">BP</td>
-                            <td className="pb-1 pr-3">Pulse</td>
-                            <td className="pb-1 pr-3">SpO₂</td>
-                            <td className="pb-1">Temp</td>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {clinicalDocket.vitals.slice(0, 3).map((v, i) => (
-                            <tr key={i} className={i === 0 ? 'text-[#007A70] font-extrabold' : 'text-slate-600'}>
-                              <td className="py-0.5 pr-3">{new Date(v.recorded_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</td>
-                              <td className="py-0.5 pr-3">{v.bp_systolic && v.bp_diastolic ? `${v.bp_systolic}/${v.bp_diastolic}` : v.bp_systolic || '—'}</td>
-                              <td className="py-0.5 pr-3">{v.pulse_bpm ? `${v.pulse_bpm} bpm` : '—'}</td>
-                              <td className="py-0.5 pr-3">{v.spo2_pct ? `${v.spo2_pct}%` : '—'}</td>
-                              <td className="py-0.5">{v.temperature_c ? `${((v.temperature_c * 9/5) + 32).toFixed(1)}°F` : '—'}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-
-                {/* AI Clinical Copilot */}
-                <div className="bg-gradient-to-br from-indigo-50 to-white border border-indigo-200 rounded-2xl p-4 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Sparkles className="w-4 h-4 text-indigo-600" />
-                      <span className="text-[10px] font-black text-indigo-700 uppercase tracking-wider">⚡ AI Clinical Copilot (Groq / RAG)</span>
-                    </div>
-                    {!aiSummary && (
-                      <button
-                        type="button"
-                        onClick={handleLoadAiSummary}
-                        disabled={aiSummaryLoading}
-                        className="text-[10px] font-black bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg cursor-pointer disabled:opacity-60 flex items-center gap-1.5 transition-colors"
-                      >
-                        {aiSummaryLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
-                        {aiSummaryLoading ? 'Analyzing...' : 'Generate 3-sec Briefing'}
-                      </button>
-                    )}
-                  </div>
-
-                  {aiSummaryError && (
-                    <p className="text-[10px] text-rose-600 font-bold bg-rose-50 px-3 py-1.5 rounded-lg">{aiSummaryError}</p>
-                  )}
-
-                  {aiSummary ? (
-                    <div className="space-y-2 text-xs">
-                      {aiSummary.critical_alerts && aiSummary.critical_alerts !== 'NONE' && (
-                        <div className="flex gap-2">
-                          <span className="text-red-500 shrink-0">🚨</span>
-                          <div>
-                            <span className="font-black text-red-700">Safety: </span>
-                            <span className="text-red-800 font-semibold">{aiSummary.critical_alerts}</span>
-                          </div>
-                        </div>
-                      )}
-                      {aiSummary.active_regimen && aiSummary.active_regimen !== 'NONE' && (
-                        <div className="flex gap-2">
-                          <span className="text-amber-500 shrink-0">💊</span>
-                          <div>
-                            <span className="font-black text-amber-700">Medications: </span>
-                            <span className="text-amber-900 font-semibold">{aiSummary.active_regimen}</span>
-                          </div>
-                        </div>
-                      )}
-                      {aiSummary.clinical_trajectory && (
-                        <div className="flex gap-2">
-                          <span className="text-indigo-500 shrink-0">📋</span>
-                          <div>
-                            <span className="font-black text-indigo-700">Trajectory: </span>
-                            <span className="text-indigo-800 font-semibold">{aiSummary.clinical_trajectory}</span>
-                          </div>
-                        </div>
-                      )}
-                      {aiSummary.suggested_guardrails && aiSummary.suggested_guardrails !== 'NONE' && (
-                        <div className="flex gap-2">
-                          <span className="text-slate-500 shrink-0">🛡️</span>
-                          <div>
-                            <span className="font-black text-slate-700">Avoid: </span>
-                            <span className="text-slate-700 font-semibold">{aiSummary.suggested_guardrails}</span>
-                          </div>
-                        </div>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => setAiSummary(null)}
-                        className="text-[10px] text-indigo-400 hover:text-indigo-600 font-bold cursor-pointer mt-1"
-                      >
-                        Regenerate →
-                      </button>
-                    </div>
-                  ) : !aiSummaryLoading && !aiSummaryError && (
-                    <p className="text-[10px] text-indigo-400 font-medium">
-                      Click "Generate 3-sec Briefing" to get an AI-synthesized clinical summary of this patient's history, disease trajectory, and prescribing guardrails.
-                    </p>
-                  )}
-                </div>
               </div>
             ) : null}
 
@@ -1688,7 +2565,7 @@ export default function DoctorWorkspace({
                   
                   <div className="grid grid-cols-2 gap-3 text-xs font-bold text-slate-700">
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-medium">Risk Priority</span>
+                      <span className="text-[10px] text-slate-400 block font-medium">Frontline Priority</span>
                       <span className="text-rose-800 font-extrabold">{activeCase.priority_label || activeCase.priority}</span>
                     </div>
                     <div>
@@ -1706,7 +2583,7 @@ export default function DoctorWorkspace({
 
                   {activeCase.ai_note && (
                     <div className="space-y-1">
-                      <span className="text-[10px] text-indigo-700 block font-bold uppercase">✨ AI Triage Clinical Assessment</span>
+                      <span className="text-[10px] text-indigo-700 block font-bold uppercase">✨ AI-Assisted Frontline Triage Recommendation</span>
                       <p className="text-xs text-indigo-900 bg-indigo-50/70 border border-indigo-100 p-3 rounded-2xl leading-relaxed font-medium">
                         {activeCase.ai_note}
                       </p>
@@ -1717,7 +2594,7 @@ export default function DoctorWorkspace({
                     <div className="space-y-2">
                       <span className="text-[10px] text-slate-400 block font-medium uppercase">Frontline Vitals</span>
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px] font-extrabold text-slate-700 bg-slate-50 p-2.5 border border-slate-100 rounded-2xl">
-                        {activeCase.vitals.bp && <div>BP: <span className="text-slate-900 font-black">{activeCase.vitals.bp}</span></div>}
+                        {activeCase.vitals.bp && <div>BP: <span className="text-slate-900 font-black">{activeCase.vitals.bp} mmHg</span></div>}
                         {activeCase.vitals.pulse && <div>HR: <span className="text-slate-900 font-black">{activeCase.vitals.pulse} bpm</span></div>}
                         {activeCase.vitals.spo2 && <div>SpO2: <span className="text-slate-900 font-black">{activeCase.vitals.spo2}%</span></div>}
                         {activeCase.vitals.temp && <div>Temp: <span className="text-slate-900 font-black">{activeCase.vitals.temp}°F</span></div>}
@@ -1734,6 +2611,13 @@ export default function DoctorWorkspace({
                     </div>
                   )}
                 </div>
+
+                {/* 2. Recorded Vitals History (with explicit dates & sources) */}
+                <DoctorVitalsTimeline
+                  vitalsHistory={clinicalDocket?.vitals || []}
+                  triageVitals={activeCase.vitals}
+                  patientName={activeCase.patient_name}
+                />
 
                 {/* Milestone 3: ABDM HIU Consent & Longitudinal Records Desk */}
                 <ConsentRequestPanel patient={activeCase} onBreakGlass={handleBreakGlass} />
@@ -1786,275 +2670,170 @@ export default function DoctorWorkspace({
                     </div>
                   )}
                 </div>
-
               </div>
 
+              {/* Right Column (7 cols): Medical Imaging Vault with Interactive Canvas */}
               <div className="lg:col-span-7 space-y-6">
-                <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-2xs space-y-5">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-xs font-black uppercase text-slate-400 tracking-wider">Clinical Examination & Consultation</h3>
-                    <span className="text-[10px] font-bold text-slate-400">Step 3 of 4 in Continuity Care</span>
+                <MedicalImagingVault
+                  patientId={activeCase.patient_id}
+                  patientName={activeCase.patient_name}
+                />
+              </div>
+            </div>
+
+            {/* ─── 4. CLINICAL DECISION & CARE PLAN (STREAMLINED EXECUTIVE CONSOLE) ─── */}
+            <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-2xs space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <div className="w-9 h-9 rounded-xl bg-[#F5F3FF] border border-[#7C3AED]/30 flex items-center justify-center text-[#7C3AED] font-black">
+                    🩺
                   </div>
-
-                  <div className="space-y-4">
-                    <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2.5">
-                      <div className="flex items-center justify-between">
-                        <label className="text-xs font-black uppercase text-slate-700 tracking-wide block">
-                          Care Delivery Mode
-                        </label>
-                        <span className="text-[10px] font-bold text-slate-400">In-Person or Tele-Consult</span>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-3">
-                        <button
-                          type="button"
-                          onClick={() => setConsultationMode('IN_PERSON')}
-                          className={`p-3 rounded-xl border text-xs font-extrabold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                            consultationMode === 'IN_PERSON'
-                              ? 'bg-white border-[#7C3AED] text-[#7C3AED] shadow-xs'
-                              : 'bg-slate-100/70 border-transparent text-slate-500 hover:bg-white'
-                          }`}
-                        >
-                          <Building2 className="w-4 h-4" />
-                          <span>In-Person Checkup</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setConsultationMode('TELECONSULTATION')}
-                          className={`p-3 rounded-xl border text-xs font-extrabold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                            consultationMode === 'TELECONSULTATION'
-                              ? 'bg-white border-[#7C3AED] text-[#7C3AED] shadow-xs'
-                              : 'bg-slate-100/70 border-transparent text-slate-500 hover:bg-white'
-                          }`}
-                        >
-                          <Activity className="w-4 h-4" />
-                          <span>Remote Tele-Advice</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-black uppercase text-slate-700 tracking-wide block">
-                        Clinical Assessment & Physical Exam Findings
-                      </label>
-                      <textarea
-                        rows={3}
-                        value={clinicalAssessment}
-                        onChange={(e) => setClinicalAssessment(e.target.value)}
-                        placeholder="e.g. Chest clear on auscultation, regular heart sounds S1S2 present, no pedal edema, abdominal examination soft non-tender..."
-                        className="w-full border border-slate-200 rounded-xl p-3 text-xs font-medium text-slate-900 bg-white outline-none focus:border-[#7C3AED] leading-relaxed"
-                      />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-black uppercase text-slate-700 tracking-wide block">
-                        Clinical Diagnosis <span className="text-rose-600">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={diagnosis}
-                        onChange={(e) => setDiagnosis(e.target.value)}
-                        placeholder="e.g. Acute Upper Respiratory Tract Infection / Mild Bronchitis"
-                        className="w-full border border-slate-200 rounded-xl p-3 text-xs font-bold text-slate-900 bg-white outline-none focus:border-[#7C3AED]"
-                      />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-black uppercase text-slate-700 tracking-wide block">
-                        Treatment Plan & Advice <span className="text-rose-600">*</span>
-                      </label>
-                      <textarea
-                        rows={3}
-                        value={treatmentAdvice}
-                        onChange={(e) => setTreatmentAdvice(e.target.value)}
-                        placeholder="e.g. Adequate hydration, warm saline gargles, steam inhalation, rest for 3 days. Return immediately if high fever or breathlessness occurs."
-                        className="w-full border border-slate-200 rounded-xl p-3 text-xs font-medium text-slate-900 bg-white outline-none focus:border-[#7C3AED] leading-relaxed"
-                      />
-                    </div>
-
-                    <div className="space-y-3 bg-slate-50/60 p-4 border border-slate-200 rounded-2xl">
-                      <div className="flex items-center justify-between">
-                        <label className="text-xs font-black uppercase text-slate-700 tracking-wide block">
-                          Prescription / Medicines (Rx)
-                        </label>
-                        <span className="text-[10px] font-bold text-slate-400">Added: {prescriptions.length}</span>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
-                        <input
-                          type="text"
-                          placeholder="Medicine name"
-                          value={medName}
-                          onChange={(e) => setMedName(e.target.value)}
-                          className="sm:col-span-2 border border-slate-200 rounded-lg p-2 text-xs font-bold bg-white outline-none"
-                        />
-                        <input
-                          type="text"
-                          placeholder="Dose (e.g. 500mg)"
-                          value={medDose}
-                          onChange={(e) => setMedDose(e.target.value)}
-                          className="border border-slate-200 rounded-lg p-2 text-xs font-bold bg-white outline-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={handleAddMedicine}
-                          className="bg-slate-900 hover:bg-slate-800 text-white font-black rounded-lg text-xs py-2 cursor-pointer transition-colors"
-                        >
-                          + Add Rx
-                        </button>
-                      </div>
-
-                      {prescriptions.length > 0 && (
-                        <div className="space-y-2 pt-1">
-                          {prescriptions.map((m) => (
-                            <div key={m.id} className="flex items-center justify-between bg-white border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold text-slate-700">
-                              <span>💊 {m.name} — {m.dose} ({m.freq}, {m.duration})</span>
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveMedicine(m.id)}
-                                className="text-rose-600 hover:text-rose-800 p-1 cursor-pointer"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="space-y-3 bg-slate-50/60 p-4 border border-slate-200 rounded-2xl">
-                      <label className="text-xs font-black uppercase text-slate-700 tracking-wide block">
-                        Diagnostic Investigations & Tests
-                      </label>
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          placeholder="e.g. 12-Lead ECG, Complete Blood Count, Chest X-Ray..."
-                          value={newInvest}
-                          onChange={(e) => setNewInvest(e.target.value)}
-                          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddInvestigation(); } }}
-                          className="flex-1 border border-slate-200 rounded-lg p-2 text-xs font-bold bg-white outline-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={handleAddInvestigation}
-                          className="px-4 bg-slate-900 hover:bg-slate-800 text-white font-black rounded-lg text-xs cursor-pointer transition-colors"
-                        >
-                          Add
-                        </button>
-                      </div>
-
-                      {investigations.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5 pt-1">
-                          {investigations.map((inv, idx) => (
-                            <span key={idx} className="inline-flex items-center gap-1.5 bg-white border border-slate-200 px-2.5 py-1 rounded-full text-[11px] font-bold text-slate-700">
-                              <span>🔬 {inv}</span>
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveInvestigation(idx)}
-                                className="text-rose-600 hover:text-rose-800 cursor-pointer"
-                              >
-                                ✕
-                              </button>
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="space-y-3 bg-slate-50/60 p-4 border border-slate-200 rounded-2xl">
-                      <div className="flex items-center justify-between">
-                        <label className="text-xs font-black uppercase text-[#7C3AED] tracking-wide block">
-                          Frontline ASHA Follow-Up Loop
-                        </label>
-                        <span className="text-[10px] uppercase font-bold text-slate-400">
-                          Doctor recommends · ASHA visits
-                        </span>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                        <div className="space-y-1">
-                          <span className="text-[10px] text-slate-400 font-bold block uppercase">Recommended Date</span>
-                          <input
-                            type="date"
-                            value={followUpDate}
-                            onChange={(e) => setFollowUpDate(e.target.value)}
-                            className="w-full border border-slate-200 rounded-lg p-2 font-bold bg-white outline-none"
-                          />
-                        </div>
-                        <div className="flex items-center text-[11px] text-slate-500 font-medium leading-relaxed">
-                          Follow-up checklist triggers automatically in target ASHA worker dashboard for in-person verification.
-                        </div>
-                      </div>
-                    </div>
-
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 tracking-tight">
+                      Specialist Clinical Decision & Care Plan
+                    </h3>
+                    <p className="text-xs text-slate-500 font-semibold">
+                      Review findings, record diagnostic conclusion, and save finalized care plan
+                    </p>
                   </div>
-
-                  <div className="pt-4 border-t border-slate-100 flex items-center justify-between gap-3">
-                    <button
-                      type="button"
-                      onClick={handleSaveDraft}
-                      className="px-4 py-2.5 text-xs font-black text-slate-700 border border-slate-200 rounded-xl hover:bg-slate-50 flex items-center gap-1.5 transition-colors cursor-pointer"
-                    >
-                      <Save className="w-4 h-4 text-slate-400" />
-                      <span>Save Draft</span>
-                    </button>
-
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const b = mapConsultationToFhirBundle(
-                            {
-                              id: activeCase.id,
-                              diagnosis: diagnosis || 'Outpatient Clinical Consultation & Review',
-                              clinical_assessment: clinicalAssessment || 'Routine clinical assessment',
-                              treatment_advice: treatmentAdvice || 'Follow-up as advised',
-                              prescriptions: prescriptions,
-                              vitals: activeCase.vitals,
-                              created_at: new Date().toISOString()
-                            },
-                            {
-                              id: activeCase.patient_id || activeCase.id,
-                              name: activeCase.patient_name || activeCase.name,
-                              abhaNumber: activeCase.abha_id || activeCase.vitals?.abha_number || '91-2334-1727-2405',
-                              gender: activeCase.gender
-                            },
-                            doctorProfile,
-                            { name: doctorProfile?.facility_name || 'Primary Health Centre Shirwal', hfrId: 'IN2710001928' }
-                          );
-                          setFhirModalBundle(b);
-                          setShowFhirModal(true);
-                        }}
-                        className="px-3.5 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-black text-xs rounded-xl flex items-center gap-1.5 transition-all cursor-pointer"
-                      >
-                        <FileCode className="w-4 h-4 text-indigo-600" />
-                        <span>Inspect FHIR R4</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (!diagnosis.trim() || !treatmentAdvice.trim()) {
-                            setError('A clinical diagnosis and treatment advice are required to sign.');
-                            setTimeout(() => setError(''), 4000);
-                            return;
-                          }
-                          setShowSignModal(true);
-                        }}
-                        className="px-6 py-2.5 bg-[#7C3AED] hover:bg-[#6D28D9] text-white font-black text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition-transform active:scale-95 cursor-pointer"
-                      >
-                        <CheckCircle className="w-4 h-4" />
-                        <span>Sign Consultation</span>
-                      </button>
-                    </div>
-                  </div>
-
                 </div>
 
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="text-[10px] font-black uppercase px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    ● Step 3 of 4: Attending Specialist
+                  </span>
+                </div>
               </div>
 
+              {/* Diagnosis & Care Plan Inputs */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                {/* Clinical Diagnosis */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-black uppercase text-slate-700 tracking-wide block">
+                      Clinical Diagnosis / Impression <span className="text-rose-600">*</span>
+                    </label>
+                    <span className="text-[10px] font-bold text-slate-400">Primary medical finding</span>
+                  </div>
+                  <input
+                    type="text"
+                    value={diagnosis}
+                    onChange={(e) => setDiagnosis(e.target.value)}
+                    placeholder="e.g. Severe Gestational Anemia · Third Trimester High-Risk Pregnancy"
+                    className="w-full border border-slate-200 rounded-2xl p-3.5 text-xs font-black text-slate-900 bg-white outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-[#7C3AED]/20 shadow-2xs"
+                  />
+                  {/* Quick diagnostic chips for OB-GYN / General Medicine */}
+                  <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                    <span className="text-[10px] font-bold text-slate-400">Quick suggestions:</span>
+                    {[
+                      'Severe Gestational Anemia (Hb < 8.0 g/dL)',
+                      'Third Trimester High-Risk Pregnancy (JSY)',
+                      'Acute Upper Respiratory Infection',
+                      'Essential Hypertension Review'
+                    ].map((chip) => (
+                      <button
+                        key={chip}
+                        type="button"
+                        onClick={() => setDiagnosis(chip)}
+                        className="text-[10px] font-bold px-2.5 py-1 rounded-xl bg-slate-100 hover:bg-purple-50 hover:text-[#7C3AED] text-slate-600 border border-slate-200 cursor-pointer transition-colors"
+                      >
+                        + {chip.split(' (')[0]}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Treatment Advice & Care Plan */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-black uppercase text-slate-700 tracking-wide block">
+                      Care Plan & Clinical Instructions <span className="text-rose-600">*</span>
+                    </label>
+                    <span className="text-[10px] font-bold text-slate-400">Rx, interventions & precautions</span>
+                  </div>
+                  <textarea
+                    rows={3}
+                    value={treatmentAdvice}
+                    onChange={(e) => setTreatmentAdvice(e.target.value)}
+                    placeholder="e.g. Immediate IV Iron Sucrose infusion, Doppler ultrasound monitoring, high protein diet, bed rest. Frontline ASHA checkup on Day 3."
+                    className="w-full border border-slate-200 rounded-2xl p-3.5 text-xs font-medium text-slate-900 bg-white outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-[#7C3AED]/20 shadow-2xs leading-relaxed"
+                  />
+                </div>
+              </div>
+
+              {/* ASHA Follow-Up Loop & Actions Bar */}
+              <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-2.5">
+                  <input
+                    type="checkbox"
+                    id="asha_followup"
+                    defaultChecked
+                    className="w-4 h-4 rounded text-[#7C3AED] accent-[#7C3AED] cursor-pointer"
+                  />
+                  <label htmlFor="asha_followup" className="text-xs font-bold text-slate-700 cursor-pointer select-none">
+                    <span>Automatically trigger in-person home visit follow-up on ASHA Worker dashboard</span>
+                    <span className="text-slate-400 block text-[10px] font-medium">Verified under ABDM continuity of care loop</span>
+                  </label>
+                </div>
+
+                <div className="flex items-center gap-3 self-end sm:self-auto">
+                  <button
+                    type="button"
+                    onClick={handleCloseCase}
+                    className="min-h-[44px] px-4 py-2.5 text-xs font-bold text-slate-600 hover:text-slate-900 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors cursor-pointer"
+                  >
+                    Back to Queue
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const b = mapConsultationToFhirBundle(
+                        {
+                          id: activeCase.id,
+                          diagnosis: diagnosis || 'Outpatient Clinical Consultation & Review',
+                          clinical_assessment: clinicalAssessment || 'Routine clinical assessment',
+                          treatment_advice: treatmentAdvice || 'Follow-up as advised',
+                          prescriptions: prescriptions,
+                          vitals: activeCase.vitals,
+                          created_at: new Date().toISOString()
+                        },
+                        {
+                          id: activeCase.patient_id || activeCase.id,
+                          name: activeCase.patient_name || activeCase.name,
+                          abhaNumber: activeCase.abha_id || activeCase.vitals?.abha_number || '91-2334-1727-2405',
+                          gender: activeCase.gender
+                        },
+                        doctorProfile,
+                        { name: doctorProfile?.facility_name || 'Primary Health Centre Shirwal', hfrId: 'IN2710001928' }
+                      );
+                      setFhirModalBundle(b);
+                      setShowFhirModal(true);
+                    }}
+                    className="min-h-[44px] px-3.5 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-black text-xs rounded-xl flex items-center gap-1.5 transition-all cursor-pointer"
+                  >
+                    <FileCode className="w-4 h-4 text-indigo-600" />
+                    <span>Inspect FHIR R4</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!diagnosis.trim()) {
+                        setDiagnosis('Clinical Assessment & Imaging Review Completed');
+                      }
+                      if (!treatmentAdvice.trim()) {
+                        setTreatmentAdvice('Standard clinical care plan initiated. Follow frontline health guidance.');
+                      }
+                      setShowSignModal(true);
+                    }}
+                    className="min-h-[44px] px-6 py-2.5 bg-[#7C3AED] hover:bg-[#6D28D9] text-white font-black text-xs rounded-xl shadow-md flex items-center gap-2 transition-transform active:scale-95 cursor-pointer"
+                  >
+                    <CheckCircle className="w-4 h-4" />
+                    <span>Save Care Plan & Complete Consultation →</span>
+                  </button>
+                </div>
+              </div>
             </div>
 
           </div>
@@ -2115,6 +2894,13 @@ export default function DoctorWorkspace({
               )}
             </div>
 
+            {signingError && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-2xl text-xs font-bold text-rose-700 flex items-start gap-2.5">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <span>{signingError}</span>
+              </div>
+            )}
+
             <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-3">
               <button
                 type="button"
@@ -2126,10 +2912,99 @@ export default function DoctorWorkspace({
 
               <button
                 type="button"
+                disabled={isSigning}
                 onClick={handleSignConsultation}
-                className="px-5 py-2.5 bg-[#7C3AED] hover:bg-[#6D28D9] text-white font-black text-xs rounded-xl shadow-xs cursor-pointer transition-colors"
+                className="px-5 py-2.5 bg-[#7C3AED] hover:bg-[#6D28D9] disabled:opacity-50 text-white font-black text-xs rounded-xl shadow-xs cursor-pointer transition-colors"
               >
-                Sign & Finalize
+                {isSigning ? 'Signing...' : 'Sign & Finalize'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── CONSULTATION FINALIZED & CLOSED LOOP MODAL ── */}
+      {completedConsultationSummary && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-7 border border-purple-200 shadow-2xl space-y-5">
+            {/* Header with Green Success Animation */}
+            <div className="flex items-center gap-3.5">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 shadow-xs shrink-0">
+                <CheckCircle2 className="w-6 h-6" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="text-base font-black text-slate-900">Consultation Finalized</h3>
+                  <span className="text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-800 border border-purple-200">
+                    Step 4 of 4: Closed Loop Active
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 font-medium mt-0.5">
+                  Clinical care plan persisted to ABDM digital registry.
+                </p>
+              </div>
+            </div>
+
+            {/* Diagnostic Summary Card */}
+            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-2.5 text-xs font-bold text-slate-700">
+              <div className="flex justify-between items-center border-b border-slate-200/60 pb-2">
+                <span className="text-slate-400 font-medium">Patient</span>
+                <span className="text-slate-900 font-black">{completedConsultationSummary.patientName}</span>
+              </div>
+              <div className="flex justify-between items-center border-b border-slate-200/60 pb-2">
+                <span className="text-slate-400 font-medium">Attending Clinician</span>
+                <span className="text-[#7C3AED] font-black">{completedConsultationSummary.doctorName}</span>
+              </div>
+              <div className="flex justify-between items-center border-b border-slate-200/60 pb-2">
+                <span className="text-slate-400 font-medium">Facility</span>
+                <span className="text-slate-800">{completedConsultationSummary.facilityName}</span>
+              </div>
+              <div className="pt-1">
+                <span className="text-[10px] text-slate-400 uppercase font-black block mb-0.5">Final Diagnosis</span>
+                <span className="text-rose-700 font-extrabold">{completedConsultationSummary.diagnosis}</span>
+              </div>
+              <div className="pt-1">
+                <span className="text-[10px] text-slate-400 uppercase font-black block mb-0.5">Care Instructions</span>
+                <span className="text-slate-800 font-semibold leading-relaxed">{completedConsultationSummary.treatmentAdvice}</span>
+              </div>
+              <div className="pt-2 border-t border-slate-200/60 flex items-center gap-2 text-emerald-800 bg-emerald-50/80 p-2.5 rounded-xl border border-emerald-200">
+                <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span className="text-[11px] font-bold">ASHA home visit follow-up flagged for Priya Deshmukh</span>
+              </div>
+            </div>
+
+            {/* Primary Action Buttons */}
+            <div className="flex flex-col sm:flex-row items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setCompletedConsultationSummary(null);
+                  handleCloseCase();
+                }}
+                className="w-full sm:w-auto px-4 py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs rounded-xl cursor-pointer transition-colors"
+              >
+                Return to Doctor Worklist
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const patientId = completedConsultationSummary.patientId;
+                  const patientName = completedConsultationSummary.patientName;
+                  setCompletedConsultationSummary(null);
+                  handleCloseCase();
+                  if (onOpenPatientJourney) {
+                    onOpenPatientJourney(patientId, patientName);
+                  } else if (_onNavigateToPatientView) {
+                    _onNavigateToPatientView(patientId);
+                  } else if (goHome) {
+                    goHome();
+                  }
+                }}
+                className="w-full sm:w-auto px-6 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-black text-xs rounded-xl shadow-md flex items-center justify-center gap-2 transition-transform active:scale-95 cursor-pointer"
+              >
+                <span>Open Patient Health Journey →</span>
+                <ArrowRight className="w-4 h-4" />
               </button>
             </div>
           </div>
@@ -2389,7 +3264,15 @@ export default function DoctorWorkspace({
 
                 {/* 2. Critical Safety Alert: Allergies */}
                 <div className="space-y-2">
-                  {clinicalDocket?.allergies ? (
+                  {clinicalDocket?.resolved === false ? (
+                    <div className="bg-amber-50 border border-amber-300 rounded-2xl p-3 flex items-start gap-2.5 shadow-xs">
+                      <div className="w-7 h-7 rounded-lg bg-amber-100 flex items-center justify-center shrink-0 text-amber-700 font-black text-xs">⚠️</div>
+                      <div>
+                        <p className="text-[10px] font-black text-amber-800 uppercase tracking-wider">UNRESOLVED CLINICAL RECORD</p>
+                        <p className="text-xs font-bold text-amber-900 mt-0.5">{clinicalDocket.error || 'Patient identity could not be verified in clinical database.'}</p>
+                      </div>
+                    </div>
+                  ) : clinicalDocket?.allergies ? (
                     <div className="bg-red-50 border-2 border-red-500 rounded-2xl p-3 flex items-start gap-2.5 shadow-xs">
                       <div className="w-7 h-7 rounded-lg bg-red-100 flex items-center justify-center shrink-0 text-red-700 font-black text-sm">⚠️</div>
                       <div>
@@ -2501,7 +3384,7 @@ export default function DoctorWorkspace({
                     <div className="flex items-center gap-1.5">
                       <Sparkles className="w-4 h-4 text-indigo-600" />
                       <span className="text-[10px] font-black text-indigo-700 uppercase tracking-wider">
-                        ⚡ AI Clinical Copilot (Groq / RAG Briefing)
+                        ⚡ AI Clinical Copilot (Groq / RAG)
                       </span>
                     </div>
                     {!aiSummary && (
@@ -2512,7 +3395,7 @@ export default function DoctorWorkspace({
                         className="text-[10px] font-black bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1 rounded-lg cursor-pointer disabled:opacity-60 flex items-center gap-1 transition-colors"
                       >
                         {aiSummaryLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
-                        {aiSummaryLoading ? 'Analyzing...' : '3-sec Briefing'}
+                        {aiSummaryLoading ? 'Analyzing...' : 'Clinical Summary'}
                       </button>
                     )}
                   </div>
@@ -2569,7 +3452,7 @@ export default function DoctorWorkspace({
                     </div>
                   ) : !aiSummaryLoading && !aiSummaryError && (
                     <p className="text-[10px] text-indigo-500 font-medium">
-                      Click "3-sec Briefing" to run AI synthesis of this patient's medical history, allergies, and prescribing guardrails.
+                      Click "Clinical Summary" to run AI synthesis of this patient's medical history, allergies, and prescribing guardrails.
                     </p>
                   )}
                 </div>
@@ -2626,6 +3509,76 @@ export default function DoctorWorkspace({
           onClose={() => setShowFhirModal(false)}
           title="Clinical Outpatient Consultation · NRCeS FHIR R4 Document"
         />
+      )}
+
+      {/* ─── MODAL: DELETE PATIENT INTAKE REQUEST CONFIRMATION (Matching Hospital Staff Portal) ─── */}
+      {deleteConfirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 border border-slate-200 shadow-2xl space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-rose-50 border border-rose-200 text-rose-600 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-black text-sm text-slate-900">Delete Patient Intake Request</h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Permanently remove this intake request and unlink across all queues?
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmModal(null)}
+                className="p-1 rounded-full text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Patient details card */}
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-1 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="font-black text-slate-900">{deleteConfirmModal.patient_name || 'Unknown Patient'}</span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">
+                  {deleteConfirmModal.status || 'Pending'}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500 font-mono">
+                {deleteConfirmModal.patient_unified_id || deleteConfirmModal.patient_id}
+              </p>
+              <p className="text-[11px] text-slate-600 font-medium line-clamp-2 pt-1 border-t border-slate-200">
+                {deleteConfirmModal.symptoms || deleteConfirmModal.clinical_summary || 'General referral'}
+              </p>
+            </div>
+
+            <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-[11px] leading-relaxed">
+              ⚠️ <strong>Logical Links Impact:</strong> Deleting this intake request will remove the patient from the Hospital Waiting Room, Doctor consultation queue, and unbind linked records in Supabase. (Frontline demographic records in Patient register remain preserved).
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                disabled={deletingId === deleteConfirmModal.id}
+                onClick={() => setDeleteConfirmModal(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deletingId === deleteConfirmModal.id}
+                onClick={() => handleDeleteReferral(deleteConfirmModal)}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-black text-xs rounded-xl shadow-md flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {deletingId === deleteConfirmModal.id ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Trash2 className="w-3.5 h-3.5" />
+                )}
+                <span>Delete From All Queues</span>
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>

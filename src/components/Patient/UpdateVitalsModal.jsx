@@ -85,7 +85,14 @@ export default function UpdateVitalsModal({ patientId, metric = "all", onClose, 
     if (f.spo2_pct)      payload.spo2_pct      = parseInt(f.spo2_pct, 10);
     if (f.pulse_bpm)     payload.pulse_bpm     = parseInt(f.pulse_bpm, 10);
 
-    const { error: saveErr } = await saveVitalsReading(patientId, payload, "SELF-REPORTED");
+    const fullPayload = {
+      patient_id: patientId,
+      ...payload,
+      source: "SELF-REPORTED",
+      recorded_at: new Date().toISOString()
+    };
+
+    const { error: saveErr } = await saveVitalsReading(fullPayload);
     setSaving(false);
 
     if (saveErr) {

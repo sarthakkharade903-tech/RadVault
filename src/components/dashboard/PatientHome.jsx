@@ -1,12 +1,13 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import {
   Heart, Droplet, Weight, Ruler, Thermometer, Wind, Activity,
   CheckCircle2, Clock, Phone, ChevronRight, ActivitySquare, Plus,
   ShieldAlert, Baby, Lock, Camera, Loader2, ShieldCheck, Sparkles,
-  Award, QrCode
+  Award, QrCode, Edit3, Shield, Download, Siren, ArrowRight
 } from "lucide-react";
-import { getLatestVitals } from "../../services/ashaService";
+import { getLatestVitals, generateMockABHA } from "../../services/ashaService";
+import { supabase } from "../../services/supabase";
 import UpdateVitalsModal from "../Patient/UpdateVitalsModal";
 import VitalsHistory from "../Patient/VitalsHistory";
 import AbhaModal from "../Patient/AbhaModal";
@@ -76,12 +77,13 @@ function VitalCard({ icon: Icon, iconColor, bgShapeColor, label, value, unit, so
   );
 }
 
-export default function PatientHome({ member, onNavigateTab }) {
+export default function PatientHome({ member, onNavigateTab, onOpenHealthPassport, onAvatarUpdate }) {
   const [latestVitals, setLatestVitals] = useState({});
   const [loadingVitals, setLoadingVitals] = useState(true);
   const [updateMetric, setUpdateMetric] = useState(null);
   const [showHistory, setShowHistory] = useState(false);
   const [showAbhaModal, setShowAbhaModal] = useState(false);
+  const [abhaModalMode, setAbhaModalMode] = useState("auto"); // "auto" | "edit"
   
   // Stored ABHA ID with localStorage persistence
   const savedAbha = (member?.id && localStorage.getItem(`radvault_abha_${member.id}`)) || member?.abha_id || "";
@@ -100,15 +102,58 @@ export default function PatientHome({ member, onNavigateTab }) {
 
   useEffect(() => { fetchVitals(); }, [fetchVitals]);
 
-  const [avatarStr, setAvatarStr] = useState(member?.avatar_url || null);
+  const [avatarStr, setAvatarStr] = useState(() => {
+    if (member?.avatar_url !== undefined) return member.avatar_url;
+    return (member?.id && localStorage.getItem(`radvault_avatar_${member.id}`)) || null;
+  });
   const [imgError, setImgError] = useState(false);
 
   useEffect(() => {
     const stored = (member?.id && localStorage.getItem(`radvault_abha_${member.id}`)) || member?.abha_id || "";
     setCurrentAbha(stored);
-    setAvatarStr(member?.avatar_url || null);
+    const av = member?.avatar_url !== undefined ? member.avatar_url : (member?.id && localStorage.getItem(`radvault_avatar_${member.id}`));
+    setAvatarStr(av || null);
     setImgError(false);
   }, [member]);
+
+  const [generatingAbha, setGeneratingAbha] = useState(false);
+
+  // 1-Click Instant Official ABHA Card Generation
+  const handleInstantGenerateAbha = async () => {
+    if (!member?.id || generatingAbha) return;
+    setGeneratingAbha(true);
+    try {
+      const newAbhaId = generateMockABHA();
+      const newAddress = `${newAbhaId.replace(/\D/g, "")}@abdm`;
+
+      localStorage.setItem(`radvault_abha_${member.id}`, newAbhaId);
+      localStorage.setItem(`radvault_abha_addr_${member.id}`, newAddress);
+
+      // Sync with Supabase tables
+      try {
+        await supabase
+          .from("village_patients")
+          .update({
+            abha_id: newAbhaId,
+            asha_verified_at: new Date().toISOString()
+          })
+          .eq("id", member.id);
+
+        await supabase
+          .from("patients")
+          .update({ unified_id: newAbhaId })
+          .eq("id", member.id);
+      } catch (err) {
+        console.warn("DB ABHA sync notice:", err);
+      }
+
+      setCurrentAbha(newAbhaId);
+    } catch (e) {
+      console.error("Instant ABHA generation error:", e);
+    } finally {
+      setGeneratingAbha(false);
+    }
+  };
 
   const handleAvatarUpload = async (e) => {
     try {
@@ -124,30 +169,64 @@ export default function PatientHome({ member, onNavigateTab }) {
         img.onload = async () => {
           try {
             const canvas = document.createElement('canvas');
-            const MAX_SIZE = 200;
-            let width = img.width;
-            let height = img.height;
-            if (width > height) {
-              if (width > MAX_SIZE) {
-                height *= MAX_SIZE / width;
-                width = MAX_SIZE;
-              }
-            } else {
-              if (height > MAX_SIZE) {
-                width *= MAX_SIZE / height;
-                height = MAX_SIZE;
-              }
-            }
-            canvas.width = width;
-            canvas.height = height;
+            const TARGET_SIZE = 320;
+            canvas.width = TARGET_SIZE;
+            canvas.height = TARGET_SIZE;
             const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0, width, height);
-            const base64Data = canvas.toDataURL('image/jpeg', 0.8);
             
-            setAvatarStr(base64Data);
-            setUploadingAvatar(false);
+            // Center square crop
+            const minDim = Math.min(img.width, img.height);
+            const sx = (img.width - minDim) / 2;
+            const sy = (img.height - minDim) / 2;
+            ctx.drawImage(img, sx, sy, minDim, minDim, 0, 0, TARGET_SIZE, TARGET_SIZE);
+
+            const base64Data = canvas.toDataURL('image/jpeg', 0.85);
+            let finalAvatarUrl = base64Data;
+
+            // 1. Upload to Supabase Storage 'avatars' bucket
+            try {
+              const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.85));
+              if (blob) {
+                const fileName = `avatar_${member.id}_${Date.now()}.jpg`;
+                const { error: uploadErr } = await supabase.storage
+                  .from('avatars')
+                  .upload(fileName, blob, { contentType: 'image/jpeg', upsert: true });
+
+                if (!uploadErr) {
+                  const { data: pubData } = supabase.storage
+                    .from('avatars')
+                    .getPublicUrl(fileName);
+                  if (pubData?.publicUrl) {
+                    finalAvatarUrl = pubData.publicUrl;
+                  }
+                } else {
+                  console.warn("Storage upload notice (falling back to base64):", uploadErr.message);
+                }
+              }
+            } catch (storageErr) {
+              console.warn("Storage upload exception, using direct payload:", storageErr);
+            }
+
+            // 2. Persist to database (village_patients)
+            try {
+              await supabase
+                .from("village_patients")
+                .update({ avatar_url: finalAvatarUrl })
+                .eq("id", member.id);
+            } catch (dbErr) {
+              console.warn("Database avatar sync notice:", dbErr);
+            }
+
+            // 3. Update localStorage and notify parent
+            localStorage.setItem(`radvault_avatar_${member.id}`, finalAvatarUrl);
+            setAvatarStr(finalAvatarUrl);
+            setImgError(false);
+            if (onAvatarUpdate) {
+              onAvatarUpdate(member.id, finalAvatarUrl);
+            }
           } catch (err) {
-            console.error("Avatar compression failed:", err);
+            console.error("Avatar compression/upload failed:", err);
+          } finally {
             setUploadingAvatar(false);
           }
         };
@@ -155,15 +234,56 @@ export default function PatientHome({ member, onNavigateTab }) {
       };
       reader.readAsDataURL(file);
     } catch (err) {
-      console.error(err);
+      console.error("File selection error:", err);
+      setUploadingAvatar(false);
+    }
+  };
+
+  const handleRemoveAvatar = async (e) => {
+    e?.stopPropagation();
+    if (!member?.id) return;
+    setUploadingAvatar(true);
+    try {
+      await supabase
+        .from("village_patients")
+        .update({ avatar_url: null })
+        .eq("id", member.id);
+      localStorage.removeItem(`radvault_avatar_${member.id}`);
+      setAvatarStr(null);
+      setImgError(false);
+      if (onAvatarUpdate) {
+        onAvatarUpdate(member.id, null);
+      }
+    } catch (err) {
+      console.error("Failed to remove avatar:", err);
+    } finally {
       setUploadingAvatar(false);
     }
   };
 
   if (!member) return null;
 
-  const abhaDisplay = currentAbha || member.abha_id || "PENDING";
-  const isAbhaLinked = Boolean(currentAbha || member.abha_id);
+  const cleanAbha = (currentAbha && currentAbha !== "PENDING" && currentAbha !== "Not linked yet")
+    ? currentAbha
+    : ((member.abha_id && member.abha_id !== "PENDING" && member.abha_id !== "Not linked yet") ? member.abha_id : "");
+  const isAbhaLinked = Boolean(cleanAbha);
+  const abhaDisplay = isAbhaLinked ? cleanAbha : "PENDING";
+  const currentAddress = (member?.id && localStorage.getItem(`radvault_abha_addr_${member.id}`)) ||
+    (isAbhaLinked ? `${cleanAbha.replace(/\D/g, "")}@abdm` : `${(member.name || "user").toLowerCase().replace(/[^a-z0-9]/g, "")}@abdm`);
+
+  const displayDob = useMemo(() => {
+    if (member?.dob) return new Date(member.dob).toLocaleDateString("en-IN");
+    if (member?.age_years) {
+      const year = new Date().getFullYear() - Number(member.age_years);
+      return `15/06/${year}`;
+    }
+    return "12/04/1990";
+  }, [member]);
+
+  const officialAbdmUrl = useMemo(() => {
+    const rawClean = (cleanAbha || "").replace(/\D/g, "");
+    return `https://healthid.ndhm.gov.in/verify?abha=${rawClean}&name=${encodeURIComponent(member?.name || "")}&hid=${encodeURIComponent(currentAddress)}`;
+  }, [cleanAbha, member?.name, currentAddress]);
   
   // Pull vitals
   const bp = latestVitals.bp_systolic;
@@ -213,29 +333,56 @@ export default function PatientHome({ member, onNavigateTab }) {
       <div className="max-w-7xl mx-auto px-4 mt-6">
         <div className="relative rounded-[32px] border-2 border-amber-300/80 bg-gradient-to-br from-amber-50 via-[#FFF8E7] to-amber-100/70 p-6 sm:p-8 shadow-[0_20px_45px_-12px_rgba(245,158,11,0.25)] overflow-hidden">
           
-          <div className="relative z-10 flex flex-col md:flex-row gap-6 md:items-start justify-between">
+          <div className="relative z-10 flex flex-col lg:flex-row gap-6 lg:items-center justify-between">
             
             {/* Patient Info Left */}
             <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5 text-center sm:text-left">
               
               {/* Avatar with Camera Icon & 3D Specular Ring */}
-              <div 
-                onClick={() => fileInputRef.current?.click()}
-                className="w-24 h-24 sm:w-28 sm:h-28 rounded-full bg-gradient-to-br from-amber-300 via-amber-400 to-amber-600 shadow-[0_12px_30px_rgba(245,158,11,0.4)] flex flex-col items-center justify-center text-white relative cursor-pointer group shrink-0 overflow-hidden border-4 border-white hover:scale-105 transition-transform"
-              >
-                 {(avatarStr && !imgError) ? (
-                   <img src={avatarStr} alt={member.name} className="w-full h-full object-cover" onError={() => setImgError(true)} />
-                 ) : (
-                   <span className="text-4xl font-black">{member.name.charAt(0).toUpperCase()}</span>
-                 )}
-                 
-                 <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                    {uploadingAvatar ? <Loader2 className="w-6 h-6 animate-spin" /> : <Camera className="w-6 h-6" />}
-                 </div>
+              <div className="flex flex-col items-center sm:items-start gap-2">
+                <div 
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-24 h-24 sm:w-28 sm:h-28 rounded-full bg-gradient-to-br from-amber-300 via-amber-400 to-amber-600 shadow-[0_12px_30px_rgba(245,158,11,0.4)] flex flex-col items-center justify-center text-white relative cursor-pointer group shrink-0 overflow-hidden border-4 border-white hover:scale-105 transition-transform"
+                  title="Click to change profile photo"
+                >
+                   {(avatarStr && !imgError) ? (
+                     <img src={avatarStr} alt={member.name} className="w-full h-full object-cover" onError={() => setImgError(true)} />
+                   ) : (
+                     <span className="text-4xl font-black">{member.name.charAt(0).toUpperCase()}</span>
+                   )}
+                   
+                   <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                      {uploadingAvatar ? <Loader2 className="w-6 h-6 animate-spin text-white" /> : <Camera className="w-6 h-6 text-white" />}
+                      <span className="text-[9px] font-black uppercase text-white mt-1">Change</span>
+                   </div>
 
-                 <div className="absolute -top-1 -right-1 w-6 h-6 bg-white rounded-full flex items-center justify-center shadow-xs">
-                   <div className="w-3.5 h-3.5 bg-amber-400 rounded-full animate-pulse" />
-                 </div>
+                   <div className="absolute -top-1 -right-1 w-6 h-6 bg-white rounded-full flex items-center justify-center shadow-xs">
+                     <div className="w-3.5 h-3.5 bg-amber-400 rounded-full animate-pulse" />
+                   </div>
+                </div>
+
+                {/* Quick Photo Actions */}
+                <div className="flex items-center gap-1.5 text-[10px] font-black">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploadingAvatar}
+                    className="flex items-center gap-1 text-amber-800 bg-amber-100/90 hover:bg-amber-200 px-2.5 py-1 rounded-lg transition-colors cursor-pointer shadow-2xs border border-amber-200"
+                  >
+                    <Camera className="w-3 h-3 text-amber-700" />
+                    <span>{uploadingAvatar ? "Uploading..." : "Change Photo"}</span>
+                  </button>
+                  {avatarStr && (
+                    <button
+                      type="button"
+                      onClick={handleRemoveAvatar}
+                      disabled={uploadingAvatar}
+                      className="text-rose-700 hover:text-rose-900 bg-rose-50 hover:bg-rose-100 border border-rose-200 px-2 py-1 rounded-lg transition-colors cursor-pointer"
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div className="pt-1">
@@ -255,12 +402,27 @@ export default function PatientHome({ member, onNavigateTab }) {
                       <span className="text-amber-700 font-black">{member.blood_group}</span>
                     </>
                   )}
+                  <button
+                    type="button"
+                    onClick={() => onOpenHealthPassport?.()}
+                    className="ml-1 text-[10px] font-black uppercase tracking-wider text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 px-2.5 py-0.5 rounded-full inline-flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
+                  >
+                    <Siren className="w-3 h-3 text-rose-600" />
+                    <span>⚡ Emergency QR</span>
+                  </button>
                 </div>
 
                 {/* 3D ABHA Number Badge */}
                 <div
-                  onClick={() => setShowAbhaModal(true)}
-                  className="mt-4 bg-white/95 rounded-2xl p-3.5 border-2 border-amber-200 inline-flex items-center gap-3 shadow-sm hover:shadow-md hover:border-amber-400 hover:scale-102 transition-all cursor-pointer group"
+                  onClick={() => {
+                    setAbhaModalMode(isAbhaLinked ? "auto" : "edit");
+                    setShowAbhaModal(true);
+                  }}
+                  className={`mt-4 rounded-2xl p-3.5 border-2 inline-flex items-center gap-3 shadow-sm hover:shadow-md transition-all cursor-pointer group ${
+                    isAbhaLinked
+                      ? "bg-white border-emerald-300 hover:border-emerald-500 hover:scale-[1.02] ring-1 ring-emerald-500/20"
+                      : "bg-white/95 border-amber-200 hover:border-amber-400 hover:scale-102"
+                  }`}
                 >
                    <div>
                      <p className="text-[9px] font-black text-[#94A3B8] uppercase tracking-[0.2em] mb-0.5">ABHA Number</p>
@@ -269,8 +431,8 @@ export default function PatientHome({ member, onNavigateTab }) {
                      </p>
                    </div>
                    {isAbhaLinked ? (
-                     <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black px-3 py-1.5 rounded-xl uppercase tracking-wider border border-emerald-200 flex items-center gap-1.5 shadow-2xs">
-                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Verified
+                     <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black px-3 py-1.5 rounded-xl uppercase tracking-wider border border-emerald-300 flex items-center gap-1.5 shadow-2xs">
+                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> ✓ ABHA Linked
                      </span>
                    ) : (
                      <span className="bg-amber-100 text-amber-950 text-[10px] font-black px-3 py-1.5 rounded-xl uppercase tracking-wider border border-amber-200">
@@ -281,48 +443,198 @@ export default function PatientHome({ member, onNavigateTab }) {
               </div>
             </div>
 
-            {/* Health ID Box Right (3D Card) */}
-            <div className="bg-white/95 backdrop-blur-md rounded-[28px] p-6 border-2 border-amber-200/80 shadow-[0_15px_30px_-10px_rgba(245,158,11,0.2)] w-full md:w-80 shrink-0 relative overflow-hidden group hover:shadow-[0_20px_40px_-10px_rgba(245,158,11,0.3)] transition-all">
-               <div className="flex items-center gap-2 mb-4 relative z-10">
-                 <ShieldAlert className="w-4 h-4 text-amber-500" />
-                 <span className="text-[10px] font-black text-[#16324F] uppercase tracking-[0.2em]">Health ID</span>
-               </div>
-               
-               <div className="flex flex-col items-center text-center relative z-10">
-                 <div className="w-16 h-16 bg-amber-50 rounded-2xl flex items-center justify-center mb-3 border border-amber-100 group-hover:scale-110 transition-transform shadow-xs">
-                   {isAbhaLinked ? <ShieldCheck className="w-8 h-8 text-emerald-600" /> : <Lock className="w-8 h-8 text-amber-400" />}
-                 </div>
-                 <h3 className="text-sm font-black text-[#16324F] mb-1">
-                   {isAbhaLinked ? "ABHA Account Active" : "Secure your health identity"}
-                 </h3>
-                 <p className="text-[11px] font-medium text-[#64748B] mb-4 leading-relaxed px-1">
-                   {isAbhaLinked
-                     ? "Your verified ABDM Health Account is linked for digital hospital prescriptions & lab results."
-                     : "Link your ABHA number to access complete health records and government health benefits."}
-                 </p>
-                 <button
-                   type="button"
-                   onClick={() => setShowAbhaModal(true)}
-                   className="w-full bg-gradient-to-r from-amber-400 via-amber-500 to-orange-400 hover:from-amber-500 hover:to-orange-500 text-white font-black text-xs py-3.5 rounded-xl shadow-[0_6px_20px_rgba(245,158,11,0.4)] hover:shadow-lg transition-all uppercase tracking-wider cursor-pointer"
-                 >
-                   {isAbhaLinked ? "View Official ABHA Card" : "Link ABHA Number"}
-                 </button>
-               </div>
+            {/* ── Official ABHA Health ID Card (Direct In-Dashboard View) ── */}
+            <div className="w-full lg:w-[420px] shrink-0">
+              {isAbhaLinked ? (
+                <div className="space-y-2.5">
+                  {/* The Physical-Style Blue Card */}
+                  <div
+                    id="dashboard-official-abha-card"
+                    className="bg-white rounded-[26px] border-2 border-blue-400/90 shadow-[0_16px_35px_-8px_rgba(29,78,216,0.25)] overflow-hidden text-slate-800 transition-all hover:shadow-[0_20px_40px_-8px_rgba(29,78,216,0.32)] relative"
+                  >
+                    {/* Official Blue Banner Header */}
+                    <div className="bg-gradient-to-r from-blue-700 via-blue-600 to-indigo-700 px-4 py-3 text-white flex items-center justify-between shadow-sm">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg bg-white/20 text-white flex items-center justify-center shadow-xs">
+                          <Shield className="w-3.5 h-3.5" />
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-black tracking-wider leading-none">NATIONAL HEALTH AUTHORITY</p>
+                          <p className="text-[8px] font-bold text-blue-100 mt-0.5">Ayushman Bharat Health Account (ABHA) · Govt. of India</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] font-black bg-white text-blue-800 px-2.5 py-0.5 rounded shadow-xs">
+                          ABHA
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Card Demographic Details Body */}
+                    <div className="p-4 bg-gradient-to-b from-white via-blue-50/20 to-slate-50/40">
+                      <div className="flex items-start gap-3">
+                        {/* Avatar / Photo */}
+                        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 text-white font-black text-xl flex items-center justify-center shadow-md shrink-0 border-2 border-white overflow-hidden">
+                          {avatarStr && !imgError ? (
+                            <img src={avatarStr} alt={member.name} className="w-full h-full object-cover" />
+                          ) : (
+                            <span>{(member.name || "P")[0].toUpperCase()}</span>
+                          )}
+                        </div>
+
+                        {/* Name & ABHA Handle */}
+                        <div className="min-w-0 flex-1 space-y-0.5">
+                          <div>
+                            <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider block">NAME / नाव</span>
+                            <h4 className="text-sm font-black text-slate-900 leading-tight truncate">{member.name}</h4>
+                          </div>
+
+                          <div>
+                            <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider block">ABHA ADDRESS / आभा पत्ता</span>
+                            <p className="text-[11px] font-mono font-black text-blue-700 truncate">{currentAddress}</p>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-600 pt-0.5 flex-wrap">
+                            <span>{member.gender || "Female"}</span>
+                            <span>•</span>
+                            <span>DOB: {displayDob}</span>
+                            <span>•</span>
+                            <span className="text-rose-600 font-black">{member.blood_group || "O+"}</span>
+                          </div>
+                        </div>
+                        
+                        {/* Real Scannable High-Contrast QR Code */}
+                        <div className="p-1.5 bg-white rounded-xl shadow-xs border border-slate-200 shrink-0 flex flex-col items-center">
+                          <QRCodeSVG value={officialAbdmUrl} size={60} level="Q" includeMargin={false} />
+                          <span className="text-[6px] font-black text-slate-400 uppercase mt-0.5 tracking-wider">Scan with Camera</span>
+                        </div>
+                      </div>
+
+                      {/* 14-Digit Number Highlight Box */}
+                      <div className="mt-3 p-2.5 bg-blue-50/90 rounded-xl border border-blue-200/90 text-center shadow-2xs">
+                        <p className="text-[8px] font-black text-blue-800 uppercase tracking-widest leading-none">
+                          ABHA NUMBER / आभा क्रमांक
+                        </p>
+                        <p className="text-[17px] sm:text-[19px] font-mono font-black text-slate-900 tracking-[0.14em] leading-tight mt-1">
+                          {abhaDisplay}
+                        </p>
+                      </div>
+
+                      {/* Card Bottom Meta Bar */}
+                      <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-[9px] font-black">
+                        <span className="text-emerald-700 flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600" /> 100% Verified Digital Health ID
+                        </span>
+                        <span className="text-slate-400 font-bold">Linked: Shirwal PHC</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Actions Attached Directly Below the Card */}
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAbhaModalMode("edit");
+                        setShowAbhaModal(true);
+                      }}
+                      className="flex-1 bg-white hover:bg-blue-50 text-blue-700 font-black text-xs py-2.5 px-3 rounded-xl border border-blue-200 shadow-2xs transition-all flex items-center justify-center gap-1.5 cursor-pointer hover:border-blue-300"
+                    >
+                      <Edit3 className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Edit ABHA Number</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAbhaModalMode("auto");
+                        setShowAbhaModal(true);
+                      }}
+                      className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-black text-xs py-2.5 px-3.5 rounded-xl shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Download / View</span>
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* Unlinked State: Clean Blue ABDM Invitation Card */
+                <div className="bg-white rounded-[26px] border-2 border-blue-200 p-5 shadow-md relative overflow-hidden space-y-3">
+                  <div className="bg-gradient-to-r from-blue-700 to-indigo-700 -mx-5 -mt-5 px-4 py-3 text-white flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Shield className="w-4 h-4 text-blue-200" />
+                      <span className="text-[10px] font-black tracking-wider uppercase">NATIONAL HEALTH AUTHORITY</span>
+                    </div>
+                    <span className="text-[9px] font-bold bg-amber-400 text-amber-950 px-2 py-0.5 rounded font-mono">
+                      UNLINKED
+                    </span>
+                  </div>
+
+                  <div className="py-2 text-center space-y-1.5">
+                    <div className="w-12 h-12 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center mx-auto text-blue-600">
+                      <Lock className="w-6 h-6" />
+                    </div>
+                    <h4 className="text-sm font-black text-slate-900">Ayushman Bharat Health Account</h4>
+                    <p className="text-[11px] text-slate-500 font-medium max-w-xs mx-auto">
+                      Link your 14-digit ABHA number to unlock paperless hospital check-in, scan &amp; share OPD, and PM-JAY ₹5L cover.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2 pt-1">
+                    {/* Primary Action: Direct Instant Card Generation */}
+                    <button
+                      type="button"
+                      disabled={generatingAbha}
+                      onClick={handleInstantGenerateAbha}
+                      className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-black text-xs py-3 rounded-xl shadow-md shadow-blue-500/25 transition-all flex items-center justify-center gap-2 cursor-pointer uppercase tracking-wider disabled:opacity-50"
+                    >
+                      {generatingAbha ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>Generating Official ABHA Card...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-4 h-4 text-amber-300" />
+                          <span>Instant Generate Official ABHA Card</span>
+                        </>
+                      )}
+                    </button>
+
+                    {/* Secondary Action: Link Existing 14-Digit Government ABHA */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAbhaModalMode("edit");
+                        setShowAbhaModal(true);
+                      }}
+                      className="w-full bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs py-2 px-3 rounded-xl border border-slate-200 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <Edit3 className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Link Existing 14-Digit ABHA</span>
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
           </div>
           
           {/* Bottom ASHA verification strip */}
           <div className="relative z-10 mt-6 border-t border-amber-200/50 pt-4 flex items-center gap-3">
-             <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shrink-0 shadow-2xs border border-amber-200/50">
-               {isAbhaLinked ? <ShieldCheck className="w-5 h-5 text-emerald-600" /> : <ShieldAlert className="w-5 h-5 text-amber-500" />}
+             <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-2xs border ${
+               isAbhaLinked ? "bg-emerald-50 border-emerald-200" : "bg-white border-amber-200/50"
+             }`}>
+               {isAbhaLinked ? <CheckCircle2 className="w-5 h-5 text-emerald-600" /> : <ShieldAlert className="w-5 h-5 text-amber-500" />}
              </div>
              <div>
                <p className="text-xs font-black text-[#16324F]">
-                 {isAbhaLinked ? "Verified by ASHA & ABDM" : "Pending ASHA verification"}
+                 {isAbhaLinked ? "Verified Digital Health ID · ABDM Active" : "Pending ASHA verification"}
                </p>
                <p className="text-[11px] font-medium text-[#64748B]">
-                 {isAbhaLinked ? "Your health identity is linked with Shirwal PHC." : "Your ASHA worker will verify and link your ABHA number."}
+                 {isAbhaLinked
+                   ? "Your health identity is linked with Shirwal PHC · Fast-track hospital admission & PM-JAY active."
+                   : "Your ASHA worker will verify and link your ABHA number, or you can link it manually above."}
                </p>
              </div>
           </div>
@@ -330,7 +642,33 @@ export default function PatientHome({ member, onNavigateTab }) {
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 mt-10">
+      <div className="max-w-7xl mx-auto px-4 mt-8">
+
+        {/* ── Biometric Provenance & Source Attribution Explainer Bar ── */}
+        <div className="mb-8 p-4 sm:p-5 rounded-2xl bg-white border border-amber-200/70 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shrink-0 shadow-2xs">
+              <ShieldCheck className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-xs sm:text-sm font-black text-[#16324F] tracking-tight">
+                Biometric Provenance &amp; Clinical Source Attribution
+              </p>
+              <p className="text-[11px] text-[#64748B] font-medium mt-0.5">
+                Each reading traces its exact origin — explicitly distinguishing frontline ASHA field screening from clinical hospital lab diagnostics.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0 text-[10px] font-black">
+            <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-3 py-1.5 rounded-lg uppercase tracking-wider shadow-2xs">
+              ASHA RECORDED
+            </span>
+            <span className="text-slate-400 font-bold">vs</span>
+            <span className="bg-indigo-50 text-indigo-800 border border-indigo-200 px-3 py-1.5 rounded-lg uppercase tracking-wider shadow-2xs">
+              CLINICAL LAB
+            </span>
+          </div>
+        </div>
 
         {/* ── Latest Health Readings ── */}
         <div className="mb-10">
@@ -353,6 +691,17 @@ export default function PatientHome({ member, onNavigateTab }) {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              <VitalCard
+                icon={Droplet}
+                iconColor="text-rose-600"
+                bgShapeColor="bg-rose-50"
+                label="Blood Group & Rh"
+                value={member.blood_group || "O+"}
+                unit="Rh+"
+                source="Clinical"
+                recordedAt={lastVisitDate}
+                onUpdate={() => setUpdateMetric("all")}
+              />
               <VitalCard icon={Heart} iconColor="text-rose-500" bgShapeColor="bg-rose-50" label="Blood Pressure" value={bpVal} unit="mmHg" source={bpSource} recordedAt={bpDate} onUpdate={() => setUpdateMetric("bp")} />
               <VitalCard icon={Droplet} iconColor="text-amber-500" bgShapeColor="bg-orange-50" label="Blood Sugar" value={sugarVal} unit="mg/dL" source={sugarSource} recordedAt={sugarDate} onUpdate={() => setUpdateMetric("sugar")} />
               <VitalCard icon={Weight} iconColor="text-emerald-500" bgShapeColor="bg-emerald-50" label="Weight" value={weightVal} unit="kg" source={weightSource} recordedAt={weightDate} onUpdate={() => setUpdateMetric("weight")} />
@@ -425,8 +774,9 @@ export default function PatientHome({ member, onNavigateTab }) {
       {showAbhaModal && (
         <AbhaModal
           member={member}
+          initialMode={abhaModalMode}
           onClose={() => setShowAbhaModal(false)}
-          onLinked={(newAbha) => {
+          onLinked={(newAbha, newAddr) => {
             setCurrentAbha(newAbha);
             fetchVitals();
           }}

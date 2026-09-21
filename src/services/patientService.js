@@ -18,6 +18,8 @@ export async function getPatients() {
   return data;
 }
 
+export const isUuid = (val) => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+
 /**
  * Fetch latest vitals for a given patient from the 'vitals' table,
  * ordered by recorded_at descending.
@@ -25,8 +27,8 @@ export async function getPatients() {
  * @returns {Promise<Array>} List of vitals records
  */
 export async function getVitals(patientId) {
-  if (!patientId) {
-    throw new Error('Patient ID is required to fetch vitals.');
+  if (!patientId || !isUuid(patientId)) {
+    return [];
   }
 
   const { data, error } = await supabase
@@ -50,8 +52,8 @@ export async function getVitals(patientId) {
  * @returns {Promise<Array>} List of upcoming appointments
  */
 export async function getUpcomingAppointments(patientId) {
-  if (!patientId) {
-    throw new Error('Patient ID is required to fetch upcoming appointments.');
+  if (!patientId || !isUuid(patientId)) {
+    return [];
   }
 
   // Get ISO string for current timestamp/date
@@ -79,7 +81,7 @@ export async function getUpcomingAppointments(patientId) {
  * @returns {Promise<Array>} Chronological list of care events
  */
 export async function getPatientTimeline(patientId) {
-  if (!patientId) return [];
+  if (!patientId || !isUuid(patientId)) return [];
 
   try {
     // Query encounters (triage)
@@ -135,7 +137,7 @@ export async function getPatientTimeline(patientId) {
         title: `Specialist Referral Issued`,
         category: 'referral',
         categoryLabel: 'Referral Transfer',
-        facility: r.destination_hospital || 'Shrirampur Primary Health Centre',
+        facility: r.destination_hospital || 'Pune Sassoon General Hospital',
         doctor: r.doctor_assigned || 'On-Duty Specialist',
         summary: `Referred due to: ${r.symptoms || 'Clinical evaluation'}. Status: ${r.status}`,
         details: `Destination Facility: ${r.destination_hospital}. Department: ${r.destination_department || 'General Medicine'}. Assigned Doctor: ${r.doctor_assigned}. Priority: ${r.priority}.`,
@@ -154,7 +156,7 @@ export async function getPatientTimeline(patientId) {
         title: isTeleconsult ? '📡 Remote Specialist Tele-Advice Signed' : '🏥 Specialist Consultation Signed',
         category: 'consultation',
         categoryLabel: isTeleconsult ? 'Tele-Consultation' : 'Specialist Review',
-        facility: c.referrals?.destination_hospital || 'Shrirampur Primary Health Centre',
+        facility: c.referrals?.destination_hospital || 'Pune Sassoon General Hospital',
         doctor: c.doctor_id || 'Specialist Physician',
         summary: `Diagnosis: ${c.diagnosis || 'Clinical review'}. Follow-up: ${c.follow_up_recommended_date || 'Routine'}`,
         details: `Clinical assessment: ${c.clinical_assessment}. Treatment advice: ${c.treatment_advice}. Prescriptions: ${(c.prescriptions || []).map(p => `${p.name} (${p.dose})`).join(', ') || 'None'}.`,
