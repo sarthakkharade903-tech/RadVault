@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { HeartPulse, Leaf, Users, Building2, ArrowRight, Stethoscope, Database, Sparkles } from "lucide-react";
+import { HeartPulse, Leaf, Users, Building2, ArrowRight, Stethoscope } from "lucide-react";
 import ASHAPortal from "./components/ASHA/ASHAPortal";
 import PatientLogin from "./components/Patient/PatientLogin";
 import FamilyDashboard from "./components/Patient/FamilyDashboard";
@@ -308,9 +308,7 @@ function App() {
     }
     return null;
   });
-  const [demoMode, setDemoMode] = useState(() => {
-    return localStorage.getItem("radvault_demo_mode") === "true";
-  });
+  const demoMode = false;
   const [showEmergencySOS, setShowEmergencySOS] = useState(() => {
     if (typeof window !== "undefined") {
       const q = new URLSearchParams(window.location.search).get("sos");
@@ -323,9 +321,6 @@ function App() {
     localStorage.setItem("radvault_portal", activePortal);
   }, [activePortal]);
 
-  useEffect(() => {
-    localStorage.setItem("radvault_demo_mode", String(demoMode));
-  }, [demoMode]);
 
   useEffect(() => {
     if (familyAuthData) {
@@ -403,54 +398,6 @@ function App() {
 
   return (
     <div className="min-h-screen flex flex-col font-sans">
-      {/* ── Global Mode Bar: Always visible across all portals ── */}
-      <div className="w-full bg-slate-900 text-white px-4 py-2 flex flex-wrap items-center justify-between text-xs border-b border-slate-800 z-50 sticky top-0 shadow-sm">
-        <div className="flex items-center gap-2 sm:gap-2.5">
-          <span className="font-extrabold tracking-wider text-teal-400 uppercase text-[10px]">RADVAULT</span>
-          <span className="text-slate-500">•</span>
-          <span className="flex items-center gap-1.5 font-bold">
-            <span className={`w-2 h-2 rounded-full ${demoMode ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'}`} />
-            {demoMode ? (
-              <span className="text-amber-300 font-bold">DEMO MODE (Sample Data Active)</span>
-            ) : (
-              <span className="text-emerald-400 font-bold">LIVE SUPABASE (Demo Mode OFF — 100% Real DB)</span>
-            )}
-          </span>
-        </div>
-
-        <div className="flex items-center gap-3 mt-1 sm:mt-0">
-          <button
-            onClick={() => setShowEmergencySOS(true)}
-            className="px-3 py-1 bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 hover:text-rose-200 border border-rose-500/40 rounded-full font-bold text-[11px] flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer shadow-xs"
-            title="Open 24x7 Emergency SOS"
-          >
-            <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
-            <span className="tracking-wide font-extrabold">24x7 Emergency SOS</span>
-          </button>
-
-          <button
-            onClick={() => setDemoMode(prev => !prev)}
-            className={`px-3 py-1 rounded-full font-bold text-[11px] transition-all flex items-center gap-1.5 cursor-pointer border ${
-              demoMode
-                ? 'bg-amber-500/20 text-amber-300 border-amber-400/50 hover:bg-amber-500/30'
-                : 'bg-emerald-500/20 text-emerald-300 border-emerald-400/50 hover:bg-emerald-500/30'
-            }`}
-          >
-            {demoMode ? <Sparkles className="w-3.5 h-3.5" /> : <Database className="w-3.5 h-3.5" />}
-            <span>{demoMode ? "Switch to Live DB (Demo OFF)" : "Switch to Demo Mode"}</span>
-          </button>
-
-          {activePortal !== "home" && (
-            <button
-              data-action="all-portals"
-              onClick={goHome}
-              className="text-slate-400 hover:text-white font-semibold text-[11px] underline ml-1 cursor-pointer"
-            >
-              All Portals
-            </button>
-          )}
-        </div>
-      </div>
 
       <div className="flex-1">
         {activePortal === "asha" && (
