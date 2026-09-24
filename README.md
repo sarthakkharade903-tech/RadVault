@@ -3,6 +3,11 @@
 > **"One Patient. One Connected Health Journey."**  
 > *Consent-driven medical record continuity, ASHA grassroots triage, digital health vault, and tele-radiology consultation platform for rural and underserved communities.*
 
+[![Live Demo](https://img.shields.io/badge/Live%20Deployment-radvault.vercel.app-008080?style=for-the-badge&logo=vercel&logoColor=white)](https://radvault.vercel.app)
+[![Production Status](https://img.shields.io/badge/Status-Live%20%26%20Active-2ea44f?style=for-the-badge)](https://radvault.vercel.app)
+
+🌐 **Live Application**: **[https://radvault.vercel.app](https://radvault.vercel.app)**
+
 ---
 
 ![RadVault Universal Connected Health Network](docs/images/01_landing_hero.png)
@@ -113,11 +118,15 @@ A clinical workspace for consulting physicians and remote radiologists to review
 
 ---
 
-## ⚡ Quick Start & Running Locally
+## ⚡ Quick Start & Live Application
 
-RadVault works **instantly out-of-the-box with built-in Demo Mode**—no API keys or environment configuration required!
+### 🌐 Instant Live Access (No Setup Required)
+Test the live production deployment directly in your browser:  
+👉 **[https://radvault.vercel.app](https://radvault.vercel.app)**
 
-### 1. Installation
+---
+
+### 💻 Run Locally
 ```bash
 # Clone the repository
 git clone https://github.com/sarthakkharade903-tech/RadVault.git
