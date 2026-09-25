@@ -87,20 +87,74 @@ const PORTAL_TRANSLATIONS = {
   }
 };
 
-export default function FamilyDashboard({ family, members: initialMembers = [], onLogout, onBack, onOpenEmergencySOS }) {
+export default function FamilyDashboard({ family, members: initialMembers = [], onLogout, onBack, onOpenEmergencySOS, onUpdateMembers }) {
   const [membersList, setMembersList] = useState(initialMembers);
 
   useEffect(() => {
     setMembersList(initialMembers);
   }, [initialMembers]);
 
+  // Synchronize avatar from Supabase on mount to ensure local cache is never stale
+  useEffect(() => {
+    if (!initialMembers.length) return;
+    const memberIds = initialMembers.map(m => m.id).filter(Boolean);
+    if (!memberIds.length) return;
+
+    supabase
+      .from('village_patients')
+      .select('id, avatar_url')
+      .in('id', memberIds)
+      .then(({ data, error }) => {
+        if (!error && data) {
+          setMembersList(prev => {
+            const updated = prev.map(m => {
+              const remote = data.find(r => r.id === m.id);
+              if (remote) {
+                if (remote.avatar_url === null) {
+                  localStorage.removeItem(`radvault_avatar_${m.id}`);
+                } else if (remote.avatar_url) {
+                  localStorage.setItem(`radvault_avatar_${m.id}`, remote.avatar_url);
+                }
+              }
+              const localOverride = localStorage.getItem(`radvault_avatar_${m.id}`);
+              return {
+                ...m,
+                avatar_url: localOverride || (remote ? remote.avatar_url : m.avatar_url) || null
+              };
+            });
+            if (onUpdateMembers) onUpdateMembers(updated);
+            return updated;
+          });
+        }
+      });
+  }, []);
+
   const handleAvatarUpdate = (memberId, newAvatarUrl) => {
-    setMembersList(prev => prev.map(m => m.id === memberId ? { ...m, avatar_url: newAvatarUrl } : m));
+    setMembersList(prev => {
+      const updated = prev.map(m => m.id === memberId ? { ...m, avatar_url: newAvatarUrl } : m);
+      if (onUpdateMembers) {
+        onUpdateMembers(updated);
+      }
+      return updated;
+    });
+
     if (newAvatarUrl) {
       localStorage.setItem(`radvault_avatar_${memberId}`, newAvatarUrl);
     } else {
       localStorage.removeItem(`radvault_avatar_${memberId}`);
     }
+
+    // Keep radvault_family_auth in localStorage in sync
+    try {
+      const raw = localStorage.getItem("radvault_family_auth");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed?.members) {
+          parsed.members = parsed.members.map(m => m.id === memberId ? { ...m, avatar_url: newAvatarUrl } : m);
+          localStorage.setItem("radvault_family_auth", JSON.stringify(parsed));
+        }
+      }
+    } catch (_) {}
   };
 
   const [lang, setLang] = useState(() => {

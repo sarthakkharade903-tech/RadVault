@@ -442,6 +442,9 @@ function App() {
               onLogout={() => setFamilyAuthData(null)}
               onBack={goHome}
               onOpenEmergencySOS={() => setShowEmergencySOS(true)}
+              onUpdateMembers={(updatedMembers) => {
+                setFamilyAuthData(prev => prev ? { ...prev, members: updatedMembers } : prev);
+              }}
             />
           )
         )}

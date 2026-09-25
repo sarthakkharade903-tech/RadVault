@@ -103,16 +103,19 @@ export default function PatientHome({ member, onNavigateTab, onOpenHealthPasspor
   useEffect(() => { fetchVitals(); }, [fetchVitals]);
 
   const [avatarStr, setAvatarStr] = useState(() => {
-    if (member?.avatar_url !== undefined) return member.avatar_url;
-    return (member?.id && localStorage.getItem(`radvault_avatar_${member.id}`)) || null;
+    if (!member?.id) return null;
+    const local = localStorage.getItem(`radvault_avatar_${member.id}`);
+    if (local) return local;
+    return member?.avatar_url || null;
   });
   const [imgError, setImgError] = useState(false);
 
   useEffect(() => {
     const stored = (member?.id && localStorage.getItem(`radvault_abha_${member.id}`)) || member?.abha_id || "";
     setCurrentAbha(stored);
-    const av = member?.avatar_url !== undefined ? member.avatar_url : (member?.id && localStorage.getItem(`radvault_avatar_${member.id}`));
-    setAvatarStr(av || null);
+    const local = member?.id ? localStorage.getItem(`radvault_avatar_${member.id}`) : null;
+    const av = local || member?.avatar_url || null;
+    setAvatarStr(av);
     setImgError(false);
   }, [member]);
 
@@ -219,6 +222,17 @@ export default function PatientHome({ member, onNavigateTab, onOpenHealthPasspor
 
             // 3. Update localStorage and notify parent
             localStorage.setItem(`radvault_avatar_${member.id}`, finalAvatarUrl);
+            try {
+              const raw = localStorage.getItem("radvault_family_auth");
+              if (raw) {
+                const parsed = JSON.parse(raw);
+                if (parsed?.members) {
+                  parsed.members = parsed.members.map(m => m.id === member.id ? { ...m, avatar_url: finalAvatarUrl } : m);
+                  localStorage.setItem("radvault_family_auth", JSON.stringify(parsed));
+                }
+              }
+            } catch (_) {}
+
             setAvatarStr(finalAvatarUrl);
             setImgError(false);
             if (onAvatarUpdate) {
@@ -249,6 +263,19 @@ export default function PatientHome({ member, onNavigateTab, onOpenHealthPasspor
         .update({ avatar_url: null })
         .eq("id", member.id);
       localStorage.removeItem(`radvault_avatar_${member.id}`);
+
+      // Clear avatar_url from radvault_family_auth as well
+      try {
+        const raw = localStorage.getItem("radvault_family_auth");
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed?.members) {
+            parsed.members = parsed.members.map(m => m.id === member.id ? { ...m, avatar_url: null } : m);
+            localStorage.setItem("radvault_family_auth", JSON.stringify(parsed));
+          }
+        }
+      } catch (_) {}
+
       setAvatarStr(null);
       setImgError(false);
       if (onAvatarUpdate) {
