@@ -4,6 +4,7 @@ import ASHAPortal from "./components/ASHA/ASHAPortal";
 import PatientLogin from "./components/Patient/PatientLogin";
 import FamilyDashboard from "./components/Patient/FamilyDashboard";
 import EmergencySOSModal from "./components/Patient/EmergencySOSModal";
+import EmergencyHealthPassportModal from "./components/Patient/EmergencyHealthPassportModal";
 import illusAsha from "./assets/illus_asha.jpg";
 import illusFamily from "./assets/illus_family.jpg";
 import illusHospital from "./assets/illus_hospital.jpg";
@@ -316,6 +317,13 @@ function App() {
     }
     return false;
   });
+  const [passportPatientId, setPassportPatientId] = useState(() => {
+    if (typeof window !== "undefined") {
+      const p = new URLSearchParams(window.location.search).get("passport");
+      if (p) return p;
+    }
+    return null;
+  });
 
   useEffect(() => {
     localStorage.setItem("radvault_portal", activePortal);
@@ -395,6 +403,26 @@ function App() {
     setFamilyAuthData(prev => prev || defaultFamily);
     setActivePortal("patient");
   };
+
+  // ── Standalone Mobile Emergency View (e.g. Scanned via QR Code on Phone) ──
+  if (passportPatientId) {
+    return (
+      <EmergencyHealthPassportModal
+        isStandalone={true}
+        patientId={passportPatientId}
+        onClose={() => {
+          if (typeof window !== "undefined") {
+            const url = new URL(window.location.href);
+            url.searchParams.delete("passport");
+            url.searchParams.delete("p");
+            window.history.replaceState({}, "", url.pathname || "/");
+          }
+          setPassportPatientId(null);
+          setActivePortal("home");
+        }}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col font-sans">

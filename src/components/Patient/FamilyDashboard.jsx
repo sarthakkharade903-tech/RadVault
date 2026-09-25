@@ -541,6 +541,8 @@ export default function FamilyDashboard({ family, members: initialMembers = [], 
       {showHealthPassport && (
         <EmergencyHealthPassportModal
           member={selectedMember}
+          family={family}
+          familyMembers={membersList}
           onClose={() => setShowHealthPassport(false)}
         />
       )}
