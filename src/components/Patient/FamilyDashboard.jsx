@@ -13,6 +13,7 @@ import UploadModal from './UploadModal';
 import GovernmentSchemes from './GovernmentSchemes';
 import EmergencyHealthPassportModal from './EmergencyHealthPassportModal';
 import { getDocuments, deleteDocument } from '../../services/vaultService';
+import { supabase } from '../../services/supabase';
 
 // ─── Single-Language Dictionaries (No Mixed Text) ─────────
 const PORTAL_TRANSLATIONS = {
