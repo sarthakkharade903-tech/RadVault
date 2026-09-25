@@ -232,6 +232,188 @@ export default function EmergencyHealthPassportModal({
     }
   };
 
+  const handleSaveCardImage = async () => {
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = 600;
+      canvas.height = 920;
+      const ctx = canvas.getContext('2d');
+
+      // Background
+      ctx.fillStyle = '#FCFAF5';
+      ctx.fillRect(0, 0, 600, 920);
+
+      // Header Red Bar
+      ctx.fillStyle = '#DC2626';
+      ctx.fillRect(0, 0, 600, 110);
+
+      // Header Text
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = 'bold 22px system-ui, -apple-system, sans-serif';
+      ctx.fillText('EMERGENCY HEALTH PASSPORT', 30, 48);
+
+      ctx.font = 'bold 13px system-ui, -apple-system, sans-serif';
+      ctx.fillStyle = '#FEE2E2';
+      ctx.fillText('24x7 Critical Medical Triage Dossier · First Responder Access', 30, 75);
+
+      // Card Container
+      ctx.fillStyle = '#FFFFFF';
+      ctx.strokeStyle = '#FCA5A5';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(24, 130, 552, 760, 24);
+      ctx.fill();
+      ctx.stroke();
+
+      // Patient Identity
+      ctx.fillStyle = '#DC2626';
+      ctx.font = 'bold 11px system-ui, sans-serif';
+      ctx.fillText('PATIENT CITIZEN ID', 45, 170);
+
+      ctx.fillStyle = '#16324F';
+      ctx.font = 'bold 24px system-ui, sans-serif';
+      ctx.fillText(patientName, 45, 204);
+
+      ctx.fillStyle = '#64748B';
+      ctx.font = 'bold 13px system-ui, sans-serif';
+      ctx.fillText(`${age} Yrs • ${gender} • ABHA: ${abhaNumber}`, 45, 230);
+
+      // Blood Group Box
+      ctx.fillStyle = '#DC2626';
+      ctx.beginPath();
+      ctx.roundRect(430, 150, 125, 85, 16);
+      ctx.fill();
+
+      ctx.fillStyle = '#FEE2E2';
+      ctx.font = 'bold 10px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('BLOOD GROUP', 492, 172);
+
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = 'bold 36px system-ui, sans-serif';
+      ctx.fillText(bloodGroup, 492, 212);
+      ctx.textAlign = 'left';
+
+      // Allergies Box (Light green)
+      ctx.fillStyle = '#ECFDF5';
+      ctx.strokeStyle = '#A7F3D0';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.roundRect(45, 260, 510, 65, 14);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#065F46';
+      ctx.font = 'bold 11px system-ui, sans-serif';
+      ctx.fillText('DRUG ALLERGIES (NKDA)', 60, 283);
+
+      ctx.fillStyle = '#064E3B';
+      ctx.font = 'bold 14px system-ui, sans-serif';
+      ctx.fillText(primaryAllergy, 60, 308);
+
+      // Active Condition Box (Light Amber)
+      ctx.fillStyle = '#FFFBEB';
+      ctx.strokeStyle = '#FDE68A';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.roundRect(45, 335, 510, 65, 14);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#92400E';
+      ctx.font = 'bold 11px system-ui, sans-serif';
+      ctx.fillText('ACTIVE CLINICAL ALERT', 60, 358);
+
+      ctx.fillStyle = '#78350F';
+      ctx.font = 'bold 14px system-ui, sans-serif';
+      ctx.fillText(activeCondition, 60, 383);
+
+      // QR Code Section
+      ctx.fillStyle = '#F8FAFC';
+      ctx.strokeStyle = '#E2E8F0';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.roundRect(45, 415, 510, 200, 16);
+      ctx.fill();
+      ctx.stroke();
+
+      // Draw the QR Code image if available
+      const qrContainer = document.getElementById('passport-qr-code-svg');
+      const svgEl = qrContainer ? qrContainer.querySelector('svg') : null;
+      if (svgEl) {
+        const svgData = new XMLSerializer().serializeToString(svgEl);
+        const img = new Image();
+        const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+        const url = URL.createObjectURL(svgBlob);
+        await new Promise((resolve) => {
+          img.onload = () => {
+            ctx.drawImage(img, 65, 435, 160, 160);
+            URL.revokeObjectURL(url);
+            resolve();
+          };
+          img.onerror = resolve;
+          img.src = url;
+        });
+      }
+
+      ctx.fillStyle = '#16324F';
+      ctx.font = 'bold 16px system-ui, sans-serif';
+      ctx.fillText('Scan for Emergency Dossier', 245, 470);
+
+      ctx.fillStyle = '#64748B';
+      ctx.font = '12px system-ui, sans-serif';
+      ctx.fillText('Instant zero-login mobile dossier', 245, 498);
+      ctx.fillText('Gives ER doctors access to medical vault,', 245, 520);
+      ctx.fillText('ultrasound scans, and live vitals.', 245, 542);
+
+      ctx.fillStyle = '#DC2626';
+      ctx.font = 'bold 11px system-ui, sans-serif';
+      ctx.fillText('RadVault Emergency Override Active', 245, 575);
+
+      // Emergency Contacts
+      ctx.fillStyle = '#94A3B8';
+      ctx.font = 'bold 11px system-ui, sans-serif';
+      ctx.fillText('EMERGENCY CONTACTS (DIALABLE)', 45, 645);
+
+      let contactY = 665;
+      emergencyContacts.slice(0, 3).forEach((c) => {
+        ctx.fillStyle = '#F8FAFC';
+        ctx.strokeStyle = '#E2E8F0';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(45, contactY, 510, 52, 12);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = '#64748B';
+        ctx.font = '10px system-ui, sans-serif';
+        ctx.fillText(c.relation, 60, contactY + 20);
+
+        ctx.fillStyle = '#16324F';
+        ctx.font = 'bold 13px system-ui, sans-serif';
+        ctx.fillText(c.name, 60, contactY + 39);
+
+        ctx.fillStyle = '#059669';
+        ctx.font = 'bold 14px system-ui, sans-serif';
+        ctx.textAlign = 'right';
+        ctx.fillText(c.phone, 535, contactY + 34);
+        ctx.textAlign = 'left';
+
+        contactY += 62;
+      });
+
+      // Download triggered
+      const a = document.createElement('a');
+      a.href = canvas.toDataURL('image/png');
+      a.download = `RadVault_Emergency_Card_${patientName.replace(/\s+/g, '_')}.png`;
+      a.click();
+    } catch (err) {
+      console.error('Save card error:', err);
+      window.print();
+    }
+  };
+
+
   // ── Standalone Mobile View Layout (Rendered when phone scans the QR code) ──
   if (isStandalone) {
     return (
@@ -455,7 +637,7 @@ export default function EmergencyHealthPassportModal({
 
             {/* QR Code & Live Phone Scan Box */}
             <div className="flex flex-col sm:flex-row items-center gap-5 bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs">
-              <div className="p-2.5 bg-white rounded-2xl border-2 border-slate-900 shadow-sm shrink-0">
+              <div id="passport-qr-code-svg" className="p-2.5 bg-white rounded-2xl border-2 border-slate-900 shadow-sm shrink-0">
                 <QRCodeSVG
                   value={liveScannableUrl}
                   size={128}
@@ -574,11 +756,12 @@ export default function EmergencyHealthPassportModal({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => window.print()}
-              className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
+              onClick={handleSaveCardImage}
+              className="px-4 py-2 bg-[#16324F] hover:bg-[#1f4266] text-white border border-[#16324F] font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+              title="Download high-resolution image of this emergency card for phone lockscreen"
             >
               <Download className="w-3.5 h-3.5" />
-              <span>Save Lockscreen Card</span>
+              <span>Save Lockscreen Card (PNG)</span>
             </button>
 
             <button
