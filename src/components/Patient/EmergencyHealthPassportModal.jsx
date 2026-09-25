@@ -220,8 +220,9 @@ export default function EmergencyHealthPassportModal({
     c: emergencyContacts.map(c => ({ r: c.relation, n: c.name, p: c.phone }))
   };
 
-  const encodedToken = encodeEmergencyPayload(compactPayload);
-  const liveScannableUrl = `${getBaseUrl()}/?passport=${currentPatient?.id || 'b6f81101-46d0-4b4d-8df0-9d9ce11a6a70'}&p=${encodedToken}`;
+  // Clean QR URL — EmergencyDossierPage fetches all data live from Supabase using anon key
+  const liveScannableUrl = `${getBaseUrl()}/?passport=${currentPatient?.id || patientId || 'unknown'}`;
+
 
   const handleShare = () => {
     if (navigator.clipboard) {
@@ -466,13 +467,13 @@ export default function EmergencyHealthPassportModal({
               <div className="flex-1 space-y-1.5 text-center sm:text-left">
                 <span className="text-[10px] font-black text-red-700 uppercase tracking-wider flex items-center justify-center sm:justify-start gap-1">
                   <Shield className="w-3.5 h-3.5 text-red-600" />
-                  Live Phone-Scannable Emergency QR
+                  Emergency Dossier QR — Zero Login
                 </span>
                 <p className="text-xs font-bold text-slate-800 leading-snug">
-                  📱 Scan with any smartphone camera to open this patient's emergency pass directly on mobile.
+                  📱 Scan with any phone camera — opens a full 3-tab Emergency Dossier: Triage Card, Medical Vault, and Past Care. No login required.
                 </p>
                 <p className="text-[10px] text-slate-500 font-medium">
-                  Instant zero-login mobile dossier with verified blood type, allergies, and one-tap emergency calling.
+                  Blood type · Allergies · Documents · Vitals · One-tap call. All live data. No static card.
                 </p>
                 <div className="pt-1">
                   <a
@@ -481,12 +482,13 @@ export default function EmergencyHealthPassportModal({
                     rel="noreferrer"
                     className="inline-flex items-center gap-1 text-[11px] font-bold text-indigo-600 hover:text-indigo-700 underline"
                   >
-                    <span>Open Live Mobile Pass In New Tab</span>
+                    <span>Open Emergency Dossier In New Tab</span>
                     <ExternalLink className="w-3 h-3" />
                   </a>
                 </div>
               </div>
             </div>
+
 
             {/* Critical Health Guardrails Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">

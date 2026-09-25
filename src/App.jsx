@@ -5,6 +5,7 @@ import PatientLogin from "./components/Patient/PatientLogin";
 import FamilyDashboard from "./components/Patient/FamilyDashboard";
 import EmergencySOSModal from "./components/Patient/EmergencySOSModal";
 import EmergencyHealthPassportModal from "./components/Patient/EmergencyHealthPassportModal";
+import EmergencyDossierPage from "./components/Patient/EmergencyDossierPage";
 import illusAsha from "./assets/illus_asha.jpg";
 import illusFamily from "./assets/illus_family.jpg";
 import illusHospital from "./assets/illus_hospital.jpg";
@@ -404,11 +405,10 @@ function App() {
     setActivePortal("patient");
   };
 
-  // ── Standalone Mobile Emergency View (e.g. Scanned via QR Code on Phone) ──
+  // ── Standalone Emergency Dossier (QR Code Scan → No Login Required) ──
   if (passportPatientId) {
     return (
-      <EmergencyHealthPassportModal
-        isStandalone={true}
+      <EmergencyDossierPage
         patientId={passportPatientId}
         onClose={() => {
           if (typeof window !== "undefined") {
@@ -423,6 +423,7 @@ function App() {
       />
     );
   }
+
 
   return (
     <div className="min-h-screen flex flex-col font-sans">
