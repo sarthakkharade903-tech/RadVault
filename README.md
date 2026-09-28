@@ -118,6 +118,16 @@ A clinical workspace for consulting physicians and remote radiologists to review
 
 ---
 
+### 🛡️ Step 7: Public Health DHO Surveillance & Outbreak Analytics
+A high-level command center for District Health Officers (DHO) and epidemiologists to monitor disease incidence trends, statistical outbreak velocities, and containment dispatch.
+
+* **Geospatial Choropleth Mapping**: Interactive Pune District vector map with taluka-level clustering (Baramati, Haveli, Bhor, etc.) and visual hotspot crosshatch alerts.
+* **Algorithmic Outbreak Alerts**: Automatic detection of statistical anomalies (e.g., *+142% Dengue Spike Velocity in Baramati Taluka*) with rapid vector-control dispatch integration.
+* **Mathematical $k$-Anonymity Protection ($k \ge 5$)**: Rural sub-center clusters recording fewer than 5 cases are strictly masked (`< 5 cases (Suppressed)`) to mathematically prevent patient re-identification.
+* **Provable Zero-PII Separation**: Administrator view consumes strictly de-identified aggregates—names, ABHA numbers, and contact details are completely stripped at data ingestion.
+
+---
+
 ## ⚡ Quick Start & Live Application
 
 ### 🌐 Instant Live Access (No Setup Required)

@@ -3415,7 +3415,7 @@ export default function HospitalStaffWorkspace({
                   title="Return to Main Portals"
                 >
                   <ChevronLeft className="w-3.5 h-3.5" />
-                  <span>Portals</span>
+                  <span>All Portals</span>
                 </button>
               )}
               <button

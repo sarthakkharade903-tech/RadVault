@@ -1222,7 +1222,7 @@ export default function DoctorWorkspace({
                 title="Return to Portal Selection"
               >
                 <ChevronLeft className="w-4 h-4" />
-                <span className="hidden sm:inline">Portals</span>
+                <span className="hidden sm:inline">All Portals</span>
               </button>
             )}
             <div className="flex items-center gap-2">

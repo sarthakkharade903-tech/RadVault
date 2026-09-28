@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { HeartPulse, Leaf, Users, Building2, ArrowRight, Stethoscope } from "lucide-react";
+import { HeartPulse, Leaf, Users, Building2, ArrowRight, Stethoscope, ShieldAlert } from "lucide-react";
 import ASHAPortal from "./components/ASHA/ASHAPortal";
 import PatientLogin from "./components/Patient/PatientLogin";
 import FamilyDashboard from "./components/Patient/FamilyDashboard";
@@ -10,8 +10,10 @@ import illusAsha from "./assets/illus_asha.jpg";
 import illusFamily from "./assets/illus_family.jpg";
 import illusHospital from "./assets/illus_hospital.jpg";
 import illusDoctor from "./assets/illus_doctor.jpg";
+import illusDho from "./assets/illus_dho.jpg";
 import HospitalStaffWorkspace from './components/workspaces/HospitalStaffWorkspace';
 import DoctorWorkspace from './components/workspaces/DoctorWorkspace';
+import PublicHealthDashboard from "./components/Admin/PublicHealthDashboard";
 import { ensureRoleAuth } from './services/supabase';
 
 const PORTALS = [
@@ -71,6 +73,20 @@ const PORTALS = [
       accent: "#7C3AED",
     },
   },
+  {
+    key: "admin",
+    label: "Public Health DHO",
+    desc: "Disease surveillance & outbreak alerts",
+    icon: ShieldAlert,
+    illus: illusDho,
+    theme: {
+      text: "text-[#0284C7]",
+      activeBorder: "border-[#0284C7]",
+      iconBg: "bg-[#F0F9FF]",
+      shadow: "0 8px 30px rgba(2,132,199,0.18)",
+      accent: "#0284C7",
+    },
+  },
 ];
 
 function LandingPage({ onSelectPortal, onOpenEmergencySOS }) {
@@ -113,8 +129,8 @@ function LandingPage({ onSelectPortal, onOpenEmergencySOS }) {
                     <div className="flex-1 h-[1.5px] bg-slate-200 relative overflow-hidden">
                       <div className="absolute inset-y-0 left-0 transition-all duration-500"
                         style={{
-                          width: (hoveredPortal === 'patient' && i === 0) || (hoveredPortal === 'reception' && i <= 1) || (hoveredPortal === 'doctor' && i <= 2) ? '100%' : '0%',
-                          backgroundColor: hoveredPortal === 'doctor' ? '#7C3AED' : hoveredPortal === 'reception' ? '#3F51B5' : hoveredPortal === 'patient' ? '#D97706' : '#008F83'
+                          width: (hoveredPortal === 'patient' && i === 0) || (hoveredPortal === 'reception' && i <= 1) || (hoveredPortal === 'doctor' && i <= 2) || (hoveredPortal === 'admin' && i <= 3) ? '100%' : '0%',
+                          backgroundColor: hoveredPortal === 'admin' ? '#0284C7' : hoveredPortal === 'doctor' ? '#7C3AED' : hoveredPortal === 'reception' ? '#3F51B5' : hoveredPortal === 'patient' ? '#D97706' : '#008F83'
                         }} />
                     </div>
                   )}
@@ -212,7 +228,7 @@ function LandingPage({ onSelectPortal, onOpenEmergencySOS }) {
                   <div className="flex items-center gap-2.5">
                     <div className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: activePortal.theme.accent }} />
                     <span className="text-[11px] font-bold tracking-wider uppercase" style={{ color: activePortal.theme.accent }}>
-                      {activePortal.key === "asha" ? "Community Care Begins Here" : activePortal.key === "patient" ? "Health Stays Connected with Family" : activePortal.key === "reception" ? "Community Care Connects to Clinical Care" : "Specialist Consultation & Tele-Clinical Review"}
+                      {activePortal.key === "asha" ? "Community Care Begins Here" : activePortal.key === "patient" ? "Health Stays Connected with Family" : activePortal.key === "reception" ? "Community Care Connects to Clinical Care" : activePortal.key === "doctor" ? "Specialist Consultation & Tele-Clinical Review" : "Population-Level Surveillance · Zero-PII Aggregation"}
                     </span>
                   </div>
                   <div className="flex gap-1.5">
@@ -464,6 +480,9 @@ function App() {
             demoDataEnabled={demoMode}
             onOpenPatientJourney={openPatientJourneyForMember}
           />
+        )}
+        {activePortal === "admin" && (
+          <PublicHealthDashboard onBack={goHome} />
         )}
         {activePortal === "home" && (
           <LandingPage
