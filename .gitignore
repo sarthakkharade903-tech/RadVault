@@ -50,3 +50,14 @@ out/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Binaries & Media (Rulebook Compliance)
+*.pptx
+*.pdf
+*.mp4
+*.zip
+*.exe
+*.dll
+
+# Temporary & Local Archives
+_archive*/
