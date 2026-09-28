@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "RadVault — Consent-Driven Universal Medical Imaging & Emergency Health Record Exchange",
+  "description": "RadVault — Patient Health Records & Disease Trend Monitoring Platform",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
