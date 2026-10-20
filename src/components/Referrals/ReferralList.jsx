@@ -712,6 +712,8 @@ function NeedsAttentionCard({ referral, t, onOpen, onDelete }) {
     ? 'border-amber-200 border-l-4 border-l-amber-500'
     : 'border-slate-200 border-l-4 border-l-[#008F83]';
 
+  const avatarUrl = referral.avatarUrl || referral.avatar_url || (referral.patient_id && typeof window !== "undefined" ? localStorage.getItem(`radvault_avatar_${referral.patient_id}`) : null);
+
   return (
     <div
       data-referral-id={referral.id}
@@ -719,7 +721,14 @@ function NeedsAttentionCard({ referral, t, onOpen, onDelete }) {
     >
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2.5">
         {/* Left: Indicator, Patient Name, Route */}
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <div className="w-9 h-9 rounded-xl bg-teal-50 text-[#008F83] flex items-center justify-center shrink-0 font-black overflow-hidden border border-teal-100 shadow-2xs">
+            {avatarUrl ? (
+              <img src={avatarUrl} alt={referral.patientName} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+            ) : (
+              <span className="text-xs">{referral.patientName ? referral.patientName.trim()[0].toUpperCase() : 'P'}</span>
+            )}
+          </div>
           <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${isEmergency ? 'bg-red-600' : isUrgent ? 'bg-amber-500' : 'bg-[#008F83]'}`} />
           <h4 className="text-base sm:text-lg font-black text-slate-900 leading-tight">
             {referral.patientName}
@@ -853,6 +862,7 @@ function PipelineReferralCard({ referral, t, onOpen, onDelete }) {
   const isSubmitted = raw === 'SUBMITTED';
   const isWaitingDoctor = raw === 'WAITING_FOR_DOCTOR';
   const isInCall = raw === 'IN_CALL';
+  const avatarUrl = referral.avatarUrl || referral.avatar_url || (referral.patient_id && typeof window !== "undefined" ? localStorage.getItem(`radvault_avatar_${referral.patient_id}`) : null);
 
   return (
     <div
@@ -862,8 +872,12 @@ function PipelineReferralCard({ referral, t, onOpen, onDelete }) {
       
       {/* Left: Info */}
       <div className="flex items-start gap-3 min-w-0">
-        <div className="w-9 h-9 rounded-xl bg-teal-50 text-[#008F83] flex items-center justify-center shrink-0 font-black mt-0.5">
-          <User className="w-4 h-4" />
+        <div className="w-9 h-9 rounded-xl bg-teal-50 text-[#008F83] flex items-center justify-center shrink-0 font-black mt-0.5 overflow-hidden border border-teal-100 shadow-2xs">
+          {avatarUrl ? (
+            <img src={avatarUrl} alt={referral.patientName} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+          ) : (
+            <span className="text-xs">{referral.patientName ? referral.patientName.trim()[0].toUpperCase() : 'P'}</span>
+          )}
         </div>
 
         <div className="min-w-0">
@@ -943,6 +957,7 @@ function PipelineReferralCard({ referral, t, onOpen, onDelete }) {
 // ─── 4. Referral Dossier Modal ────────────────────────────────
 function ReferralDetailModal({ referral, t, onClose, onDelete }) {
   if (!referral) return null;
+  const avatarUrl = referral.avatarUrl || referral.avatar_url || (referral.patient_id && typeof window !== "undefined" ? localStorage.getItem(`radvault_avatar_${referral.patient_id}`) : null);
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
@@ -964,10 +979,19 @@ function ReferralDetailModal({ referral, t, onClose, onDelete }) {
 
         {/* Patient Core Card */}
         <div className="p-4 bg-[#F5FBF9] border border-teal-100 rounded-2xl flex items-center justify-between gap-3">
-          <div>
-            <h4 className="font-black text-slate-900 text-lg leading-tight">{referral.patientName}</h4>
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-12 h-12 rounded-2xl bg-white text-[#008F83] border border-teal-200 flex items-center justify-center font-black text-lg overflow-hidden shadow-2xs shrink-0">
+              {avatarUrl ? (
+                <img src={avatarUrl} alt={referral.patientName} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+              ) : (
+                <span>{referral.patientName ? referral.patientName.trim()[0].toUpperCase() : 'P'}</span>
+              )}
+            </div>
+            <div className="min-w-0">
+              <h4 className="font-black text-slate-900 text-lg leading-tight truncate">{referral.patientName}</h4>
             <p className="text-xs font-mono font-bold text-teal-800">{referral.patientId}</p>
             <p className="text-[11px] text-slate-500 mt-0.5">Referred by: {referral.createdBy}</p>
+            </div>
           </div>
           <span className={`px-3 py-1 rounded-full text-xs font-black ${
             referral.priority === 'RED' ? 'bg-red-600 text-white' : 'bg-[#008F83] text-white'

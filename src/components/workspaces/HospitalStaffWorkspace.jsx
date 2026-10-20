@@ -531,6 +531,7 @@ function ReferralActionCard({
 
   // Patient initial for avatar badge
   const initial = (refItem.patient_name || 'P').trim()[0].toUpperCase();
+  const avatarUrl = refItem.avatar_url || (refItem.patient_id && typeof window !== "undefined" ? localStorage.getItem(`radvault_avatar_${refItem.patient_id}`) : null);
 
   // Priority color: truthful frontline/heuristic priority
   const priorityKey = (refItem.priority || '').toUpperCase();
@@ -600,10 +601,14 @@ function ReferralActionCard({
       {/* Row 1: Triage Bar + Patient Info + Status */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-3 min-w-0">
-          <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-xs shrink-0 mt-0.5 ${
+          <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-xs shrink-0 mt-0.5 overflow-hidden shadow-2xs border ${
             isCritical ? 'bg-rose-50 text-rose-700 border border-rose-200' : 'bg-teal-50 text-[#008F83] border border-teal-100'
           }`}>
-            {initial}
+            {avatarUrl ? (
+              <img src={avatarUrl} alt={refItem.patient_name} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+            ) : (
+              <span>{initial}</span>
+            )}
           </div>
           <div className="min-w-0 space-y-0.5">
             <div className="flex items-center gap-1.5 flex-wrap">
@@ -1135,9 +1140,18 @@ function PatientClinicalCaseSheet({
         <div className="p-4 sm:p-5 border-b border-slate-100 bg-white space-y-3 shrink-0">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-start gap-3 min-w-0">
-              <div className="w-11 h-11 rounded-2xl bg-teal-50 text-[#008F83] border border-teal-100 flex items-center justify-center font-black text-base shrink-0 mt-0.5">
-                {(referral.patient_name || 'P').trim()[0].toUpperCase()}
-              </div>
+              {(() => {
+                const modalAvatar = referral.avatar_url || (referral.patient_id && typeof window !== "undefined" ? localStorage.getItem(`radvault_avatar_${referral.patient_id}`) : null);
+                return (
+                  <div className="w-11 h-11 rounded-2xl bg-teal-50 text-[#008F83] border border-teal-100 flex items-center justify-center font-black text-base shrink-0 mt-0.5 overflow-hidden shadow-2xs">
+                    {modalAvatar ? (
+                      <img src={modalAvatar} alt={referral.patient_name} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                    ) : (
+                      <span>{(referral.patient_name || 'P').trim()[0].toUpperCase()}</span>
+                    )}
+                  </div>
+                );
+              })()}
               <div className="space-y-0.5 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-[10px] font-black uppercase text-[#008F83] tracking-wider">
@@ -2623,6 +2637,18 @@ export default function HospitalStaffWorkspace({
       const patientUuids = Array.from(new Set(combinedRefs.map(r => r.patient_id).filter(isUuid)));
 
       let patientsMap = {};
+      let vpMap = {};
+      try {
+        const { data: vpData } = await supabase.from('village_patients').select('id, name, avatar_url');
+        if (vpData && vpData.length > 0) {
+          vpData.forEach(v => {
+            if (v.id) vpMap[v.id] = v;
+            if (v.name) vpMap[v.name.trim().toLowerCase()] = v;
+          });
+        }
+      } catch (err) {
+        console.warn('[RADVAULT] Could not join village_patients profiles:', err?.message);
+      }
       if (patientUuids.length > 0) {
         try {
           const { data: pts } = await supabase
@@ -2644,8 +2670,11 @@ export default function HospitalStaffWorkspace({
         const hasValidPatientUuid = isUuid(r.patient_id);
         const linkedPatient = hasValidPatientUuid ? patientsMap[r.patient_id] : null;
         const isLegacyId = r.patient_id && !hasValidPatientUuid;
+        const matchedVp = vpMap[r.patient_id] || (r.patient_name ? vpMap[r.patient_name.trim().toLowerCase()] : null);
+        const avatarUrl = matchedVp?.avatar_url || (r.patient_id && typeof window !== "undefined" ? localStorage.getItem(`radvault_avatar_${r.patient_id}`) : null);
         return {
           ...r,
+          avatar_url: avatarUrl,
           is_legacy_patient: isLegacyId,
           patient_name: r.patient_name || linkedPatient?.full_name || (isLegacyId ? `Patient (${r.patient_id})` : 'Patient'),
           patient_unified_id: linkedPatient?.unified_id || (isLegacyId ? `Legacy ID: ${r.patient_id}` : (r.patient_id && !r.patient_id.includes('-') ? r.patient_id : null)),

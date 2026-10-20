@@ -24,10 +24,10 @@ export default function ReferralsDashboard({ onBack, initialTab = 'list', demoMo
     try {
       setLoading(true);
       setErrorMsg('');
-      const { data, error } = await supabase
-        .from('referrals')
-        .select('*')
-        .order('created_at', { ascending: false });
+      const [{ data, error }, { data: vpList }] = await Promise.all([ supabase.from('referrals').select('*').order('created_at', { ascending: false }), supabase.from('village_patients').select('id, name, avatar_url') ]);
+
+
+
 
       if (error) {
         console.error("[ReferralsDashboard] Could not load referrals:", error);
@@ -36,7 +36,11 @@ export default function ReferralsDashboard({ onBack, initialTab = 'list', demoMo
       }
 
       if (data) {
-        const mapped = data.map(d => ({
+        const mapped = data.map(d => {
+          const matchedVp = (vpList || []).find(v => v.id === d.patient_id || (v.name && d.patient_name && v.name.trim().toLowerCase() === d.patient_name.trim().toLowerCase()));
+          const finalAvatar = matchedVp?.avatar_url || (d.patient_id && typeof window !== "undefined" ? localStorage.getItem(`radvault_avatar_${d.patient_id}`) : null);
+          return {
+            avatarUrl: finalAvatar,
           id: d.id,
           patientName: d.patient_name || 'Village Resident',
           patientId: d.patient_id ? String(d.patient_id).slice(0, 8).toUpperCase() : 'ABHA-PAT',
@@ -65,7 +69,7 @@ export default function ReferralsDashboard({ onBack, initialTab = 'list', demoMo
           rawCreatedAt: d.created_at || new Date().toISOString(),
           created_at: d.created_at || new Date().toISOString(),
           createdAt: new Date(d.created_at || Date.now()).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
-        }));
+        }; });
         setReferrals(mapped);
       } else {
         setReferrals([]);
@@ -140,7 +144,7 @@ export default function ReferralsDashboard({ onBack, initialTab = 'list', demoMo
     try {
       // 1. Delete canonical record from public.referrals
       const { error: delErr } = await supabase
-        .from('referrals')
+
         .delete()
         .eq('id', targetId);
 
