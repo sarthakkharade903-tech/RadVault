@@ -195,13 +195,20 @@ export default function EmergencyHealthPassportModal({
     ? currentPatient._urlContacts.map(c => ({ relation: c.r, name: c.n, phone: c.p }))
     : resolveEmergencyContacts(currentPatient, family, liveFamilyMembers.length ? liveFamilyMembers : familyMembers);
 
-  // ── Construct clean, phone-scannable live URL ──
-  const getBaseUrl = () => {
+  // ── Construct clean URLs: Phone-scannable external QR vs In-browser local link ──
+  const getExternalQrBaseUrl = () => {
     if (typeof window !== 'undefined') {
       const host = window.location.hostname;
       if (host === 'localhost' || host === '127.0.0.1') {
         return 'https://radvault.vercel.app';
       }
+      return window.location.origin;
+    }
+    return 'https://radvault.vercel.app';
+  };
+
+  const getLocalDossierBaseUrl = () => {
+    if (typeof window !== 'undefined') {
       return window.location.origin;
     }
     return 'https://radvault.vercel.app';
@@ -220,13 +227,15 @@ export default function EmergencyHealthPassportModal({
     c: emergencyContacts.map(c => ({ r: c.relation, n: c.name, p: c.phone }))
   };
 
-  // Clean QR URL — EmergencyDossierPage fetches all data live from Supabase using anon key
-  const liveScannableUrl = `${getBaseUrl()}/?passport=${currentPatient?.id || patientId || 'unknown'}`;
+  // External QR URL for mobile camera scans (preserved for cellular phone scan)
+  const externalQrUrl = `${getExternalQrBaseUrl()}/?passport=${currentPatient?.id || patientId || 'unknown'}`;
+  // In-browser navigation URL (uses local application on localhost, production on Vercel)
+  const localDossierUrl = `${getLocalDossierBaseUrl()}/?passport=${currentPatient?.id || patientId || 'unknown'}`;
 
 
   const handleShare = () => {
     if (navigator.clipboard) {
-      navigator.clipboard.writeText(liveScannableUrl);
+      navigator.clipboard.writeText(localDossierUrl);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
@@ -639,7 +648,7 @@ export default function EmergencyHealthPassportModal({
             <div className="flex flex-col sm:flex-row items-center gap-5 bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs">
               <div id="passport-qr-code-svg" className="p-2.5 bg-white rounded-2xl border-2 border-slate-900 shadow-sm shrink-0">
                 <QRCodeSVG
-                  value={liveScannableUrl}
+                  value={externalQrUrl}
                   size={128}
                   level="M"
                   includeMargin={false}
@@ -659,7 +668,7 @@ export default function EmergencyHealthPassportModal({
                 </p>
                 <div className="pt-1">
                   <a
-                    href={liveScannableUrl}
+                    href={localDossierUrl}
                     target="_blank"
                     rel="noreferrer"
                     className="inline-flex items-center gap-1 text-[11px] font-bold text-indigo-600 hover:text-indigo-700 underline"

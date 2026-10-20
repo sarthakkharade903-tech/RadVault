@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import {
   Heart, Droplet, Weight, Ruler, Thermometer, Wind, Activity,
@@ -298,19 +298,17 @@ export default function PatientHome({ member, onNavigateTab, onOpenHealthPasspor
   const currentAddress = (member?.id && localStorage.getItem(`radvault_abha_addr_${member.id}`)) ||
     (isAbhaLinked ? `${cleanAbha.replace(/\D/g, "")}@abdm` : `${(member.name || "user").toLowerCase().replace(/[^a-z0-9]/g, "")}@abdm`);
 
-  const displayDob = useMemo(() => {
+  const displayDob = (() => {
     if (member?.dob) return new Date(member.dob).toLocaleDateString("en-IN");
     if (member?.age_years) {
       const year = new Date().getFullYear() - Number(member.age_years);
       return `15/06/${year}`;
     }
     return "12/04/1990";
-  }, [member]);
+  })();
 
-  const officialAbdmUrl = useMemo(() => {
-    const rawClean = (cleanAbha || "").replace(/\D/g, "");
-    return `https://healthid.ndhm.gov.in/verify?abha=${rawClean}&name=${encodeURIComponent(member?.name || "")}&hid=${encodeURIComponent(currentAddress)}`;
-  }, [cleanAbha, member?.name, currentAddress]);
+  const rawClean = (cleanAbha || "").replace(/\D/g, "");
+  const officialAbdmUrl = `https://healthid.ndhm.gov.in/verify?abha=${rawClean}&name=${encodeURIComponent(member?.name || "")}&hid=${encodeURIComponent(currentAddress)}`;
   
   // Pull vitals
   const bp = latestVitals.bp_systolic;
