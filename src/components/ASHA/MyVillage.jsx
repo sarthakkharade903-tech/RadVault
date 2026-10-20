@@ -551,6 +551,11 @@ export default function MyVillage({
               const pregnantCount = pts.filter(p => p.is_pregnant).length;
               const childCount = pts.filter(p => p.is_child || (p.age_years && p.age_years <= 5)).length;
               const initialLetter = fam.family_name ? fam.family_name.trim()[0].toUpperCase() : "F";
+              const headMember = pts.find(p => 
+                (fam.head_of_family && p.name && p.name.trim().toLowerCase() === fam.head_of_family.trim().toLowerCase()) ||
+                (p.relation_to_head && (p.relation_to_head.toLowerCase().includes('head') || p.relation_to_head.toLowerCase() === 'self'))
+              ) || pts[0];
+              const headAvatar = headMember?.avatar_url || (headMember?.id && typeof window !== "undefined" ? localStorage.getItem(`radvault_avatar_${headMember.id}`) : null);
 
               return (
                 <div
@@ -565,8 +570,17 @@ export default function MyVillage({
                       
                       {/* Family Initial Avatar with Cottage Badge */}
                       <div className="relative shrink-0">
-                        <div className="w-12 h-12 sm:w-13 sm:h-13 rounded-full bg-[#EAF7F3] border border-[#CDEEE4] flex items-center justify-center font-black text-xl text-[#007A70] shadow-inner">
-                          {initialLetter}
+                        <div className="w-12 h-12 sm:w-13 sm:h-13 rounded-2xl bg-[#EAF7F3] border border-[#CDEEE4] flex items-center justify-center font-black text-xl text-[#007A70] shadow-inner overflow-hidden">
+                          {headAvatar ? (
+                            <img
+                              src={headAvatar}
+                              alt={fam.head_of_family || fam.family_name}
+                              className="w-full h-full object-cover"
+                              onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                            />
+                          ) : (
+                            <span>{initialLetter}</span>
+                          )}
                         </div>
                         <div className="absolute -bottom-1 -left-1 w-5 h-5 rounded-full bg-white border border-emerald-200 text-emerald-700 flex items-center justify-center text-[10px] shadow-2xs">
                           🏡
@@ -674,16 +688,27 @@ export default function MyVillage({
                         </p>
                       ) : (
                         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
-                          {pts.map(p => (
+                          {pts.map(p => {
+                            const pAvatar = p.avatar_url || (p.id && typeof window !== "undefined" ? localStorage.getItem(`radvault_avatar_${p.id}`) : null);
+                            return (
                             <div
                               key={p.id}
-                              className="bg-white rounded-xl p-3 border border-slate-200/70 shadow-2xs flex items-center justify-between text-xs"
+                              className="bg-white rounded-xl p-3 border border-slate-200/70 shadow-2xs flex items-center justify-between text-xs gap-2"
                             >
-                              <div>
-                                <p className="font-extrabold text-slate-900">{p.name}</p>
-                                <p className="text-[10px] text-slate-500 font-semibold">
-                                  {p.relation_to_head || "Member"} • {p.age_years}y • {p.gender || "Gender"}
-                                </p>
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <div className="w-8 h-8 rounded-lg bg-teal-50 text-[#007A70] border border-teal-100 flex items-center justify-center font-black text-xs shrink-0 overflow-hidden">
+                                  {pAvatar ? (
+                                    <img src={pAvatar} alt={p.name} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                                  ) : (
+                                    <span>{p.name ? p.name.trim()[0].toUpperCase() : 'M'}</span>
+                                  )}
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="font-extrabold text-slate-900 truncate">{p.name}</p>
+                                  <p className="text-[10px] text-slate-500 font-semibold truncate">
+                                    {p.relation_to_head || "Member"} • {p.age_years}y • {p.gender || "Gender"}
+                                  </p>
+                                </div>
                               </div>
 
                               <div className="flex gap-1 flex-wrap items-center">
@@ -708,7 +733,8 @@ export default function MyVillage({
                                 )}
                               </div>
                             </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       )}
                     </div>

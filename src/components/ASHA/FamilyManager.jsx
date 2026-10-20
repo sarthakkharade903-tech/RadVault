@@ -117,11 +117,22 @@ export default function FamilyManager({ family: initialFamily, onBack, onAddMemb
           </div>
           
           <div className="space-y-4">
-            {pts.map(p => (
+            {pts.map(p => {
+              const pAvatar = p.avatar_url || (p.id && typeof window !== "undefined" ? localStorage.getItem(`radvault_avatar_${p.id}`) : null);
+              return (
               <div key={p.id} className="bg-white border border-[#E2E8F0] rounded-2xl p-4 shadow-sm flex flex-col gap-4">
                 <div className="flex items-center gap-3">
-                  <div className={"w-12 h-12 rounded-xl flex items-center justify-center font-black text-lg " + (p.status === 'red' ? "bg-red-50 text-red-600" : "bg-[#F5FBF9] text-[#008F83]")}>
-                    {p.name[0]}
+                  <div className={"w-12 h-12 rounded-xl flex items-center justify-center font-black text-lg overflow-hidden border border-slate-200/80 shrink-0 " + (p.status === 'red' ? "bg-red-50 text-red-600" : "bg-[#F5FBF9] text-[#008F83]")}>
+                    {pAvatar ? (
+                      <img
+                        src={pAvatar}
+                        alt={p.name}
+                        className="w-full h-full object-cover"
+                        onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                      />
+                    ) : (
+                      <span>{p.name ? p.name.trim()[0].toUpperCase() : 'M'}</span>
+                    )}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
@@ -154,7 +165,7 @@ export default function FamilyManager({ family: initialFamily, onBack, onAddMemb
                   </button>
                 </div>
               </div>
-            ))}
+            ); })}
 
             <button onClick={() => onAddMember(family)} className="w-full bg-[#F5FBF9] border-2 border-dashed border-[#008F83]/30 hover:border-[#008F83] hover:bg-[#E8F7F3] rounded-2xl py-4 flex flex-col items-center justify-center gap-2 transition-all">
               <div className="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center">

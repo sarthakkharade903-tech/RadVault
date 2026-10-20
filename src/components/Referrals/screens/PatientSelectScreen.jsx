@@ -162,6 +162,7 @@ export default function PatientSelectScreen({ onSelect, onSelectPatient, demoMod
             const hasAbha = p.abha_id && p.abha_id !== "PENDING" && p.abha_id !== "Not linked yet";
             const abhaStorage = p.id ? localStorage.getItem(`radvault_abha_${p.id}`) : null;
             const effectiveAbha = hasAbha ? p.abha_id : (abhaStorage || null);
+            const patientAvatar = p.avatar_url || (p.id && typeof window !== "undefined" ? localStorage.getItem(`radvault_avatar_${p.id}`) : null);
 
             return (
               <button
@@ -171,8 +172,17 @@ export default function PatientSelectScreen({ onSelect, onSelectPatient, demoMod
                 className="w-full text-left bg-white border border-slate-200 hover:border-[#008F83] hover:shadow-xs p-4 rounded-2xl shadow-2xs transition-all flex items-center justify-between group cursor-pointer"
               >
                 <div className="flex items-center gap-3.5 min-w-0">
-                  <div className="w-11 h-11 bg-teal-50 text-[#008F83] rounded-2xl flex items-center justify-center font-black text-base flex-shrink-0 group-hover:bg-[#008F83] group-hover:text-white transition-colors">
-                    {p.name ? p.name[0] : 'P'}
+                  <div className="w-11 h-11 bg-teal-50 text-[#008F83] rounded-2xl flex items-center justify-center font-black text-base flex-shrink-0 group-hover:bg-[#008F83] group-hover:text-white transition-colors overflow-hidden border border-teal-100 shadow-2xs">
+                    {patientAvatar ? (
+                      <img
+                        src={patientAvatar}
+                        alt={p.name}
+                        className="w-full h-full object-cover"
+                        onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                      />
+                    ) : (
+                      <span>{p.name ? p.name.trim()[0].toUpperCase() : 'P'}</span>
+                    )}
                   </div>
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">

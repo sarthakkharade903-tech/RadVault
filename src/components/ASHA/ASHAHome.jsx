@@ -523,14 +523,26 @@ export default function ASHAHome({
                 {/* List or Empty State */}
                 {referralsList.length > 0 ? (
                   <div className="divide-y divide-slate-100 space-y-3">
-                    {referralsList.slice(0, 4).map((refItem) => (
+                    {referralsList.slice(0, 4).map((refItem) => {
+                      const matchedPt = (patients || []).find(p => p.id === refItem.patient_id || (p.name && refItem.patient_name && p.name.trim().toLowerCase() === refItem.patient_name.trim().toLowerCase()));
+                      const refAvatar = matchedPt?.avatar_url || (refItem.patient_id && typeof window !== "undefined" ? localStorage.getItem(`radvault_avatar_${refItem.patient_id}`) : null);
+                      return (
                       <div
                         key={refItem.id}
                         className="pt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50 p-2 rounded-2xl transition-colors"
                       >
                         <div className="flex items-start gap-3.5">
-                          <div className="w-10 h-10 rounded-xl bg-teal-50 text-teal-700 flex items-center justify-center font-black text-sm shrink-0 border border-teal-100">
-                            {refItem.patient_name ? refItem.patient_name[0].toUpperCase() : 'P'}
+                          <div className="w-10 h-10 rounded-xl bg-teal-50 text-teal-700 flex items-center justify-center font-black text-sm shrink-0 border border-teal-100 overflow-hidden shadow-2xs">
+                            {refAvatar ? (
+                              <img
+                                src={refAvatar}
+                                alt={refItem.patient_name}
+                                className="w-full h-full object-cover"
+                                onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                              />
+                            ) : (
+                              <span>{refItem.patient_name ? refItem.patient_name.trim()[0].toUpperCase() : 'P'}</span>
+                            )}
                           </div>
                           <div>
                             <div className="flex items-center gap-2">
@@ -559,7 +571,7 @@ export default function ASHAHome({
                           </span>
                         </div>
                       </div>
-                    ))}
+                    ); })}
                   </div>
                 ) : (
                   /* Clean Empty State Illustration (Matching eSanjeevani reference) */
