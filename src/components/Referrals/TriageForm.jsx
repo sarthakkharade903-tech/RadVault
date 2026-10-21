@@ -15,7 +15,7 @@ import AdultScreen from './screens/AdultScreen';
 import EmergencyScreen from './screens/EmergencyScreen';
 import { DEPARTMENTS, HOSPITALS } from '../../data/mockReferrals';
 import { createPhysicalReferral, generateKimiClinicalRoadmap } from '../../services/ashaService';
-import { fetchGovHospitals, getCurrentLocation, calculateHaversineDistance, CONNECTED_FACILITIES } from '../../services/locationService';
+import { fetchGovHospitals, getCurrentLocation, calculateRoadDistance, fetchBatchRoadDistances, CONNECTED_FACILITIES } from '../../services/locationService';
 import { supabase } from '../../services/supabase';
 
 // ─── Single-Language Dictionaries (No Mixed Text) ─────────
@@ -613,6 +613,7 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
   const [nearbyGovHospitals, setNearbyGovHospitals] = useState([]);
   const [loadingHospitals, setLoadingHospitals] = useState(false);
   const [userCoords, setUserCoords] = useState(null);
+  const [liveRoadMap, setLiveRoadMap] = useState({});
 
   // Real-Time Government Hospital Fetching & Live Geolocation
   const loadNearbyHospitals = async () => {
@@ -624,6 +625,21 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
       if (hospitals && hospitals.length > 0) {
         setNearbyGovHospitals(hospitals);
       }
+
+      // Query live OSRM driving route distances for real-world driving km
+      const allToQuery = [...CONNECTED_FACILITIES, ...(hospitals || [])];
+      fetchBatchRoadDistances(coords.lat, coords.lon, allToQuery).then(results => {
+        if (results && results.length > 0) {
+          const map = {};
+          allToQuery.forEach((fac, idx) => {
+            if (results[idx]) {
+              if (fac.id) map[fac.id] = results[idx];
+              if (fac.name) map[fac.name.toLowerCase()] = results[idx];
+            }
+          });
+          setLiveRoadMap(map);
+        }
+      });
     } catch (err) {
       console.warn("Could not fetch nearby government hospitals:", err);
     } finally {
@@ -685,7 +701,8 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
 
     const list = facilitiesList.length > 0 ? facilitiesList : CONNECTED_FACILITIES;
     const connected = list.map(f => {
-      const d = calculateHaversineDistance(userLat, userLon, f.lat, f.lon) ?? 0;
+      const liveEntry = liveRoadMap[f.id] || liveRoadMap[f.name.toLowerCase()];
+      const d = liveEntry?.km ?? calculateRoadDistance(userLat, userLon, f.lat, f.lon) ?? 0;
       return {
         id: f.id,
         name: f.name,
@@ -707,19 +724,30 @@ export default function TriageForm({ onSubmit, onCancel, demoMode = false }) {
     }
 
     const existingNames = new Set(connected.map(c => c.name.toLowerCase()));
+    const KNOWN_KW = ['sassoon', 'aundh', 'shirwal', 'shrirampur'];
     const extra = (nearbyGovHospitals || [])
-      .filter(h => !existingNames.has(h.name.toLowerCase()))
-      .map(h => ({
-        ...h,
-        isIntegrated: false
-      }));
+      .filter(h => {
+        const nameLow = (h.name || '').toLowerCase();
+        if (KNOWN_KW.some(kw => nameLow.includes(kw))) return false;
+        return !existingNames.has(nameLow);
+      })
+      .map(h => {
+        const liveEntry = liveRoadMap[h.id] || liveRoadMap[h.name.toLowerCase()];
+        const d = liveEntry?.km ?? (h.rawDist ?? calculateRoadDistance(userLat, userLon, h.lat, h.lon) ?? 0);
+        return {
+          ...h,
+          dist: String(d),
+          rawDist: d,
+          isIntegrated: false
+        };
+      });
 
     return [...connected, ...extra].sort((a, b) => {
       if (a.id === 'f2222222-2222-2222-2222-222222222222') return -1;
       if (b.id === 'f2222222-2222-2222-2222-222222222222') return 1;
       return (a.rawDist || 0) - (b.rawDist || 0);
     });
-  }, [facilitiesList, userCoords, showMoreFacilities, hospSearch, nearbyGovHospitals]);
+  }, [facilitiesList, userCoords, showMoreFacilities, hospSearch, nearbyGovHospitals, liveRoadMap]);
 
   // Auto-sync default selected facility to Pune Sassoon General Hospital when baseFacilities updates
   useEffect(() => {

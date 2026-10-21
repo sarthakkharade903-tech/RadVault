@@ -88,13 +88,29 @@ export default function EmergencySOSModal({ member, onClose, isStandaloneTab = f
     }
   };
 
-  const detectLocation = () => {
+    const detectLocation = () => {
     setGpsLoading(true);
     setGpsNotice('');
 
+    const fallbackToRegionalCatchment = async () => {
+      try {
+        const res = await fetch('https://get.geojs.io/v1/ip/geo.json');
+        if (res.ok) {
+          const d = await res.json();
+          const ipLat = parseFloat(d.latitude);
+          const ipLng = parseFloat(d.longitude);
+          if (!isNaN(ipLat) && !isNaN(ipLng) && Math.abs(ipLat) > 0.1) {
+            applyCoords(ipLat, ipLng, 500, true);
+            return;
+          }
+        }
+      } catch (_) {}
+      // Standard Pune central district regional coordinates (Shivajinagar)
+      applyCoords(18.5204, 73.8567, 250, true);
+    };
+
     if (!navigator.geolocation) {
-      // Automatic fallback to Shirwal/Pune PHC catchment coordinates
-      applyCoords(18.48778, 73.85197, 15, true);
+      fallbackToRegionalCatchment();
       return;
     }
 
@@ -107,10 +123,9 @@ export default function EmergencySOSModal({ member, onClose, isStandaloneTab = f
       },
       (err) => {
         console.warn('GPS notice:', err.message);
-        // Seamless fallback so the caller always has a real address & GPS pin immediately
-        applyCoords(18.48778, 73.85197, 15, true);
+        fallbackToRegionalCatchment();
       },
-      { enableHighAccuracy: true, timeout: 6000, maximumAge: 0 }
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
     );
   };
 

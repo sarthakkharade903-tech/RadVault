@@ -85,49 +85,25 @@ export const EMERGENCY_CATEGORIES = [
  * Reverse geocode GPS coordinates to a real human-readable street address
  * Features fast catchment resolution + browser-compatible client geocoder with Open CORS
  */
+// Cache for reverse geocoding results to avoid redundant network calls
+const geocodeCache = new Map();
+
+/**
+ * Reverse geocode GPS coordinates to a real human-readable street address.
+ * Prioritizes high-precision OpenStreetMap/Photon street landmarks, followed by Nominatim & BigDataCloud.
+ */
 export async function fetchRealAddressFromCoords(lat, lng) {
-  if (!lat || !lng) return null;
+  if (lat == null || lng == null || isNaN(lat) || isNaN(lng)) return null;
 
-  // Fast verified catchment resolution for Pune / Shirwal / Shrirampur
-  const dist = (x1, y1, x2, y2) => Math.sqrt((x1 - x2)**2 + (y1 - y2)**2);
-  if (dist(lat, lng, 18.48778, 73.85197) < 0.05) {
-    return 'Sahakar Nagar, Pune, Maharashtra, 411001';
-  }
-  if (dist(lat, lng, 18.1363, 73.9856) < 0.05) {
-    return 'Shirwal Rural Catchment, Khandala, Satara, 412801';
-  }
-  if (dist(lat, lng, 19.6174, 74.6559) < 0.05) {
-    return 'Main Road, Shrirampur, Ahmednagar, Maharashtra, 413709';
+  const cacheKey = `${Number(lat).toFixed(4)},${Number(lng).toFixed(4)}`;
+  if (geocodeCache.has(cacheKey)) {
+    return geocodeCache.get(cacheKey);
   }
 
-  // 1. Browser-compatible client-side reverse geocoding via BigDataCloud (Open CORS, no custom header needed)
+  // 1. OpenStreetMap Photon (High-precision Indian street, campus, and locality data with open CORS)
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3500);
-    const res = await fetch(
-      `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=en`,
-      { signal: controller.signal }
-    );
-    clearTimeout(timeoutId);
-    if (res.ok) {
-      const d = await res.json();
-      const parts = [
-        d.locality,
-        d.city,
-        d.principalSubdivision,
-        d.postcode
-      ].filter(Boolean);
-      const uniqueParts = parts.filter((item, idx) => parts.indexOf(item) === idx);
-      if (uniqueParts.length > 0) return uniqueParts.join(', ');
-    }
-  } catch (err) {
-    console.warn('[emergencyService] Client geocode notice:', err.message);
-  }
-
-  // 2. Fallback to OpenStreetMap Photon
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3500);
+    const timeoutId = setTimeout(() => controller.abort(), 3200);
     const res = await fetch(
       `https://photon.komoot.io/reverse?lat=${lat}&lon=${lng}`,
       { signal: controller.signal }
@@ -135,17 +111,89 @@ export async function fetchRealAddressFromCoords(lat, lng) {
     clearTimeout(timeoutId);
     if (res.ok) {
       const data = await res.json();
-      if (data?.features?.[0]?.properties) {
-        const p = data.features[0].properties;
-        const parts = [p.name, p.street, p.district, p.city, p.state, p.postcode].filter(Boolean);
-        if (parts.length > 0) return parts.join(', ');
+      const p = data?.features?.[0]?.properties;
+      if (p) {
+        const place = (p.name && p.name !== p.street) ? p.name : '';
+        const street = p.street || '';
+        const area = p.locality || p.district || p.suburb || '';
+        const city = p.city || p.county || '';
+        const state = p.state || '';
+        const postcode = p.postcode || '';
+
+        const parts = [place, street, area, city, state, postcode].filter(Boolean);
+        const uniqueParts = parts.filter((item, idx) => parts.indexOf(item) === idx);
+        if (uniqueParts.length >= 2) {
+          const formatted = uniqueParts.join(', ');
+          geocodeCache.set(cacheKey, formatted);
+          return formatted;
+        }
       }
     }
   } catch (err) {
-    console.warn('[emergencyService] Photon notice:', err.message);
+    console.warn('[emergencyService] Photon geocode notice:', err.message);
   }
 
-  return `${lat.toFixed(5)}° N, ${lng.toFixed(5)}° E`;
+  // 2. OpenStreetMap Nominatim reverse geocode fallback
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3200);
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`,
+      {
+        signal: controller.signal,
+        headers: { 'User-Agent': 'RadVault-EmergencySOS-App/1.0' }
+      }
+    );
+    clearTimeout(timeoutId);
+    if (res.ok) {
+      const d = await res.json();
+      const a = d.address || {};
+      const road = a.road || a.pedestrian || '';
+      const suburb = a.suburb || a.neighbourhood || a.residential || '';
+      const city = a.city || a.town || a.village || a.county || '';
+      const state = a.state || '';
+      const postcode = a.postcode || '';
+
+      const parts = [road, suburb, city, state, postcode].filter(Boolean);
+      const uniqueParts = parts.filter((item, idx) => parts.indexOf(item) === idx);
+      if (uniqueParts.length >= 2) {
+        const formatted = uniqueParts.join(', ');
+        geocodeCache.set(cacheKey, formatted);
+        return formatted;
+      }
+    }
+  } catch (err) {}
+
+  // 3. BigDataCloud reverse geocode client fallback
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3200);
+    const res = await fetch(
+      `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=en`,
+      { signal: controller.signal }
+    );
+    clearTimeout(timeoutId);
+    if (res.ok) {
+      const d = await res.json();
+      const area = d.localityInfo?.informative?.find(i => i.order >= 4 && i.name)?.name || d.locality;
+      const parts = [
+        area,
+        d.city,
+        d.principalSubdivision,
+        d.postcode
+      ].filter(Boolean);
+      const uniqueParts = parts.filter((item, idx) => parts.indexOf(item) === idx);
+      if (uniqueParts.length > 0) {
+        const formatted = uniqueParts.join(', ');
+        geocodeCache.set(cacheKey, formatted);
+        return formatted;
+      }
+    }
+  } catch (err) {}
+
+  const fallbackStr = `${Number(lat).toFixed(5)}° N, ${Number(lng).toFixed(5)}° E`;
+  geocodeCache.set(cacheKey, fallbackStr);
+  return fallbackStr;
 }
 
 /**

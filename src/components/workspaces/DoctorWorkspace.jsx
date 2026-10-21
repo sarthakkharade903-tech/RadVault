@@ -38,7 +38,7 @@ import {
   getFullPatientClinicalDocket,
   generateClinicalAiSummary
 } from '../../services/ashaService';
-import { CONNECTED_FACILITIES, calculateHaversineDistance } from '../../services/locationService';
+import { CONNECTED_FACILITIES, calculateRoadDistance } from '../../services/locationService';
 import MedicalImagingVault from './MedicalImagingVault';
 import DoctorVitalsTimeline from './DoctorVitalsTimeline';
 
@@ -91,7 +91,7 @@ const PUNE_SASSOON_COORDS = { lat: 18.5284, lon: 73.8746 };
 
 // Connected facilities sorted by proximity (Pune Sassoon first as Apex Center)
 export const SORTED_CONNECTED_FACILITIES = CONNECTED_FACILITIES.map(f => {
-  const dist = calculateHaversineDistance(PUNE_SASSOON_COORDS.lat, PUNE_SASSOON_COORDS.lon, f.lat, f.lon) ?? 0;
+  const dist = calculateRoadDistance(PUNE_SASSOON_COORDS.lat, PUNE_SASSOON_COORDS.lon, f.lat, f.lon) ?? 0;
   return { ...f, dist, rawDist: dist };
 }).sort((a, b) => {
   if (a.id === 'f2222222-2222-2222-2222-222222222222' || a.name.toLowerCase().includes('sassoon')) return -1;
